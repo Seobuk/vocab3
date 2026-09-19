@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.12';
+  var APP_VERSION = '1.13';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -453,11 +453,7 @@
         '<button class="btn no" data-action="judge" data-yes="0"><span>▼ 아직</span><small>' + STAGE_SHORT[st] + ' 유지</small></button>' +
         '<button class="btn yes" data-action="judge" data-yes="1"><span>▲ ' + (st === 1 ? '외웠다' : st === 2 ? '확실히 외웠다' : '완전 암기') + '</span><small>' + (st === 3 ? '졸업' : STAGE_SHORT[st + 1] + '로 이동') + '</small></button>' +
         '</div>' +
-        '<div class="navrow">' +
-        '<button class="btn nav" data-action="nav" data-dir="-1">◀ 이전</button>' +
-        '<button class="btn undo" data-action="undo" id="btnUndo">되돌리기</button>' +
-        '<button class="btn nav" data-action="nav" data-dir="1">다음 ▶</button>' +
-        '</div>' +
+        '<div class="navrow"><button class="btn undo" data-action="undo" id="btnUndo">↶ 되돌리기</button></div>' +
         (st > 1 ? '<button class="demote" data-action="demote">잘 기억 안 나면 <u>1단계로 되돌리기</u></button>' :
           '<div class="demote">▲ 위로: 외웠다 &nbsp;·&nbsp; ▼ 아래로: 아직 &nbsp;·&nbsp; ◀ ▶ 좌우: 이전/다음</div>') +
         '</div></div>';

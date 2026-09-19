@@ -193,7 +193,7 @@ h1, h2, h3, p { margin: 0; }
 .navrow { display: flex; gap: 10px; }
 .navrow .btn { flex: 1; padding: 11px 8px; border-radius: 14px; }
 .navrow .btn.nav { background: var(--surface2); color: var(--text); font-size: 14px; }
-.navrow .undo { flex: 0 0 84px; background: var(--surface2); color: var(--muted); font-size: 12px; white-space: nowrap; }
+.navrow .undo { flex: 1; background: var(--surface2); color: var(--muted); font-size: 13px; white-space: nowrap; padding: 9px 8px; }
 .card.enter-next { animation: fromRight .24s ease-out; }
 .card.enter-prev { animation: fromLeft .24s ease-out; }
 @keyframes fromRight { from { transform: translateX(70%) rotate(6deg); opacity: 0; } to { transform: none; opacity: 1; } }
