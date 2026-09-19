@@ -1,0 +1,19 @@
+# build outputs
+build/
+*.apk
+*.aab
+*.apks
+
+# signing keys — never commit
+keystore/
+*.jks
+*.keystore
+
+# downloaded SDK jars (tools/setup-sdk.sh)
+sdk/
+
+# tooling
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
