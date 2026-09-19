@@ -54,6 +54,8 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   await page.click('[data-action="audio-pick"][data-key="pauseAfterWord"][data-value="5000"]'); await page.waitForTimeout(100);
   await page.evaluate(() => { window.__calls = []; });
   await page.evaluate(() => window.__appBack()); await page.waitForTimeout(150);
+  console.log('back from settings → home:', await page.$eval('#view-home', v => v.classList.contains('active')));
+  await page.click('[data-action="audio"]'); await page.waitForTimeout(200);
   await page.click('[data-action="audio-start"]'); await page.waitForTimeout(200);
   const call2 = await page.evaluate(() => window.__calls[0]);
   const st2 = call2.pl[0].steps;

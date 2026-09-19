@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.13';
+  var APP_VERSION = '1.14';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -291,7 +291,7 @@
   function render() {
     var cur = current();
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + cur.view); });
-    var showTab = ['home', 'list', 'edit', 'import', 'settings'].indexOf(cur.view) >= 0;
+    var showTab = ['home', 'list', 'edit', 'import', 'settings', 'stats'].indexOf(cur.view) >= 0;
     $('#tabbar').classList.toggle('show', showTab);
     $$('#tabbar button').forEach(function (b) {
       var t = b.getAttribute('data-tab');
@@ -675,6 +675,96 @@
       (kept ? '<button class="btn primary big" data-action="retry">아직인 ' + kept + '개 바로 다시 보기</button>' : '') +
       '<button class="btn big" data-action="home">홈으로</button>' +
       '</div></div>';
+  };
+
+
+  /* ================= STATS (통계) ================= */
+  function bestStreak() {
+    var days = Object.keys(S.studyDays).filter(function (k) { return S.studyDays[k].judged > 0; }).sort();
+    var best = 0, run = 0, prev = null;
+    days.forEach(function (k) {
+      var d = new Date(k + 'T00:00:00');
+      if (prev && (d - prev) === 86400000) run++; else run = 1;
+      if (run > best) best = run;
+      prev = d;
+    });
+    return best;
+  }
+  RENDER.stats = function () {
+    var c = counts(), total = S.words.length, days = S.studyDays;
+    var totJ = 0, totM = 0, dayCount = 0;
+    for (var k in days) { totJ += days[k].judged || 0; totM += days[k].memorized || 0; if (days[k].judged > 0) dayCount++; }
+    var rate = totJ ? Math.round(totM / totJ * 100) : 0;
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+
+    // 최근 14일
+    var bars = [], maxJ = 1;
+    for (var i = 13; i >= 0; i--) {
+      var d = new Date(today); d.setDate(today.getDate() - i);
+      var st = days[dateKey(d)] || { judged: 0, memorized: 0 };
+      bars.push({ d: d, j: st.judged || 0, m: st.memorized || 0 });
+      if (st.judged > maxJ) maxJ = st.judged;
+    }
+    var maxIdx = 0; bars.forEach(function (b, i) { if (b.j > bars[maxIdx].j) maxIdx = i; });
+    var barsHtml = bars.map(function (b, i) {
+      var hj = Math.round(b.j / maxJ * 100), hm = Math.round(b.m / maxJ * 100);
+      var label = (b.j > 0 && (i === maxIdx || i === 13)) ? '<span class="bv">' + b.j + '</span>' : '';
+      var dow = b.d.getDay();
+      return '<div class="bar-col"><div class="bar-stack">' + label + '<div class="bar j" style="height:' + hj + '%"></div><div class="bar m" style="height:' + hm + '%"></div></div>' +
+        '<div class="bar-x' + (dow === 0 ? ' sun' : '') + '">' + (i % 2 === 1 ? b.d.getDate() : '') + '</div></div>';
+    }).join('');
+
+    // 12주 히트맵 (월요일 시작)
+    var dow0 = (today.getDay() + 6) % 7; // Mon=0
+    var start = new Date(today); start.setDate(today.getDate() - dow0 - 7 * 11);
+    var cells = '';
+    for (var w = 0; w < 12; w++) {
+      cells += '<div class="hm-col">';
+      for (var r = 0; r < 7; r++) {
+        var cd = new Date(start); cd.setDate(start.getDate() + w * 7 + r);
+        var key = dateKey(cd), v = days[key] ? (days[key].judged || 0) : 0;
+        var lvl = cd > today ? 'future' : v === 0 ? 'l0' : v < 10 ? 'l1' : v < 20 ? 'l2' : v < 40 ? 'l3' : 'l4';
+        cells += '<div class="hm-cell ' + lvl + '" title="' + key + ' · ' + v + '"></div>';
+      }
+      cells += '</div>';
+    }
+
+    // 단계별 분포
+    var stageRows = [0, 1, 2, 3, 4].map(function (st) {
+      var n = c[st] || 0, pct = total ? Math.round(n / total * 100) : 0;
+      var label = (st === 1 || st === 2 || st === 3) ? STAGE_SHORT[st] + ' ' + STAGE_NAME[st] : STAGE_NAME[st];
+      return '<div class="srow"><div class="sl"><span class="dot" style="background:' + STAGE_COLOR[st] + '"></span>' + label + '</div>' +
+        '<div class="sbar"><div style="width:' + pct + '%;background:' + STAGE_COLOR[st] + '"></div></div><div class="sn">' + n + '<small>개</small></div></div>';
+    }).join('');
+
+    // 자주 틀린 단어
+    var hard = S.words.filter(function (w) { return w.wrong > 0; }).sort(function (a, b) { return b.wrong - a.wrong || a.right - b.right; }).slice(0, 5);
+    var hardHtml = hard.length ? hard.map(function (w) {
+      return '<button class="item" style="--c:' + STAGE_COLOR[w.stage] + '" data-action="open" data-id="' + esc(w.id) + '"><span class="dot"></span><div class="it-body"><div class="it-w">' + esc(w.w) + '</div><div class="it-m">' + esc(w.m) + '</div></div>' +
+        '<span class="it-tag">아직 ' + w.wrong + '회 · 외움 ' + w.right + '회</span></button>';
+    }).join('') : '<div class="empty">아직 "아직"으로 표시한 단어가 없어요</div>';
+
+    // 이번 주
+    var wk = 0, wkDays = 0;
+    for (var q = 0; q <= dow0; q++) { var wd = new Date(today); wd.setDate(today.getDate() - q); var ws = days[dateKey(wd)]; if (ws && ws.judged > 0) { wkDays++; wk += ws.judged; } }
+
+    $('#view-stats').innerHTML =
+      '<div class="wrap">' +
+      '<div class="home-head"><h1>통계</h1><span class="muted small">' + fmtToday() + '</span></div>' +
+      '<div class="tiles">' +
+      '<div class="tile"><b>' + calcStreak() + '<small>일</small></b><span>연속 학습</span></div>' +
+      '<div class="tile"><b>' + bestStreak() + '<small>일</small></b><span>최장 연속</span></div>' +
+      '<div class="tile"><b>' + dayCount + '<small>일</small></b><span>총 학습일</span></div>' +
+      '<div class="tile"><b>' + rate + '<small>%</small></b><span>외움률 (' + totM + '/' + totJ + ')</span></div>' +
+      '</div>' +
+      '<div class="card-box"><div class="cb-title">최근 14일 <span class="muted small">이번 주 ' + wkDays + '일 · ' + wk + '개</span></div>' +
+      '<div class="bars">' + barsHtml + '</div>' +
+      '<div class="legend"><span><i class="sw m"></i>외웠다</span><span><i class="sw j"></i>아직</span></div></div>' +
+      '<div class="card-box"><div class="cb-title">12주 학습 활동</div><div class="hm">' + cells + '</div>' +
+      '<div class="legend hm-legend"><span>적음</span><i class="hm-cell l0"></i><i class="hm-cell l1"></i><i class="hm-cell l2"></i><i class="hm-cell l3"></i><i class="hm-cell l4"></i><span>많음</span></div></div>' +
+      '<div class="card-box"><div class="cb-title">단어 분포 <span class="muted small">총 ' + total + '개</span></div>' + stageRows + '</div>' +
+      '<div class="card-box"><div class="cb-title">자주 틀린 단어</div><div class="list">' + hardHtml + '</div></div>' +
+      '</div>';
   };
 
   /* ================= LIST ================= */
