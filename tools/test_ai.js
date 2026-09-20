@@ -68,6 +68,11 @@ const must = (cond, what) => { if (!cond) fails.push(what); console.log((cond ? 
   console.log('AI without key → modal:', modalText && modalText.slice(0, 40));
   await p.click('#modal .btn.primary'); await p.waitForTimeout(400);
   console.log('→ settings view:', await p.evaluate(() => document.querySelector('#view-settings').classList.contains('active')), '| key field focused:', await p.evaluate(() => document.activeElement && document.activeElement.id));
+  // back from that settings detour must return to the study card, not jump home (v1.16)
+  await p.evaluate(() => window.__appBack()); await p.waitForTimeout(300);
+  must(await p.evaluate(() => document.querySelector('#view-study').classList.contains('active')), 'back from settings (opened via the AI key prompt) returns to the study view');
+  must((await p.evaluate(() => { const el = document.querySelector('#view-study.active .card-word .w'); return el && el.textContent; })) === word, 'same card is still showing after the detour');
+  await p.evaluate(() => window.__vocab.go('settings', { scroll: 'ai' })); await p.waitForTimeout(200); // study has no tab bar; go straight to settings
   // (4) fresh install: default model + key placeholder; enter key; test connection; model list
   must((await p.inputValue('#ai-model')) === 'gemini-flash-lite-latest', 'fresh install defaults to gemini-flash-lite-latest');
   must((await p.getAttribute('#ai-key', 'placeholder')) === 'AQ.…', 'key placeholder shows the AQ. prefix Google issues now');

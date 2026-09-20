@@ -413,7 +413,8 @@
   function back() {
     if (modalOpen) { closeModal(null); return; }
     if (sheetOpen) { closeSheet(); return; }
-    var cur = current();
+    var cur = current(), prev = stack[stack.length - 2];
+    if (prev && prev.view === 'study') { stack.pop(); render(); return; } // detour from the card (e.g. settings for the AI key) → back to the card, not home
     if (cur && cur.view !== 'home') { goTab('home'); return; }
     confirm2(AUD.active ? '앱을 종료할까요?\n(듣기 복습은 알림에서 계속 재생돼요)' : '앱을 종료할까요?', '종료').then(function (ok) { if (ok) bridge.exitApp(); });
   }
