@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.15';
+  var APP_VERSION = '1.16';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -132,13 +132,15 @@
 
   /* ---------------- AI (Gemini) example generation ---------------- */
   // The API key lives under its own prefs key (not inside the state JSON), so backups/exports never contain it.
-  var AI_KEY = 'vocab3.ai.v1', AI_DEFAULT_MODEL = 'gemini-2.5-flash', AI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+  // Default is an alias (always the current Flash-Lite), so it never retires; fixed ids like gemini-2.5-flash got 404 for new accounts.
+  var AI_KEY = 'vocab3.ai.v1', AI_DEFAULT_MODEL = 'gemini-flash-lite-latest', AI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
   var AI = (function () {
     var o = null;
     try { o = JSON.parse(bridge.loadRaw(AI_KEY) || 'null'); } catch (e) { o = null; }
     o = o || {};
     if (typeof o.key !== 'string') o.key = '';
     if (!o.model || typeof o.model !== 'string') o.model = AI_DEFAULT_MODEL;
+    if (o.model === 'gemini-2.5-flash') o.model = AI_DEFAULT_MODEL; // v1.15 default, saved with the key; Google rejects it for accounts made after 2026-09
     return o;
   })();
   function saveAi() { bridge.saveRaw(AI_KEY, JSON.stringify(AI)); }
@@ -150,6 +152,7 @@
     if (res.status === 401 || res.status === 403) return 'API 키가 거부됐어요 (' + res.status + ')';
     if (res.status === 404) return '모델 "' + AI.model + '"을(를) 찾을 수 없어요. 설정 → 모델 목록에서 골라 주세요';
     if (res.status === 429) return '요청 한도를 넘었어요. 잠시 후 다시 시도하세요';
+    if (res.status === 503) return '"' + AI.model + '" 모델이 지금 붐벼요. 잠시 후 다시 하거나 설정에서 다른 모델을 골라 주세요';
     if (res.status >= 500) return 'Gemini 서버 오류 (' + res.status + ')';
     return '오류 ' + res.status + (msg ? ': ' + msg.slice(0, 90) : '');
   }
@@ -177,7 +180,11 @@
       }
     });
     var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent';
+    // ponytail: one retry on 503 ("high demand" spikes are momentary per Google); add backoff only if 503s keep showing up
     return bridge.aiCall(url, AI.key, body).then(function (res) {
+      if (res.status !== 503) return res;
+      return new Promise(function (r) { setTimeout(r, 1500); }).then(function () { return bridge.aiCall(url, AI.key, body); });
+    }).then(function (res) {
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = null;
       try {
@@ -1122,7 +1129,7 @@
       asw('loop', '끝나면 처음부터 반복', '', au.loop) +
       '</div>' +
       '<div class="section-title" id="ai-settings">AI 예문 (Gemini)</div><div class="settings-group">' +
-      '<div class="field" style="padding-top:12px"><label>Gemini API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="AIza…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" style="flex:none">보기</button></div></div>' +
+      '<div class="field" style="padding-top:12px"><label>Gemini API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="AQ.…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" style="flex:none">보기</button></div></div>' +
       '<div class="field"><label>모델</label><div class="row"><input id="ai-model" value="' + esc(AI.model) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-models" style="flex:none">목록</button></div></div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://aistudio.google.com/apikey">키 발급 페이지 (무료)</button></div>' +
       '<div class="small muted" style="padding:0 0 12px;line-height:1.5">학습 카드의 <b>예문을 길게 누르면</b> 수정·AI 생성 창이 열려요. 키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. AI 버튼을 누를 때만 단어·뜻·예문이 Google Gemini로 전송돼요.</div>' +
