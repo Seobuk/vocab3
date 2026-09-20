@@ -33,6 +33,8 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
@@ -476,6 +478,72 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String version() {
             return "1.0";
+        }
+
+        /** Opens a URL in the external browser (used for the API-key help link). */
+        @JavascriptInterface
+        public void openUrl(final String url) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "브라우저를 열 수 없어요", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
+        }
+
+        /**
+         * HTTPS JSON call for the AI example feature (Gemini API). Runs on a background thread and
+         * reports back through window.onAiResult(id, httpStatus, bodyText). status 0 = network error.
+         * The API key travels in the x-goog-api-key header so it never appears in a URL/log line.
+         */
+        @JavascriptInterface
+        public void aiCall(final String id, final String url, final String key, final String body) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    int status = 0;
+                    String text = "";
+                    HttpURLConnection c = null;
+                    try {
+                        c = (HttpURLConnection) new URL(url).openConnection();
+                        c.setConnectTimeout(15000);
+                        c.setReadTimeout(30000);
+                        c.setRequestProperty("Accept", "application/json");
+                        if (key != null && key.length() > 0) c.setRequestProperty("x-goog-api-key", key);
+                        if (body != null && body.length() > 0) {
+                            c.setRequestMethod("POST");
+                            c.setDoOutput(true);
+                            c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                            OutputStream os = c.getOutputStream();
+                            os.write(body.getBytes(StandardCharsets.UTF_8));
+                            os.close();
+                        } else {
+                            c.setRequestMethod("GET");
+                        }
+                        status = c.getResponseCode();
+                        InputStream is = status >= 400 ? c.getErrorStream() : c.getInputStream();
+                        if (is != null) {
+                            BufferedReader r = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                            StringBuilder sb = new StringBuilder();
+                            char[] buf = new char[8192];
+                            int n;
+                            while ((n = r.read(buf)) > 0) sb.append(buf, 0, n);
+                            r.close();
+                            text = sb.toString();
+                        }
+                    } catch (Exception e) {
+                        status = 0;
+                        text = e.getClass().getSimpleName() + ": " + (e.getMessage() == null ? "" : e.getMessage());
+                    } finally {
+                        if (c != null) c.disconnect();
+                    }
+                    runJs("window.onAiResult && window.onAiResult(" + jsString(id) + "," + status + "," + jsString(text) + ")");
+                }
+            }, "vocab3-ai").start();
         }
     }
 }

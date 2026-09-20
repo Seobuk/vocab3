@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.14';
+  var APP_VERSION = '1.15';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -103,8 +103,131 @@
     audioState: function () {
       try { return isAndroid ? window.Android.audioState() : jsAudio.stateJson(); } catch (e) { return null; }
     },
-    exitApp: function () { try { if (isAndroid) window.Android.exitApp(); else window.close(); } catch (e) { } }
+    exitApp: function () { try { if (isAndroid) window.Android.exitApp(); else window.close(); } catch (e) { } },
+    loadRaw: function (key) { try { return isAndroid ? window.Android.load(key) : localStorage.getItem(key); } catch (e) { return null; } },
+    saveRaw: function (key, val) { try { if (isAndroid) window.Android.save(key, val); else localStorage.setItem(key, val); } catch (e) { } },
+    openUrl: function (url) { try { if (isAndroid) window.Android.openUrl(url); else window.open(url, '_blank'); } catch (e) { } },
+    // HTTPS JSON request → Promise<{status, text}> (status 0 = network error). Android does it natively (no CORS), browser uses fetch.
+    aiCall: function (url, key, body) {
+      return new Promise(function (resolve) {
+        if (isAndroid) {
+          var id = 'ai' + (++aiSeq);
+          aiPending[id] = resolve;
+          setTimeout(function () { if (aiPending[id]) { delete aiPending[id]; resolve({ status: 0, text: 'timeout' }); } }, 45000);
+          try { window.Android.aiCall(id, url, key || '', body || ''); } catch (e) { delete aiPending[id]; resolve({ status: 0, text: String(e) }); }
+          return;
+        }
+        var opt = { method: body ? 'POST' : 'GET', headers: { 'x-goog-api-key': key || '' } };
+        if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = body; }
+        fetch(url, opt).then(function (r) { return r.text().then(function (t) { resolve({ status: r.status, text: t }); }); })
+          .catch(function (e) { resolve({ status: 0, text: String(e) }); });
+      });
+    }
   };
+  var aiSeq = 0, aiPending = {};
+  window.onAiResult = function (id, status, text) {
+    var r = aiPending[id]; if (!r) return;
+    delete aiPending[id]; r({ status: Number(status) || 0, text: text || '' });
+  };
+
+  /* ---------------- AI (Gemini) example generation ---------------- */
+  // The API key lives under its own prefs key (not inside the state JSON), so backups/exports never contain it.
+  var AI_KEY = 'vocab3.ai.v1', AI_DEFAULT_MODEL = 'gemini-2.5-flash', AI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+  var AI = (function () {
+    var o = null;
+    try { o = JSON.parse(bridge.loadRaw(AI_KEY) || 'null'); } catch (e) { o = null; }
+    o = o || {};
+    if (typeof o.key !== 'string') o.key = '';
+    if (!o.model || typeof o.model !== 'string') o.model = AI_DEFAULT_MODEL;
+    return o;
+  })();
+  function saveAi() { bridge.saveRaw(AI_KEY, JSON.stringify(AI)); }
+  function aiErrorMessage(res) {
+    var msg = '';
+    try { var j = JSON.parse(res.text); msg = (j.error && j.error.message) || ''; } catch (e) { }
+    if (res.status === 0) return '인터넷 연결을 확인하세요' + (res.text && res.text !== 'timeout' ? '' : ' (응답 없음)');
+    if (res.status === 400 && /api key/i.test(msg)) return 'API 키가 올바르지 않아요';
+    if (res.status === 401 || res.status === 403) return 'API 키가 거부됐어요 (' + res.status + ')';
+    if (res.status === 404) return '모델 "' + AI.model + '"을(를) 찾을 수 없어요. 설정 → 모델 목록에서 골라 주세요';
+    if (res.status === 429) return '요청 한도를 넘었어요. 잠시 후 다시 시도하세요';
+    if (res.status >= 500) return 'Gemini 서버 오류 (' + res.status + ')';
+    return '오류 ' + res.status + (msg ? ': ' + msg.slice(0, 90) : '');
+  }
+  function aiPrompt(w, hint) {
+    return [
+      'You write example sentences for a Korean learner of English (CEFR B1, natural everyday spoken English).',
+      'Word/expression: "' + w.w + '"' + (w.p ? ' (' + w.p + ')' : ''),
+      'Korean meaning: "' + w.m + '"',
+      w.e ? 'Current example (write a clearly DIFFERENT one): "' + w.e + '"' : '',
+      hint ? 'Learner\'s request: ' + hint : '',
+      'Write ONE sentence (8-16 words) that a person would actually say in daily life, using the word in exactly this meaning.',
+      'Then give a natural, colloquial Korean translation of that sentence.',
+      'Return JSON only: {"e": "<English sentence>", "k": "<Korean translation>"}'
+    ].filter(Boolean).join('\n');
+  }
+  // → Promise<{e, k}>; rejects with {nokey:true} or {msg}
+  function aiGenerateExample(w, hint) {
+    if (!AI.key) return Promise.reject({ nokey: true });
+    var body = JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: aiPrompt(w, hint) }] }],
+      generationConfig: {
+        temperature: 1.0,
+        responseMimeType: 'application/json',
+        responseSchema: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] }
+      }
+    });
+    var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent';
+    return bridge.aiCall(url, AI.key, body).then(function (res) {
+      if (res.status !== 200) throw { msg: aiErrorMessage(res) };
+      var out = null;
+      try {
+        var j = JSON.parse(res.text), parts = j.candidates[0].content.parts, txt = '';
+        for (var i = 0; i < parts.length; i++) if (parts[i].text) txt += parts[i].text;
+        txt = txt.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
+        out = JSON.parse(txt);
+      } catch (e) { out = null; }
+      if (!out || !out.e) throw { msg: '응답을 이해하지 못했어요. 다시 시도해 보세요' };
+      return { e: String(out.e).replace(/\s+/g, ' ').trim(), k: String(out.k || '').replace(/\s+/g, ' ').trim() };
+    });
+  }
+  // → Promise<string[]> of model ids usable with generateContent (text models only)
+  function aiListModels() {
+    if (!AI.key) return Promise.reject({ nokey: true });
+    return bridge.aiCall(AI_BASE + '/models?pageSize=200', AI.key, '').then(function (res) {
+      if (res.status !== 200) throw { msg: aiErrorMessage(res) };
+      var j = JSON.parse(res.text), out = [];
+      (j.models || []).forEach(function (m) {
+        var id = String(m.name || '').replace(/^models\//, '');
+        var ok = (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0;
+        if (!ok || /embedding|image|tts|audio|live|vision|aqa|veo|imagen/i.test(id)) return;
+        out.push(id);
+      });
+      out.sort(function (a, b) { var fa = /flash/i.test(a) ? 0 : 1, fb = /flash/i.test(b) ? 0 : 1; return fa - fb || b.localeCompare(a); });
+      return out;
+    });
+  }
+  // Shared runner for the sheet / edit-screen buttons: fills the example & translation fields.
+  function runAiExample(w, hint, selE, selK, btn) {
+    if (!AI.key) {
+      confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) {
+        if (ok) { if (sheetOpen) closeSheet(); go('settings', { scroll: 'ai' }); }
+      });
+      return;
+    }
+    var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '생성 중…'; btn.classList.add('busy');
+    aiGenerateExample(w, hint).then(function (r) {
+      var te = $(selE), tk = $(selK);
+      if (te) te.value = r.e;
+      if (tk) tk.value = r.k;
+      var note = $('#ai-note'); if (note) note.textContent = 'AI 제안이에요 · 마음에 안 들면 다시 누르고, 저장 전에 직접 고쳐도 돼요';
+      bridge.vibrate(8);
+    }, function (err) {
+      toast(err && err.msg ? err.msg : 'AI 예문 생성에 실패했어요');
+    }).then(function () {
+      if (btn.isConnected) { btn.disabled = false; btn.textContent = orig; btn.classList.remove('busy'); }
+    });
+  }
 
   /* Browser fallback sequencer (same step protocol as the Android ReviewService) — used for web testing only */
   var jsAudio = {
@@ -455,7 +578,7 @@
         '</div>' +
         '<div class="navrow"><button class="btn undo" data-action="undo" id="btnUndo">↶ 되돌리기</button></div>' +
         (st > 1 ? '<button class="demote" data-action="demote">잘 기억 안 나면 <u>1단계로 되돌리기</u></button>' :
-          '<div class="demote">▲ 위로: 외웠다 &nbsp;·&nbsp; ▼ 아래로: 아직 &nbsp;·&nbsp; ◀ ▶ 좌우: 이전/다음</div>') +
+          '<div class="demote">▲ 외웠다 &nbsp;·&nbsp; ▼ 아직 &nbsp;·&nbsp; ◀ ▶ 이전/다음 &nbsp;·&nbsp; 예문 길게: 수정·AI</div>') +
         '</div></div>';
     }
     mountCard('none');
@@ -489,8 +612,8 @@
       stamps;
   }
 
-  // anim: 'none' | 'judge' (scale in) | 'next' (from right) | 'prev' (from left)
-  function mountCard(anim) {
+  // anim: 'none' | 'judge' (scale in) | 'next' (from right) | 'prev' (from left); silent: skip auto-speak
+  function mountCard(anim, silent) {
     var w = currentWord();
     if (!w) { finishSession(); return; }
     var area = $('#cardArea');
@@ -509,7 +632,7 @@
     $('#chipMode').classList.toggle('on', S.settings.mode === 'ko');
     $('#chipAuto').textContent = '자동 발음';
     $('#chipAuto').classList.toggle('on', !!S.settings.autoSpeak);
-    if (S.settings.autoSpeak) setTimeout(function () {
+    if (S.settings.autoSpeak && !silent) setTimeout(function () {
       if (!card.isConnected || currentWord() !== w) return;
       var spoke = false;
       if (S.settings.mode === 'en') { speak(w.w); spoke = true; }
@@ -538,8 +661,9 @@
   }
 
   var suppressClick = false;
+  var LONG_PRESS_MS = 480;
   function bindDrag(card) {
-    var drag = null;
+    var drag = null, lpTimer = null, lpFired = false;
     var yes = $('.stamp.yes', card), no = $('.stamp.no', card);
     function stamps(dy) {
       yes.style.opacity = clamp(-dy / 70, 0, 1);
@@ -550,21 +674,38 @@
       card.style.transform = '';
       stamps(0);
     }
+    function clearLp() { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } }
     card.addEventListener('pointerdown', function (e) {
       if (e.target.closest('button')) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      lpFired = false; clearLp();
       drag = { x: e.clientX, y: e.clientY, dx: 0, dy: 0, t: Date.now(), moved: false, axis: null, id: e.pointerId, target: e.target };
       try { card.setPointerCapture(e.pointerId); } catch (err) { }
       card.style.transition = 'none';
+      // long-press on the example block → edit / AI sheet (pointer capture stays on the card so the
+      // release that follows lands here, not on the sheet that opened underneath the finger)
+      if (e.target.closest('.reveal[data-reveal="e"], .plain')) {
+        lpTimer = setTimeout(function () {
+          lpTimer = null;
+          if (!drag || drag.moved) return;
+          drag = null; reset();
+          lpFired = true;
+          var w = currentWord(); if (!w) return;
+          bridge.vibrate(18);
+          openExampleEditor(w.id);
+        }, LONG_PRESS_MS);
+      }
     });
     card.addEventListener('pointermove', function (e) {
       if (!drag || e.pointerId !== drag.id) return;
       drag.dx = e.clientX - drag.x; drag.dy = e.clientY - drag.y;
-      if (!drag.axis && (Math.abs(drag.dx) > 8 || Math.abs(drag.dy) > 8)) { drag.axis = Math.abs(drag.dx) > Math.abs(drag.dy) ? 'x' : 'y'; drag.moved = true; }
+      if (!drag.axis && (Math.abs(drag.dx) > 8 || Math.abs(drag.dy) > 8)) { drag.axis = Math.abs(drag.dx) > Math.abs(drag.dy) ? 'x' : 'y'; drag.moved = true; clearLp(); }
       if (drag.axis === 'x') { card.style.transform = 'translate(' + drag.dx + 'px,0) rotate(' + (drag.dx / 30) + 'deg)'; stamps(0); }
       else if (drag.axis === 'y') { card.style.transform = 'translate(0,' + drag.dy + 'px)'; stamps(drag.dy); }
     });
+    card.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     function up(e) {
+      clearLp();
       if (!drag || e.pointerId !== drag.id) return;
       var d = drag; drag = null;
       var dt = Math.max(1, Date.now() - d.t);
@@ -590,8 +731,9 @@
       }
     }
     card.addEventListener('pointerup', up);
-    card.addEventListener('pointercancel', function (e) { if (drag && e.pointerId === drag.id) { drag = null; reset(); } });
+    card.addEventListener('pointercancel', function (e) { clearLp(); if (drag && e.pointerId === drag.id) { drag = null; reset(); } });
     card.addEventListener('click', function (e) {
+      if (lpFired) { lpFired = false; e.stopPropagation(); return; }
       if (suppressClick) { e.stopPropagation(); return; }
       if (e.target.closest('button')) return;
       var r = e.target.closest('.reveal');
@@ -810,6 +952,35 @@
     }).join('') + (arr.length > 300 ? '<div class="empty">외 ' + (arr.length - 300) + '개 — 검색으로 좁혀 보세요</div>' : '');
   }
 
+  // 예문 수정 시트 — 학습 카드의 예문을 길게 누르면 열림. AI(Gemini)로 새 예문을 받아 고친 뒤 저장.
+  function openExampleEditor(id) {
+    var w = byId(id); if (!w) return;
+    openSheet(
+      '<div class="sh-word"><span>' + esc(w.w) + '</span><span class="tag" style="flex:none">예문 수정</span></div>' +
+      '<div class="sh-m">' + esc(w.m) + '</div>' +
+      '<div class="field" style="margin-top:10px"><label>예문 (영어)</label><textarea id="ex-e" autocapitalize="sentences">' + esc(w.e) + '</textarea></div>' +
+      '<div class="field"><label>예문 해석</label><textarea id="ex-k">' + esc(w.k) + '</textarea></div>' +
+      '<div class="ai-row"><input id="ex-hint" placeholder="AI에게 상황 요청 (선택) 예: 회의에서, 더 짧게" autocomplete="off"><button class="btn ai" data-action="ai-example" data-id="' + esc(w.id) + '">✨ AI 새 예문</button></div>' +
+      '<div class="small muted" id="ai-note">AI가 쓴 예문은 저장 전에 직접 고칠 수 있어요</div>' +
+      '<div class="sh-actions"><button class="btn" data-action="close-sheet">취소</button><button class="btn primary" data-action="ex-save" data-id="' + esc(w.id) + '">저장</button></div>'
+    );
+  }
+  function saveExampleFromSheet(id) {
+    var w = byId(id); if (!w) return;
+    var e = $('#ex-e').value.replace(/\s+/g, ' ').trim(), k = $('#ex-k').value.replace(/\s+/g, ' ').trim();
+    if (!e) { toast('예문을 입력해 주세요'); return; }
+    var changed = (e !== w.e || k !== w.k);
+    w.e = e; w.k = k; save();
+    closeSheet();
+    toast(changed ? '예문을 저장했어요' : '변경된 내용이 없어요');
+    var cur = current();
+    if (cur && cur.view === 'study' && SES && currentWord() && currentWord().id === w.id) {
+      mountCard('none', true);
+      var r = $('#cardArea .reveal[data-reveal="e"]');
+      if (r) r.setAttribute('data-step', r.getAttribute('data-max'));
+    } else if (cur && RENDER[cur.view] && cur.view !== 'study') RENDER[cur.view](cur.params);
+  }
+
   function openWord(id) {
     var w = byId(id); if (!w) return;
     openSheet(
@@ -821,7 +992,7 @@
       '<div class="stage-select">' + [0, 1, 2, 3, 4].map(function (s) {
         return '<button style="--c:' + STAGE_COLOR[s] + '" class="' + (w.stage === s ? 'on' : '') + '" data-action="set-stage" data-id="' + esc(w.id) + '" data-stage="' + s + '">' + STAGE_SHORT[s] + '</button>';
       }).join('') + '</div>' +
-      '<div class="sh-actions"><button class="btn" data-action="edit" data-id="' + esc(w.id) + '">수정</button><button class="btn danger" data-action="delete" data-id="' + esc(w.id) + '">삭제</button></div>'
+      '<div class="sh-actions"><button class="btn ai" data-action="ex-edit" data-id="' + esc(w.id) + '">✨ 예문 수정·AI</button><button class="btn" data-action="edit" data-id="' + esc(w.id) + '">수정</button><button class="btn danger" data-action="delete" data-id="' + esc(w.id) + '">삭제</button></div>'
     );
   }
 
@@ -839,6 +1010,7 @@
       '<div class="field"><label>뜻 *</label><input id="f-m" value="' + esc(v.m) + '" placeholder="예: 알아내다, 해결하다"></div>' +
       '<div class="field"><label>예문 (영어) — 실제로 말할 문장으로</label><textarea id="f-e" placeholder="I can\'t figure out how to set this up.">' + esc(v.e) + '</textarea></div>' +
       '<div class="field"><label>예문 해석</label><textarea id="f-k" placeholder="이걸 어떻게 설정하는지 도무지 모르겠어.">' + esc(v.k) + '</textarea></div>' +
+      '<div class="ai-row"><input id="f-hint" placeholder="AI에게 상황 요청 (선택) 예: 여행 중" autocomplete="off"><button class="btn ai" data-action="ai-edit-example">✨ AI 예문 생성</button></div>' +
       (isNew ? '<div class="switch-row"><div><div class="sw-t">오늘 학습(1단계)에 바로 추가</div><div class="sw-s">끄면 대기 목록에 들어가 순서대로 나와요</div></div><button class="toggle on" id="f-now" data-action="toggle-el"></button></div>' : '') +
       '<div class="row">' + (isNew ? '<button class="btn" data-action="save-word" data-more="1">저장하고 계속</button>' : '') + '<button class="btn primary" data-action="save-word">저장</button></div>' +
       (isNew ? '<button class="btn ghost block" data-action="go-import">여러 단어 한꺼번에 붙여넣기 →</button>' : '') +
@@ -949,6 +1121,12 @@
       apick('pauseBetween', '다음 단어까지 대기', '', [[1000, '1초'], [1500, '1.5초'], [2000, '2초'], [3000, '3초']], au.pauseBetween) +
       asw('loop', '끝나면 처음부터 반복', '', au.loop) +
       '</div>' +
+      '<div class="section-title" id="ai-settings">AI 예문 (Gemini)</div><div class="settings-group">' +
+      '<div class="field" style="padding-top:12px"><label>Gemini API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="AIza…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" style="flex:none">보기</button></div></div>' +
+      '<div class="field"><label>모델</label><div class="row"><input id="ai-model" value="' + esc(AI.model) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-models" style="flex:none">목록</button></div></div>' +
+      '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://aistudio.google.com/apikey">키 발급 페이지 (무료)</button></div>' +
+      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">학습 카드의 <b>예문을 길게 누르면</b> 수정·AI 생성 창이 열려요. 키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. AI 버튼을 누를 때만 단어·뜻·예문이 Google Gemini로 전송돼요.</div>' +
+      '</div>' +
       '<div class="section-title">화면</div><div class="settings-group">' +
       pick('theme', '테마', '', [['light', '라이트'], ['dark', '다크']], st.theme) +
       '</div>' +
@@ -967,7 +1145,10 @@
       '<div class="center muted small">3단계 단어장 v' + APP_VERSION + ' · 단어 ' + S.words.length + '개 · TTS ' + (bridge.ttsReady() ? '사용 가능' : '준비 중/사용 불가') + '</div>' +
       '</div>';
     $('#rate').addEventListener('input', function (e) { S.settings.rate = Number(e.target.value); $('#rateVal').textContent = S.settings.rate.toFixed(1) + 'x'; save(); });
-    if (p && p.scroll === 'audio') { var el = $('#audio-settings'); if (el) setTimeout(function () { el.scrollIntoView({ block: 'start' }); }, 30); }
+    $('#ai-key').addEventListener('input', function (e) { AI.key = e.target.value.trim(); saveAi(); });
+    $('#ai-model').addEventListener('change', function (e) { AI.model = e.target.value.trim().replace(/^models\//, '') || AI_DEFAULT_MODEL; e.target.value = AI.model; saveAi(); });
+    if (p && (p.scroll === 'audio' || p.scroll === 'ai')) { var el = $('#' + p.scroll + '-settings'); if (el) setTimeout(function () { el.scrollIntoView({ block: 'start' }); }, 30); }
+    if (p && p.scroll === 'ai' && !AI.key) setTimeout(function () { var k = $('#ai-key'); if (k) k.focus(); }, 350);
   };
 
   function backupJSON() { return JSON.stringify(S); }
@@ -1201,6 +1382,39 @@
     },
     'restore-paste-go': function () { var t = $('#pasteBox').value; closeSheet(); restoreFromText(t); },
     'close-sheet': function () { closeSheet(); },
+    /* --- AI 예문 --- */
+    'ex-edit': function (el) { var id = el.getAttribute('data-id'); closeSheet(); setTimeout(function () { openExampleEditor(id); }, 30); },
+    'ex-save': function (el) { saveExampleFromSheet(el.getAttribute('data-id')); },
+    'ai-example': function (el) {
+      var w = byId(el.getAttribute('data-id')); if (!w) return;
+      var cur = { w: w.w, p: w.p, m: w.m, e: $('#ex-e') ? $('#ex-e').value.trim() : w.e };
+      runAiExample(cur, $('#ex-hint') ? $('#ex-hint').value.trim() : '', '#ex-e', '#ex-k', el);
+    },
+    'ai-edit-example': function (el) {
+      var f = { w: $('#f-w').value.trim(), p: $('#f-p').value, m: $('#f-m').value.trim(), e: $('#f-e').value.trim() };
+      if (!f.w || !f.m) { toast('단어와 뜻을 먼저 입력해 주세요'); return; }
+      runAiExample(f, $('#f-hint').value.trim(), '#f-e', '#f-k', el);
+    },
+    'ai-key-eye': function (el) { var i = $('#ai-key'); var show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? '숨김' : '보기'; },
+    'ai-test': function (el) {
+      if (!AI.key) { toast('API 키를 먼저 입력해 주세요'); $('#ai-key').focus(); return; }
+      var orig = el.textContent; el.disabled = true; el.textContent = '확인 중…';
+      aiGenerateExample({ w: 'figure out', p: 'phr.', m: '알아내다, 해결하다', e: '' }, '').then(function (r) {
+        toast('연결 성공 ✓  ' + r.e);
+      }, function (err) { toast(err && err.msg ? err.msg : '연결 실패'); }).then(function () { if (el.isConnected) { el.disabled = false; el.textContent = orig; } });
+    },
+    'ai-models': function (el) {
+      if (!AI.key) { toast('API 키를 먼저 입력해 주세요'); $('#ai-key').focus(); return; }
+      var orig = el.textContent; el.disabled = true; el.textContent = '불러오는 중…';
+      aiListModels().then(function (list) {
+        if (!list.length) { toast('사용 가능한 모델을 찾지 못했어요'); return; }
+        openSheet('<div class="sh-word"><span>모델 선택</span></div><div class="small muted" style="margin-top:4px">무료 사용량은 Flash 계열이 넉넉해요. 현재: <b>' + esc(AI.model) + '</b></div><div class="model-list">' +
+          list.map(function (m) { return '<button class="' + (m === AI.model ? 'on' : '') + '" data-action="ai-pick-model" data-model="' + esc(m) + '">' + esc(m) + '</button>'; }).join('') +
+          '</div><div class="sh-actions"><button class="btn" data-action="close-sheet">닫기</button></div>');
+      }, function (err) { toast(err && err.msg ? err.msg : '모델 목록을 가져오지 못했어요'); }).then(function () { if (el.isConnected) { el.disabled = false; el.textContent = orig; } });
+    },
+    'ai-pick-model': function (el) { AI.model = el.getAttribute('data-model'); saveAi(); closeSheet(); RENDER.settings({ scroll: 'ai' }); toast('모델: ' + AI.model); },
+    'open-url': function (el) { bridge.openUrl(el.getAttribute('data-url')); },
     'reseed': function () {
       var n = seedBuiltin(S); save();
       toast(n ? '기본 단어 ' + n + '개를 대기 목록에 추가했어요' : '기본 단어가 이미 모두 있어요');

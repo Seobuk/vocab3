@@ -361,3 +361,16 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .srow .sbar > div { height: 100%; border-radius: 999px; }
 .srow .sn { flex: 0 0 46px; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
 .srow .sn small { font-size: 11px; color: var(--muted); font-weight: 600; margin-left: 1px; }
+
+/* ---- AI 예문 (v1.15) ---- */
+.ai-row { display: flex; gap: 8px; align-items: stretch; margin: 2px 0 12px; }
+.ai-row input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface2); color: var(--text); font: inherit; font-size: 14px; }
+.ai-row input:focus { outline: none; border-color: var(--primary); }
+.btn.ai { flex: none; background: linear-gradient(135deg, var(--primary), #8B5CF6); color: #fff; border: 0; white-space: nowrap; }
+.btn.ai.busy, .btn.ai:disabled { opacity: .65; }
+.sheet .sh-actions .btn.ai { flex: 1.4; }
+.model-list { margin-top: 10px; max-height: 46vh; overflow-y: auto; }
+.model-list button { display: block; width: 100%; text-align: left; padding: 11px 12px; margin-top: 6px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface2); color: var(--text); font: inherit; font-size: 14px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.model-list button.on { border-color: var(--primary); background: var(--primary-soft); font-weight: 700; }
+.field .row { gap: 8px; }
+.field .row input { flex: 1; min-width: 0; }
