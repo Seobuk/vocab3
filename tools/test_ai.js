@@ -20,7 +20,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
         { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
         { name: 'models/gemini-2.5-flash-preview-tts', supportedGenerationMethods: ['generateContent'] },
         { name: 'models/gemini-2.5-pro', supportedGenerationMethods: ['generateContent'] }] });
-      if (/gemini-2\.5-flash:generateContent/.test(url)) {
+      if (/\/models\/(gemini-flash-lite-latest|gemini-2\.5-flash(-lite)?):generateContent/.test(url)) {
         const prompt = opt.body ? JSON.parse(opt.body).contents[0].parts[0].text : '';
         const word = (prompt.match(/Word\/expression: "([^"]+)"/) || [])[1] || '?';
         return ok({ candidates: [{ content: { parts: [{ text: JSON.stringify({ e: `Let me ${word} what went wrong before the meeting.`, k: `회의 전에 뭐가 잘못됐는지 알아볼게요.` }) }] } }] });
@@ -66,8 +66,11 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   await p.click('.model-list button[data-model="gemini-2.5-flash-lite"]'); await p.waitForTimeout(200);
   console.log('picked model:', await p.inputValue('#ai-model'), '| stored:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).model));
   await p.click('.model-list button[data-model="gemini-2.5-flash"]').catch(() => { });
-  await p.evaluate(() => { document.querySelector('#ai-model').value = 'models/gemini-2.5-flash'; document.querySelector('#ai-model').dispatchEvent(new Event('change')); });
+  await p.evaluate(() => { document.querySelector('#ai-model').value = 'models/gemini-flash-lite-latest'; document.querySelector('#ai-model').dispatchEvent(new Event('change')); });
   console.log('model typed with prefix → stored:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).model));
+  // v1.15 users who saved gemini-2.5-flash are migrated to the alias on load
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-2.5-flash' })); }); await p.reload(); await p.waitForTimeout(300);
+  console.log('migrated stale model:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).model), '(stored file is rewritten on next save)');
   await p.screenshot({ path: OUT + '/71-settings-ai.png' });
   // (5) back to study (session persists) → long-press → AI → save → card updated
   await p.click('[data-action="tab"][data-tab="home"]'); await p.waitForTimeout(150);
@@ -77,6 +80,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   await p.click('[data-action="ai-example"]'); await p.waitForTimeout(400);
   const call = await p.evaluate(() => window.__aiCalls[window.__aiCalls.length - 1]);
   console.log('AI call:', call.method, call.url.replace(/^https:\/\/generativelanguage.googleapis.com/, ''), '| key header:', call.key, '| schema:', JSON.stringify(call.body.generationConfig.responseSchema.required));
+  console.log('default model is the alias:', /gemini-flash-lite-latest:generateContent/.test(call.url) || call.url);
   console.log('prompt has hint:', /회의에서/.test(call.body.contents[0].parts[0].text), '| has current example:', call.body.contents[0].parts[0].text.indexOf(exampleBefore) >= 0);
   console.log('filled:', await p.inputValue('#ex-e'), '/', await p.inputValue('#ex-k'));
   await p.screenshot({ path: OUT + '/72-example-ai.png' });

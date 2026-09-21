@@ -3,10 +3,43 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.15';
+  var APP_VERSION = '1.16';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
+  // 색 테마 10종 — 라이트/다크 각각 검증된 팔레트 (본문 대비 ≥14:1, 버튼 글자 ≥4.5:1)
+  var THEMES = [
+    { id: 'indigo', name: '인디고',
+      l: { bg: '#F4F5FA', surface: '#FFFFFF', surface2: '#EEF0F7', line: '#E4E6EF', text: '#151827', muted: '#6C7280', primary: '#4F46E5', soft: '#EEF0FF', on: '#FFFFFF' },
+      d: { bg: '#0F1117', surface: '#181B25', surface2: '#222634', line: '#2A2F3D', text: '#ECEFF4', muted: '#9AA3B2', primary: '#8F8AFA', soft: '#262A48', on: '#14123A' } },
+    { id: 'coral', name: '코랄 선셋',
+      l: { bg: '#FFF5F1', surface: '#FFFFFF', surface2: '#FBE9E2', line: '#F1D9CF', text: '#2A1712', muted: '#8A665C', primary: '#C9412A', soft: '#FFE5DC', on: '#FFFFFF' },
+      d: { bg: '#171110', surface: '#221917', surface2: '#2E221F', line: '#3B2D29', text: '#F6ECE8', muted: '#B39C94', primary: '#FF8266', soft: '#3A241F', on: '#1A0D09' } },
+    { id: 'teal', name: '딥 틸',
+      l: { bg: '#EEF8F6', surface: '#FFFFFF', surface2: '#E0F0ED', line: '#CFE3DF', text: '#0F2320', muted: '#587570', primary: '#0B7F73', soft: '#DDF3EF', on: '#FFFFFF' },
+      d: { bg: '#0D1614', surface: '#152120', surface2: '#1E2C2A', line: '#283835', text: '#E8F3F1', muted: '#93ABA6', primary: '#2DD4BF', soft: '#143732', on: '#062421' } },
+    { id: 'lavender', name: '라벤더',
+      l: { bg: '#F6F3FE', surface: '#FFFFFF', surface2: '#ECE7FB', line: '#DED6F3', text: '#1B1530', muted: '#6C6588', primary: '#7C3AED', soft: '#EEE6FF', on: '#FFFFFF' },
+      d: { bg: '#12101A', surface: '#1A1726', surface2: '#241F33', line: '#2F2942', text: '#EFEBFA', muted: '#A49CBE', primary: '#B197FC', soft: '#2A2347', on: '#160F2E' } },
+    { id: 'rose', name: '로즈',
+      l: { bg: '#FFF1F5', surface: '#FFFFFF', surface2: '#FBE5EC', line: '#F2D3DD', text: '#2A1420', muted: '#8A6273', primary: '#D42670', soft: '#FFE1EA', on: '#FFFFFF' },
+      d: { bg: '#1A1015', surface: '#241820', surface2: '#30212B', line: '#3D2C37', text: '#F7EAF0', muted: '#B497A4', primary: '#F472B6', soft: '#3E1F30', on: '#2A0B1C' } },
+    { id: 'forest', name: '포레스트',
+      l: { bg: '#F0F7F1', surface: '#FFFFFF', surface2: '#E3EFE5', line: '#D1E2D5', text: '#122016', muted: '#5C7562', primary: '#2B7A4B', soft: '#DFF2E4', on: '#FFFFFF' },
+      d: { bg: '#0F1511', surface: '#162019', surface2: '#1E2B22', line: '#29382E', text: '#E9F2EB', muted: '#93A898', primary: '#4ADE80', soft: '#1C3A27', on: '#062812' } },
+    { id: 'sky', name: '오션 블루',
+      l: { bg: '#EEF5FB', surface: '#FFFFFF', surface2: '#E1EDF7', line: '#CFE0EE', text: '#0F1F2B', muted: '#5B7184', primary: '#0A6BA8', soft: '#DDEEFA', on: '#FFFFFF' },
+      d: { bg: '#0D1419', surface: '#152029', surface2: '#1D2B36', line: '#283846', text: '#E8F0F6', muted: '#93A6B5', primary: '#38BDF8', soft: '#17364A', on: '#062033' } },
+    { id: 'amber', name: '앰버 허니',
+      l: { bg: '#FFF7EA', surface: '#FFFFFF', surface2: '#FBEBD1', line: '#F0DDBD', text: '#2A1E0A', muted: '#85683E', primary: '#B45309', soft: '#FDEBCF', on: '#FFFFFF' },
+      d: { bg: '#171309', surface: '#221C10', surface2: '#2E2616', line: '#3B3220', text: '#F6EEDD', muted: '#B5A585', primary: '#FBBF24', soft: '#3D2F10', on: '#2A1D02' } },
+    { id: 'sand', name: '웜 샌드',
+      l: { bg: '#F8F3EC', surface: '#FFFDFA', surface2: '#EFE6DA', line: '#E2D6C6', text: '#2A2118', muted: '#7A6957', primary: '#8B5E34', soft: '#F1E4D3', on: '#FFFFFF' },
+      d: { bg: '#171310', surface: '#211C17', surface2: '#2C251F', line: '#39312A', text: '#F3ECE3', muted: '#ADA090', primary: '#D9A87A', soft: '#3A2D22', on: '#211508' } },
+    { id: 'graphite', name: '그래파이트',
+      l: { bg: '#F4F4F5', surface: '#FFFFFF', surface2: '#E9E9EC', line: '#DBDBE0', text: '#18181B', muted: '#6B6B75', primary: '#1F2937', soft: '#E6E8EC', on: '#FFFFFF' },
+      d: { bg: '#101012', surface: '#18181B', surface2: '#222226', line: '#2C2C31', text: '#ECECEE', muted: '#A1A1AA', primary: '#C3C6CF', soft: '#2E2E33', on: '#111114' } }
+  ];
   var POS_LIST = ['', 'n.', 'v.', 'adj.', 'adv.', 'phr.', 'prep.', 'conj.', 'idiom'];
   var ICON_SPK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
   var ICON_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
@@ -132,13 +165,15 @@
 
   /* ---------------- AI (Gemini) example generation ---------------- */
   // The API key lives under its own prefs key (not inside the state JSON), so backups/exports never contain it.
-  var AI_KEY = 'vocab3.ai.v1', AI_DEFAULT_MODEL = 'gemini-2.5-flash', AI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+  // Default is an alias (always the current Flash-Lite), so it never retires; fixed ids like gemini-2.5-flash got 404 for new accounts.
+  var AI_KEY = 'vocab3.ai.v1', AI_DEFAULT_MODEL = 'gemini-flash-lite-latest', AI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
   var AI = (function () {
     var o = null;
     try { o = JSON.parse(bridge.loadRaw(AI_KEY) || 'null'); } catch (e) { o = null; }
     o = o || {};
     if (typeof o.key !== 'string') o.key = '';
     if (!o.model || typeof o.model !== 'string') o.model = AI_DEFAULT_MODEL;
+    if (o.model === 'gemini-2.5-flash') o.model = AI_DEFAULT_MODEL; // v1.15 default, saved with the key; Google rejects it for accounts made after 2026-09
     return o;
   })();
   function saveAi() { bridge.saveRaw(AI_KEY, JSON.stringify(AI)); }
@@ -150,6 +185,7 @@
     if (res.status === 401 || res.status === 403) return 'API 키가 거부됐어요 (' + res.status + ')';
     if (res.status === 404) return '모델 "' + AI.model + '"을(를) 찾을 수 없어요. 설정 → 모델 목록에서 골라 주세요';
     if (res.status === 429) return '요청 한도를 넘었어요. 잠시 후 다시 시도하세요';
+    if (res.status === 503) return '"' + AI.model + '" 모델이 지금 붐벼요. 잠시 후 다시 하거나 설정에서 다른 모델을 골라 주세요';
     if (res.status >= 500) return 'Gemini 서버 오류 (' + res.status + ')';
     return '오류 ' + res.status + (msg ? ': ' + msg.slice(0, 90) : '');
   }
@@ -177,7 +213,11 @@
       }
     });
     var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent';
+    // one retry on 503 ("high demand" spikes are momentary per Google); add backoff only if 503s keep showing up
     return bridge.aiCall(url, AI.key, body).then(function (res) {
+      if (res.status !== 503) return res;
+      return new Promise(function (r) { setTimeout(r, 1500); }).then(function () { return bridge.aiCall(url, AI.key, body); });
+    }).then(function (res) {
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = null;
       try {
@@ -287,7 +327,7 @@
   var S = null;
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', tipDismissed: false, shuffle: true, swapJudge: false };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
@@ -383,6 +423,10 @@
     if (S.lastDailyDate === today) return 0;
     var n = pullNewWords(S.settings.dailyGoal - counts()[1]);
     S.lastDailyDate = today;
+    if (S.settings.themeRandom) {
+      var t = pickRandomTheme();
+      setTimeout(function () { toast('오늘의 테마 · ' + t.name + (n ? ' · 새 단어 ' + n + '개' : '')); }, 500);
+    }
     save();
     return n;
   }
@@ -406,7 +450,8 @@
   function back() {
     if (modalOpen) { closeModal(null); return; }
     if (sheetOpen) { closeSheet(); return; }
-    var cur = current();
+    var cur = current(), prev = stack[stack.length - 2];
+    if (prev && prev.view === 'study') { stack.pop(); render(); return; } // detour from the card (e.g. settings for the AI key) → back to the card, not home
     if (cur && cur.view !== 'home') { goTab('home'); return; }
     confirm2(AUD.active ? '앱을 종료할까요?\n(듣기 복습은 알림에서 계속 재생돼요)' : '앱을 종료할까요?', '종료').then(function (ok) { if (ok) bridge.exitApp(); });
   }
@@ -471,12 +516,47 @@
   }
 
   /* ---------------- theme ---------------- */
+  function hexRgb(h) { h = h.replace('#', ''); return [parseInt(h.substr(0, 2), 16), parseInt(h.substr(2, 2), 16), parseInt(h.substr(4, 2), 16)]; }
+  // 그라데이션 끝 색: 색상(hue)을 살짝 돌리고 밝기를 올린 변형
+  function shiftHue(hex, dh, dl) {
+    var c = hexRgb(hex).map(function (v) { return v / 255; }), r = c[0], g = c[1], b = c[2];
+    var max = Math.max(r, g, b), min = Math.min(r, g, b), h = 0, s = 0, l = (max + min) / 2, d = max - min;
+    if (d) {
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6; else if (max === g) h = ((b - r) / d + 2) / 6; else h = ((r - g) / d + 4) / 6;
+    }
+    if (h * 360 > 35 && h * 360 < 100) dh = -dh; // 노랑~연두 계열은 초록 쪽이 아니라 주황 쪽으로
+    h = (h + dh / 360 + 1) % 1; l = Math.min(0.92, Math.max(0.08, l + dl / 100));
+    function f(t) { if (t < 0) t += 1; if (t > 1) t -= 1; if (t < 1 / 6) return q0 + (q1 - q0) * 6 * t; if (t < 1 / 2) return q1; if (t < 2 / 3) return q0 + (q1 - q0) * (2 / 3 - t) * 6; return q0; }
+    var q1 = l < 0.5 ? l * (1 + s) : l + s - l * s, q0 = 2 * l - q1;
+    var out = s ? [f(h + 1 / 3), f(h), f(h - 1 / 3)] : [l, l, l];
+    return '#' + out.map(function (v) { v = Math.round(v * 255); return (v < 16 ? '0' : '') + v.toString(16); }).join('').toUpperCase();
+  }
+  function themeById(id) { for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) return THEMES[i]; return THEMES[0]; }
   function applyTheme() {
     var dark = S.settings.theme === 'dark';
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    var color = dark ? '#0F1117' : '#F4F5FA';
-    var meta = $('meta[name=theme-color]'); if (meta) meta.setAttribute('content', color);
-    bridge.setSystemBars(color, !dark);
+    var t = themeById(S.settings.colorTheme), p = dark ? t.d : t.l, root = document.documentElement;
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+    root.setAttribute('data-color', t.id);
+    var map = { '--bg': p.bg, '--surface': p.surface, '--surface2': p.surface2, '--line': p.line, '--text': p.text, '--muted': p.muted, '--primary': p.primary, '--primary-soft': p.soft, '--on-primary': p.on,
+      '--primary-2': shiftHue(p.primary, 18, dark ? 4 : 6), '--primary-rgb': hexRgb(p.primary).join(', '), '--primary-deep': t.l.primary };
+    for (var k in map) root.style.setProperty(k, map[k]);
+    var meta = $('meta[name=theme-color]'); if (meta) meta.setAttribute('content', p.bg);
+    bridge.setSystemBars(p.bg, !dark);
+  }
+  // 새 단어를 받을 때마다 다른 테마로 — 직전 테마는 제외
+  function pickRandomTheme() {
+    // 최근 5개는 제외해서 일주일 안에 같은 테마가 다시 나오지 않게
+    var hist = Array.isArray(S.settings.themeHist) ? S.settings.themeHist : [];
+    var cur = S.settings.colorTheme;
+    var pool = THEMES.filter(function (t) { return t.id !== cur && hist.indexOf(t.id) < 0; });
+    if (!pool.length) pool = THEMES.filter(function (t) { return t.id !== cur; });
+    var t = pool[Math.floor(Math.random() * pool.length)];
+    hist.push(cur); while (hist.length > 5) hist.shift();
+    S.settings.themeHist = hist;
+    S.settings.colorTheme = t.id;
+    applyTheme();
+    return t;
   }
 
   /* ---------------- speak ---------------- */
@@ -1081,6 +1161,7 @@
   /* ================= SETTINGS ================= */
   RENDER.settings = function (p) {
     var st = S.settings, c = counts(), au = st.audio;
+    var keepScroll = (p && p.scroll === 'keep') ? $('#view-settings').scrollTop : null;
     function apick(key, title, sub, opts, val) {
       return '<div class="switch-row"><div><div class="sw-t">' + title + '</div>' + (sub ? '<div class="sw-s">' + sub + '</div>' : '') + '</div><div class="pick">' + opts.map(function (o) {
         return '<button class="' + (Number(o[0]) === Number(val) ? 'on' : '') + '" data-action="audio-pick" data-key="' + key + '" data-value="' + o[0] + '">' + o[1] + '</button>';
@@ -1122,13 +1203,20 @@
       asw('loop', '끝나면 처음부터 반복', '', au.loop) +
       '</div>' +
       '<div class="section-title" id="ai-settings">AI 예문 (Gemini)</div><div class="settings-group">' +
-      '<div class="field" style="padding-top:12px"><label>Gemini API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="AIza…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" style="flex:none">보기</button></div></div>' +
+      '<div class="field" style="padding-top:12px"><label>Gemini API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="AQ.…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" style="flex:none">보기</button></div></div>' +
       '<div class="field"><label>모델</label><div class="row"><input id="ai-model" value="' + esc(AI.model) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-models" style="flex:none">목록</button></div></div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://aistudio.google.com/apikey">키 발급 페이지 (무료)</button></div>' +
       '<div class="small muted" style="padding:0 0 12px;line-height:1.5">학습 카드의 <b>예문을 길게 누르면</b> 수정·AI 생성 창이 열려요. 키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. AI 버튼을 누를 때만 단어·뜻·예문이 Google Gemini로 전송돼요.</div>' +
       '</div>' +
       '<div class="section-title">화면</div><div class="settings-group">' +
-      pick('theme', '테마', '', [['light', '라이트'], ['dark', '다크']], st.theme) +
+      pick('theme', '밝기', '', [['light', '라이트'], ['dark', '다크']], st.theme) +
+      '<div class="switch-row" style="flex-direction:column;align-items:stretch;gap:10px"><div><div class="sw-t">색 테마 <span class="muted" id="themeName">' + esc(themeById(st.colorTheme).name) + '</span></div><div class="sw-s">탭해서 고르거나, 아래 스위치를 켜면 새 단어를 받을 때마다 랜덤으로 바뀌어요</div></div>' +
+      '<div class="swatches">' + THEMES.map(function (t) {
+        var p = st.theme === 'dark' ? t.d : t.l;
+        return '<button class="sw' + (t.id === st.colorTheme ? ' on' : '') + '" data-action="color-theme" data-id="' + t.id + '" aria-label="' + esc(t.name) + '" style="--sw-bg:' + p.bg + ';--sw-p:' + p.primary + ';--sw-s:' + p.surface2 + '"><span class="sw-chip"><i></i></span><small>' + esc(t.name) + '</small></button>';
+      }).join('') + '</div></div>' +
+      sw('themeRandom', '매일 테마 자동 변경', '새 단어가 1단계에 채워질 때마다 색 테마가 랜덤으로 바뀌어요', st.themeRandom) +
+      '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="theme-shuffle">🎲 지금 다른 테마로</button></div>' +
       '</div>' +
       '<div class="section-title">데이터</div><div class="settings-group">' +
       '<div class="btn-row"><button class="btn" data-action="backup-file">백업 파일 저장</button><button class="btn" data-action="restore-file">백업 파일 불러오기</button></div>' +
@@ -1144,6 +1232,7 @@
       '</div>' +
       '<div class="center muted small">3단계 단어장 v' + APP_VERSION + ' · 단어 ' + S.words.length + '개 · TTS ' + (bridge.ttsReady() ? '사용 가능' : '준비 중/사용 불가') + '</div>' +
       '</div>';
+    if (keepScroll != null) $('#view-settings').scrollTop = keepScroll;
     $('#rate').addEventListener('input', function (e) { S.settings.rate = Number(e.target.value); $('#rateVal').textContent = S.settings.rate.toFixed(1) + 'x'; save(); });
     $('#ai-key').addEventListener('input', function (e) { AI.key = e.target.value.trim(); saveAi(); });
     $('#ai-model').addEventListener('change', function (e) { AI.model = e.target.value.trim().replace(/^models\//, '') || AI_DEFAULT_MODEL; e.target.value = AI.model; saveAi(); });
@@ -1306,8 +1395,9 @@
     'tab': function (el) { goTab(el.getAttribute('data-tab')); },
     'start': function (el) { startSession(Number(el.getAttribute('data-stage'))); },
     'pull': function () {
-      var n = pullNewWords(S.settings.dailyGoal);
-      save(); toast(n ? '새 단어 ' + n + '개를 1단계로 가져왔어요' : '대기 중인 단어가 없어요'); render();
+      var n = pullNewWords(S.settings.dailyGoal), t = null;
+      if (n && S.settings.themeRandom) t = pickRandomTheme();
+      save(); toast(n ? '새 단어 ' + n + '개를 1단계로 가져왔어요' + (t ? ' · 테마: ' + t.name : '') : '대기 중인 단어가 없어요'); render();
     },
     'list': function (el) { stack = [{ view: 'home', params: {} }]; go('list', { stage: el.getAttribute('data-stage') === 'all' ? 'all' : Number(el.getAttribute('data-stage')) }); },
     'list-tab': function (el) { var s = el.getAttribute('data-stage'); listState.stage = s === 'all' ? 'all' : Number(s); RENDER.list({}); },
@@ -1370,7 +1460,7 @@
     'setting-pick': function (el) {
       var k = el.getAttribute('data-key'), v = el.getAttribute('data-value');
       S.settings[k] = (k === 'dailyGoal') ? Number(v) : v;
-      save(); if (k === 'theme') applyTheme(); RENDER.settings();
+      save(); if (k === 'theme') applyTheme(); RENDER.settings({ scroll: 'keep' });
     },
     'tts-test': function () { speak('Let\'s catch up over lunch.', 'en'); if (!bridge.ttsReady()) toast('TTS가 아직 준비되지 않았어요'); },
     'backup-file': function () { saveNow(); bridge.saveFile(backupName(), backupJSON()); },
@@ -1415,6 +1505,8 @@
     },
     'ai-pick-model': function (el) { AI.model = el.getAttribute('data-model'); saveAi(); closeSheet(); RENDER.settings({ scroll: 'ai' }); toast('모델: ' + AI.model); },
     'open-url': function (el) { bridge.openUrl(el.getAttribute('data-url')); },
+    'color-theme': function (el) { S.settings.colorTheme = el.getAttribute('data-id'); save(); applyTheme(); RENDER.settings({ scroll: 'keep' }); },
+    'theme-shuffle': function () { var t = pickRandomTheme(); save(); RENDER.settings({ scroll: 'keep' }); toast('테마: ' + t.name); },
     'reseed': function () {
       var n = seedBuiltin(S); save();
       toast(n ? '기본 단어 ' + n + '개를 대기 목록에 추가했어요' : '기본 단어가 이미 모두 있어요');
@@ -1477,7 +1569,7 @@
   window.addEventListener('pagehide', saveNow);
 
   // debugging / testing hooks
-  window.__vocab = { state: function () { return S; }, save: saveNow, go: go, startSession: startSession, judge: judge, reload: function () { S = loadState(); goTab('home'); } };
+  window.__vocab = { state: function () { return S; }, save: saveNow, go: go, startSession: startSession, judge: judge, applyTheme: applyTheme, themes: function () { return THEMES.map(function (t) { return t.id; }); }, reload: function () { S = loadState(); goTab('home'); } };
 
   S = loadState();
   applyTheme();

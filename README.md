@@ -9,7 +9,7 @@
 <img src="docs/screenshots/01_home.png" width="180"> <img src="docs/screenshots/02_card_front.png" width="180"> <img src="docs/screenshots/03_card_revealed.png" width="180"> <img src="docs/screenshots/05_ko_mode.png" width="180">
 </p>
 <p>
-<img src="docs/screenshots/10_audio_setup.png" width="180"> <img src="docs/screenshots/11_audio_player.png" width="180"> <img src="docs/screenshots/06_summary.png" width="180"> <img src="docs/screenshots/09_dark_card.png" width="180">
+<img src="docs/screenshots/14_themes.png" width="360"> <img src="docs/screenshots/10_audio_setup.png" width="180"> <img src="docs/screenshots/11_audio_player.png" width="180"> <img src="docs/screenshots/06_summary.png" width="180"> <img src="docs/screenshots/09_dark_card.png" width="180">
 </p>
 
 ## 기능
@@ -22,7 +22,8 @@
 - **단어 관리** — 직접 추가, `단어 | 뜻 | 예문 | 해석` 형식 일괄 붙여넣기, 단계 이동, 검색, 백업/복원(파일·클립보드·공유).
 - **통계** — 연속/최장 학습일·외움률 타일, 최근 14일 외움/아직 막대, 12주 학습 히트맵, 단계별 단어 분포, 자주 틀린 단어.
 - **예문 수정 + AI 예문 (Gemini)** — 학습 카드의 예문을 길게 누르면 바로 고칠 수 있고, 설정에 본인 Gemini API 키를 넣으면 "✨ AI 새 예문"으로 상황(예: 회의에서)에 맞는 예문과 해석을 받아 옵니다. 키는 기기에만 저장되고 저장소·백업에는 절대 포함되지 않습니다.
-- 기본 단어 200개(회화 필수 표현 10테마), 다크 모드, 연속 학습일.
+- **색 테마 10종** — 인디고·코랄 선셋·딥 틸·라벤더·로즈·포레스트·오션 블루·앰버 허니·웜 샌드·그래파이트(라이트/다크 각각). 새 단어가 채워질 때마다 랜덤으로 바뀌고(끌 수 있음), 설정에서 직접 고를 수도 있어요.
+- 기본 단어 200개(회화 필수 표현 10테마), 연속 학습일.
 
 ## 설치
 
