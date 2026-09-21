@@ -23,3 +23,7 @@ release/
 
 # tokens for tools/release.sh — never commit
 .secrets/
+
+# Claude Code local state
+.claude/worktrees/
+.claude/settings.local.json
