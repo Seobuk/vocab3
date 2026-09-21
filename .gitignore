@@ -17,3 +17,6 @@ node_modules/
 __pycache__/
 *.pyc
 .DS_Store
+
+# local release artifacts (APK + notes for gh release)
+release/
