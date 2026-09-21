@@ -20,3 +20,6 @@ __pycache__/
 
 # local release artifacts (APK + notes for gh release)
 release/
+
+# tokens for tools/release.sh — never commit
+.secrets/
