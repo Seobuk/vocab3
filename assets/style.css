@@ -457,3 +457,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .corr .c-better { font-weight: 700; }
 .corr .c-why { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 .btn.block { width: 100%; }
+
+/* v1.19: 말하기 끝나면 보내기 버튼이 잠깐 깜빡여 확인을 유도 */
+.chat-bar .send.ready { animation: sendpulse 1s 3; }
+@keyframes sendpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), .5); } 50% { box-shadow: 0 0 0 10px rgba(var(--primary-rgb), 0); } }

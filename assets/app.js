@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.18';
+  var APP_VERSION = '1.19';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -388,6 +388,7 @@
     for (var k in d) if (!(k in s.settings)) s.settings[k] = d[k];
     var dt = defaultTalk(), tk = s.settings.talk || {};
     for (var tkk in dt) if (!(tkk in tk)) tk[tkk] = dt[tkk];
+    if (!tk.autoSendV2) { tk.autoSend = false; tk.autoSendV2 = true; }   // v1.19: ■ 뒤에 확인하고 보내는 게 기본
     s.settings.talk = tk;
     if (!Array.isArray(s.talkLog)) s.talkLog = [];
     var da = defaultAudio(), hadAudio = !!s.settings.audio, a = s.settings.audio || {};
@@ -1035,7 +1036,7 @@
     { id: 'free', name: '자유 주제', icon: '💬', role: 'a friendly conversation partner', desc: 'Whatever the learner wants to talk about' }
   ];
   var LEVELS = { easy: 'CEFR A2 — short simple sentences, very common words', normal: 'CEFR B1 — natural everyday spoken English', hard: 'CEFR B2 — richer vocabulary, idioms, longer turns' };
-  function defaultTalk() { return { level: 'normal', feedbackLang: 'ko', speak: true, autoSend: true, missionN: 5, scenario: 'cafe', guide: true }; }
+  function defaultTalk() { return { level: 'normal', feedbackLang: 'ko', speak: true, autoSend: false, missionN: 5, scenario: 'cafe', guide: true }; }
   function scenarioById(id) { for (var i = 0; i < SCENARIOS.length; i++) if (SCENARIOS[i].id === id) return SCENARIOS[i]; return SCENARIOS[0]; }
   var TALK = null;          // 진행 중인 대화 { scenario, custom, level, words:[{id,w,m,used}], msgs:[{role,text,fix,note,hidden}], busy, ended, startedAt }
   var talkSetup = null;     // 설정 화면 상태 { custom, words }
@@ -1237,10 +1238,10 @@
   function sttStop() {
     if (!STT.on) return;
     STT.on = false; STT.wait = true;
-    bridge.sttStop();
     renderChat(false);
+    bridge.sttStop();   // 브라우저 fallback 은 여기서 동기적으로 결과를 줄 수도 있다 → 그 뒤에 다시 그리지 않는다
     // 인식기가 끝내 답이 없으면 화면에 보이던 문장으로 마무리한다
-    STT.timer = setTimeout(function () { if (STT.wait) window.onStt(STT.partial); }, 4000);
+    if (STT.wait) STT.timer = setTimeout(function () { if (STT.wait) window.onStt(STT.partial); }, 6000);
   }
   window.onSttPartial = function (text) { if (!STT.on) return; STT.partial = text; var i = $('#chatIn'); if (i) i.value = text; };
   window.onSttState = function (st) {
@@ -1253,8 +1254,11 @@
     text = String(text || '').replace(/\s+/g, ' ').trim();
     if (!TALK) return;
     if (!text) { renderChat(false); toast('잘 못 들었어요. 다시 말해 주세요'); return; }
-    if (S.settings.talk.autoSend) { talkTurn(text); }
-    else { renderChat(false); var i = $('#chatIn'); if (i) { i.value = text; i.focus(); } }
+    if (S.settings.talk.autoSend) { talkTurn(text); return; }
+    // 기본: 입력창에 넣어 주고, 확인·수정한 뒤 ➤ 로 보낸다
+    renderChat(false);
+    var i = $('#chatIn'); if (i) { i.value = text; i.placeholder = '확인하고 ➤ 누르기'; i.focus(); try { i.setSelectionRange(text.length, text.length); } catch (e) { } }
+    var sb = $('.chat-bar .send'); if (sb) sb.classList.add('ready');
   };
   window.onSttError = function (code) {
     sttReset(); if (TALK) renderChat(false);

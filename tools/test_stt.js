@@ -36,6 +36,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.reload(); await p.waitForTimeout(400);
   await p.click('[data-action="talk"]'); await p.waitForTimeout(200);
   eq('가이드 토글 기본 켜짐', await p.evaluate(() => window.__vocab.state().settings.talk.guide), 'true');
+  eq('자동 보내기 기본 꺼짐 (v1.19)', await p.evaluate(() => window.__vocab.state().settings.talk.autoSend), 'false');
   await p.click('[data-action="talk-start"]'); await p.waitForTimeout(500);
 
   // --- 할 말 가이드 ---
@@ -58,9 +59,21 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   eq('쉬었다 이어 말한 것도 합쳐짐', await p.inputValue('#chatIn'), 'Can I get a latte with oat milk please');
   await p.screenshot({ path: OUT + '/104-talk-listening.png' });
   await p.click('[data-action="talk-mic"]'); await p.waitForTimeout(600);
-  eq('■ 누르면 한 번만 전송', await msgs(), before + 2);   // 내 말 + AI 답
-  eq('전송된 문장', await p.$$eval('.msg.me .bubble', x => x[x.length - 1].textContent), 'Can I get a latte with oat milk please');
+  eq('■ 누르면 바로 전송하지 않음 (v1.19 기본)', await msgs(), before);
+  eq('입력창에 전체 문장', await p.inputValue('#chatIn'), 'Can I get a latte with oat milk please');
+  eq('확인 안내', await p.getAttribute('#chatIn', 'placeholder'), '확인하고 ➤ 누르기');
   eq('마이크 원상복구', await p.textContent('#micBtn'), '🎤');
+  await p.click('[data-action="talk-send"]'); await p.waitForTimeout(600);
+  eq('➤ 누르면 한 번만 전송', await msgs(), before + 2);   // 내 말 + AI 답
+  eq('전송된 문장', await p.$$eval('.msg.me .bubble', x => x[x.length - 1].textContent), 'Can I get a latte with oat milk please');
+  // 자동 보내기 켜면 ■ 에서 바로 전송
+  await p.evaluate(() => { window.__vocab.state().settings.talk.autoSend = true; window.__vocab.save(); });
+  const b2 = await msgs();
+  await p.click('[data-action="talk-mic"]'); await p.waitForTimeout(150);
+  await p.evaluate(() => window.__say('Thanks a lot', true)); await p.waitForTimeout(100);
+  await p.click('[data-action="talk-mic"]'); await p.waitForTimeout(600);
+  eq('자동 보내기 ON → ■ 에서 전송', await msgs(), b2 + 2);
+  await p.evaluate(() => { window.__vocab.state().settings.talk.autoSend = false; window.__vocab.save(); });
 
   // --- 칩을 누르면 그 문장이 입력창에 ---
   await p.click('.say-bar .say'); await p.waitForTimeout(150);

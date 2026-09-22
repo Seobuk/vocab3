@@ -66,6 +66,8 @@ public class MainActivity extends Activity {
     private boolean sttActive = false;      // startListening ~ onResults/onError 사이
     private String sttText = "";            // 끊긴 구간들을 이어 붙인 문장
     private int sttSilent = 0;              // 연속으로 아무 말 없던 구간 수
+    private String sttSegPartial = "";     // 지금 듣는 구간의 마지막 부분 인식 결과 (확정 결과가 꼬리를 잘라 먹으면 이걸로 보충)
+    private int sttSeq = 0;                 // 지연 stopListening 이 옛 구간에 적용되지 않게
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -265,7 +267,10 @@ public class MainActivity extends Activity {
                     @Override public void onPartialResults(Bundle partial) {
                         if (!sttActive) return;
                         ArrayList<String> list = partial.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                        if (list != null && !list.isEmpty()) runJs("window.onSttPartial && window.onSttPartial(" + jsString(sttJoin(sttText, list.get(0))) + ")");
+                        if (list != null && !list.isEmpty()) {
+                            sttSegPartial = list.get(0);
+                            runJs("window.onSttPartial && window.onSttPartial(" + jsString(sttJoin(sttText, list.get(0))) + ")");
+                        }
                     }
                     @Override public void onEvent(int eventType, Bundle params) { }
                 });
@@ -290,7 +295,7 @@ public class MainActivity extends Activity {
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
-            sttActive = true;
+            sttActive = true; sttSegPartial = ""; sttSeq++;
             stt.startListening(i);
         } catch (Exception e) {
             sttActive = false; sttListening = false;
@@ -303,6 +308,10 @@ public class MainActivity extends Activity {
         if (!sttListening && !sttActive) return;   // 이미 끝났거나 취소된 세션의 뒤늦은 콜백
         sttActive = false;
         String seg = (text == null) ? "" : text.trim();
+        // stopListening() 직후의 확정 결과는 마지막 단어를 떨어뜨리거나 아예 비어 오기도 한다 → 부분 결과가 더 길면 그걸 쓴다
+        String part = (sttSegPartial == null) ? "" : sttSegPartial.trim();
+        if (part.length() > seg.length() && (seg.length() == 0 || part.toLowerCase().startsWith(seg.toLowerCase()))) seg = part;
+        sttSegPartial = "";
         if (seg.length() > 0) { sttText = sttJoin(sttText, seg); sttSilent = 0; } else sttSilent++;
         // ponytail: 계속 조용하면(≈20초) 마이크를 놓는다. 더 오래 쉬고 싶으면 이 숫자만 올리면 됨
         if (sttListening && sttSilent < 4) {
@@ -641,7 +650,15 @@ public class MainActivity extends Activity {
                 public void run() {
                     if (!sttListening && !sttActive) return;
                     sttListening = false;
-                    if (sttActive) { try { if (stt != null) stt.stopListening(); } catch (Exception ignored) { } }
+                    if (sttActive) {
+                        // 바로 stopListening() 하면 마지막 단어가 잘린다 — 0.8초 안에 끝점 검출로 스스로 끝나면 그 결과를, 아니면 그때 멈춘다
+                        final int seq = sttSeq;
+                        if (web != null) web.postDelayed(new Runnable() {
+                            @Override public void run() {
+                                if (sttActive && sttSeq == seq) { try { if (stt != null) stt.stopListening(); } catch (Exception ignored) { } }
+                            }
+                        }, 800);
+                    }
                     else finishStt();   // 구간 재시작 사이라 멈출 세션이 없다 → 모아 둔 문장을 바로 넘긴다
                 }
             });
