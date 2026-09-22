@@ -59,7 +59,24 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   const after = await p.evaluate(() => window.__vocab.state().words.length);
   console.log('expressions added:', after - before, '| new word:', await p.evaluate(() => { const w = window.__vocab.state().words; return w[w.length - 1].w + ' / ' + w[w.length - 1].t + ' / stage ' + w[w.length - 1].stage; }));
   await p.click('[data-action="close-sheet"]'); await p.waitForTimeout(250);
-  console.log('back on setup with log:', await p.evaluate(() => document.querySelector('.view.active').id), await p.evaluate(() => JSON.stringify(window.__vocab.state().talkLog)));
+  console.log('back on setup with log:', await p.evaluate(() => document.querySelector('.view.active').id), await p.evaluate(() => JSON.stringify(window.__vocab.state().talkLog.map(r => ({ id: !!r.id, turns: r.turns, score: r.score, msgs: r.msgs.length, corr: r.corrections.length, ex: r.expressions.length })))));
+  // --- v1.20: 최근 연습 목록에서 리포트 다시 열기 (전문 포함) → 삭제 ---
+  // 예전 버전 기록(id·msgs 없음)도 섞어 넣어 호환을 본다
+  await p.evaluate(() => { const s = window.__vocab.state(); s.talkLog.unshift({ date: '2026-09-01', scenario: 'work', turns: 3, used: 1, total: 3, score: 3, comment: '예전 기록' }); window.__vocab.save(); });
+  await p.reload(); await p.waitForTimeout(400); await p.click('[data-action="talk"]'); await p.waitForTimeout(250);
+  console.log('log rows:', await p.$$eval('.logrow', x => x.map(r => r.textContent.replace(/\s+/g, ' ').trim())), '| legacy got id:', await p.evaluate(() => window.__vocab.state().talkLog.every(r => !!r.id)));
+  await p.click('.logrow'); await p.waitForTimeout(250);   // 맨 위 = 가장 최근(방금 한 연습)
+  console.log('reopened title:', await p.textContent('#sheet .sh-word span'), '| tiles:', await p.$$eval('.sum-tile', x => x.map(t => t.textContent.replace(/\s+/g, ' '))));
+  console.log('transcript lines:', await p.$$eval('.transcript .tr', x => x.map(t => t.className.replace('tr ', '') + ':' + t.querySelector('div > div > div').textContent.slice(0, 22))), '| fix shown in transcript:', await p.$$eval('.tr-fix', x => x.map(t => t.textContent)));
+  console.log('expr already in list tagged:', await p.$$eval('#sheet .tag', x => x.map(t => t.textContent)).then(a => a.filter(t => t === '단어장에 있음').length), '| add button hidden when nothing new:', !(await p.$('[data-action="talk-add-expr"]')), '| delete button:', !!(await p.$('[data-action="talk-log-del"]')));
+  await p.screenshot({ path: OUT + '/105-talk-report-reopen.png' });
+  await p.click('[data-action="close-sheet"]'); await p.waitForTimeout(200);
+  await p.click('.logrow:nth-child(2)'); await p.waitForTimeout(250);   // 예전 기록
+  console.log('legacy report note:', await p.evaluate(() => /대화 전문이 저장되기 전/.test(document.querySelector('#sheet').textContent)), '| no transcript:', !(await p.$('.transcript')));
+  await p.click('[data-action="talk-log-del"]'); await p.waitForTimeout(200);
+  console.log('delete confirm:', await p.evaluate(() => document.querySelector('#modal').classList.contains('show')));
+  await p.click('#modal .btn.danger'); await p.waitForTimeout(300);
+  console.log('after delete: rows', await p.$$eval('.logrow', x => x.length), '| sheet closed:', await p.evaluate(() => !document.querySelector('#sheet').classList.contains('show')), '| remaining:', await p.evaluate(() => window.__vocab.state().talkLog.map(r => r.date).join(',')));
   // free scenario custom text reaches the system prompt
   await p.click('.scen[data-id="free"]'); await p.waitForTimeout(150);
   await p.fill('#talk-custom', '학회에서 발표 후 질문 받기');

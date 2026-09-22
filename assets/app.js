@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.19';
+  var APP_VERSION = '1.20';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -391,6 +391,8 @@
     if (!tk.autoSendV2) { tk.autoSend = false; tk.autoSendV2 = true; }   // v1.19: ■ 뒤에 확인하고 보내는 게 기본
     s.settings.talk = tk;
     if (!Array.isArray(s.talkLog)) s.talkLog = [];
+    // v1.20: 예전 기록에도 id를 붙여 리포트 삭제가 되게
+    s.talkLog.forEach(function (r, i) { if (r && !r.id) r.id = 'tk0' + i + '-' + String(r.date || '').replace(/-/g, ''); });
     var da = defaultAudio(), hadAudio = !!s.settings.audio, a = s.settings.audio || {};
     if (hadAudio) {
       // one-time migrations for settings saved by older versions (must run BEFORE defaults are merged in)
@@ -1055,7 +1057,7 @@
   RENDER.talk = function (p) {
     var t = S.settings.talk;
     if (!talkSetup || (p && p.reset)) talkSetup = { custom: '', words: pickMissionWords(t.missionN) };
-    var log = (S.talkLog || []).slice(-5).reverse();
+    var log = (S.talkLog || []).slice(-10).reverse();
     $('#view-talk').innerHTML =
       '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title">회화 연습</span><span style="width:42px"></span></div>' +
       '<div class="wrap">' +
@@ -1078,8 +1080,8 @@
       '</div>' +
       '<button class="btn primary big" data-action="talk-start">🗣 대화 시작</button>' +
       (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
-      (log.length ? '<div class="section-title">최근 연습</div><div class="settings-group">' + log.map(function (l) {
-        return '<div class="switch-row"><div><div class="sw-t">' + esc(scenarioById(l.scenario).icon + ' ' + (l.custom || scenarioById(l.scenario).name)) + '</div><div class="sw-s">' + esc(l.date) + ' · ' + l.turns + '턴 · 미션 ' + l.used + '/' + l.total + (l.score ? ' · ★' + l.score : '') + '</div></div></div>';
+      (log.length ? '<div class="section-title">최근 연습 <span class="muted">— 누르면 리포트 다시 보기</span></div><div class="settings-group">' + log.map(function (l, i) {
+        return '<button class="switch-row logrow" data-action="talk-log" data-i="' + ((S.talkLog.length - 1) - i) + '"><div><div class="sw-t">' + esc(scenarioById(l.scenario).icon + ' ' + (l.custom || scenarioById(l.scenario).name)) + '</div><div class="sw-s">' + esc(l.date + (l.time ? ' ' + l.time : '')) + ' · ' + l.turns + '턴 · 미션 ' + l.used + '/' + l.total + (l.score ? ' · ★' + l.score : '') + '</div></div><span class="chev">›</span></button>';
       }).join('') + '</div>' : '') +
       '</div>';
     var ci = $('#talk-custom'); if (ci) ci.addEventListener('input', function (e) { talkSetup.custom = e.target.value; });
@@ -1293,24 +1295,45 @@
   function finishTalk(sum, err) {
     var t = TALK; TALK = null;
     var used = t.words.filter(function (w) { return w.used; }).length;
-    var sc = scenarioById(t.scenario);
-    S.talkLog = (S.talkLog || []).concat([{ date: localDate(), scenario: t.scenario, custom: t.custom, turns: t.turns, used: used, total: t.words.length, score: Number(sum.score) || 0 }]).slice(-30);
+    var rec = {
+      id: 'tk' + Date.now().toString(36), date: localDate(), time: new Date().toTimeString().slice(0, 5),
+      scenario: t.scenario, custom: t.custom, level: t.level, turns: t.turns, used: used, total: t.words.length,
+      words: t.words.map(function (w) { return { w: w.w, used: !!w.used }; }),
+      score: Number(sum.score) || 0, comment: String(sum.comment || ''), err: err || '',
+      corrections: (sum.corrections || []).filter(function (c) { return c && c.better; }).slice(0, 5).map(function (c) { return { you: String(c.you || ''), better: String(c.better || ''), why: String(c.why || '') }; }),
+      expressions: (sum.expressions || []).filter(function (x) { return x && x.w; }).slice(0, 4).map(function (x) { return { w: String(x.w), m: String(x.m || ''), e: String(x.e || ''), k: String(x.k || '') }; }),
+      // 대화 전문 — 리포트를 나중에 다시 볼 때 같이 보여 준다
+      msgs: t.msgs.filter(function (m) { return !m.hidden && !m.failed; }).map(function (m) { var o = { r: m.role === 'user' ? 'u' : 'a', t: m.text }; if (m.fix) o.f = m.fix; if (m.note) o.n = m.note; return o; })
+    };
+    S.talkLog = (S.talkLog || []).concat([rec]).slice(-30);
     var d = dayStat(); d.talk = (d.talk || 0) + 1;
     save();
-    var ex = (sum.expressions || []).filter(function (x) { return x && x.w; }).slice(0, 4);
-    lastSummaryExpr = ex;
     go('talk', { reset: true }, true);
+    openTalkReport(rec, true);
+  }
+  // 리포트 시트 — 방금 끝난 연습(fresh)과 최근 연습 목록에서 다시 열 때 공용
+  function openTalkReport(rec, fresh) {
+    var sc = scenarioById(rec.scenario), ex = rec.expressions || [], corr = rec.corrections || [], msgs = rec.msgs || [];
+    lastSummaryExpr = ex;
+    var have = {}; S.words.forEach(function (w) { have[w.w.toLowerCase()] = true; });
+    var newEx = ex.filter(function (x) { return !have[String(x.w).toLowerCase()]; });
     openSheet(
-      '<div class="sh-word"><span>연습 끝!</span><span class="tag" style="flex:none">' + esc(sc.icon + ' ' + (t.custom || sc.name)) + '</span></div>' +
-      '<div class="sum-row"><div class="sum-tile"><b>' + t.turns + '</b><span>내 발화</span></div><div class="sum-tile"><b>' + used + '<small>/' + t.words.length + '</small></b><span>미션 단어</span></div><div class="sum-tile"><b>' + (sum.score ? '★' + sum.score : '–') + '</b><span>평가</span></div></div>' +
-      (sum.comment ? '<div class="tip" style="margin-top:10px">' + esc(sum.comment) + '</div>' : (err ? '<div class="small muted" style="margin-top:8px">' + esc(err) + '</div>' : '')) +
-      ((sum.corrections || []).length ? '<div class="section-title" style="margin-top:14px">교정</div>' + sum.corrections.slice(0, 5).map(function (c) {
+      '<div class="sh-word"><span>' + (fresh ? '연습 끝!' : '연습 리포트') + '</span><span class="tag" style="flex:none">' + esc(sc.icon + ' ' + (rec.custom || sc.name)) + '</span></div>' +
+      '<div class="small muted">' + esc(rec.date + (rec.time ? ' ' + rec.time : '')) + (rec.level ? ' · ' + ({ easy: '쉽게', normal: '보통', hard: '어렵게' }[rec.level] || rec.level) : '') + '</div>' +
+      '<div class="sum-row"><div class="sum-tile"><b>' + rec.turns + '</b><span>내 발화</span></div><div class="sum-tile"><b>' + rec.used + '<small>/' + rec.total + '</small></b><span>미션 단어</span></div><div class="sum-tile"><b>' + (rec.score ? '★' + rec.score : '–') + '</b><span>평가</span></div></div>' +
+      ((rec.words || []).length ? '<div class="mission" style="margin-top:10px">' + rec.words.map(function (w) { return '<span class="mchip' + (w.used ? ' done' : '') + '">' + (w.used ? '✓ ' : '') + esc(w.w) + '</span>'; }).join('') + '</div>' : '') +
+      (rec.comment ? '<div class="tip" style="margin-top:10px">' + esc(rec.comment) + '</div>' : (rec.err ? '<div class="small muted" style="margin-top:8px">' + esc(rec.err) + '</div>' : '')) +
+      (!msgs.length && !fresh ? '<div class="small muted" style="margin-top:8px">이 연습은 대화 전문이 저장되기 전 버전(1.19 이하)에서 한 거라 요약만 남아 있어요.</div>' : '') +
+      (corr.length ? '<div class="section-title" style="margin-top:14px">교정</div>' + corr.map(function (c) {
         return '<div class="corr"><div class="c-you">' + esc(c.you) + '</div><div class="c-better">→ ' + esc(c.better) + '</div><div class="c-why">' + esc(c.why) + '</div></div>';
       }).join('') : '') +
-      (ex.length ? '<div class="section-title" style="margin-top:14px">기억할 표현</div>' + ex.map(function (x, i) {
-        return '<div class="corr"><div class="c-better"><b>' + esc(x.w) + '</b> <span class="muted">' + esc(x.m) + '</span></div><div class="c-why">' + esc(x.e) + '</div></div>';
-      }).join('') + '<button class="btn block" data-action="talk-add-expr" style="margin-top:8px">＋ 표현 ' + ex.length + '개를 대기 단어장에 추가</button>' : '') +
-      '<div class="sh-actions"><button class="btn primary" data-action="close-sheet">닫기</button></div>'
+      (ex.length ? '<div class="section-title" style="margin-top:14px">기억할 표현</div>' + ex.map(function (x) {
+        return '<div class="corr"><div class="c-better"><b>' + esc(x.w) + '</b> <span class="muted">' + esc(x.m) + '</span>' + (have[String(x.w).toLowerCase()] ? ' <span class="tag" style="flex:none">단어장에 있음</span>' : '') + '</div><div class="c-why">' + esc(x.e) + '</div></div>';
+      }).join('') + (newEx.length ? '<button class="btn block" data-action="talk-add-expr" style="margin-top:8px">＋ 표현 ' + newEx.length + '개를 대기 단어장에 추가</button>' : '') : '') +
+      (msgs.length ? '<div class="section-title" style="margin-top:14px">대화 다시 보기</div><div class="transcript">' + msgs.map(function (m) {
+        return '<div class="tr ' + (m.r === 'u' ? 'me' : 'ai') + '"><span class="who">' + (m.r === 'u' ? '나' : 'AI') + '</span><div><div>' + esc(m.t) + '</div>' + (m.f ? '<div class="tr-fix">✏️ ' + esc(m.f) + '</div>' : '') + '</div></div>';
+      }).join('') + '</div>' : '') +
+      '<div class="sh-actions">' + (fresh ? '' : '<button class="btn danger" data-action="talk-log-del" data-id="' + esc(rec.id || '') + '">삭제</button>') + '<button class="btn primary" data-action="close-sheet">닫기</button></div>'
     );
   }
   var lastSummaryExpr = [];
@@ -1875,6 +1898,14 @@
     'talk-retry': function () { talkRetry(); },
     'talk-end': function () { talkBack(); },
     'talk-add-expr': function () { talkAddExpressions(); },
+    'talk-log': function (el) { var rec = (S.talkLog || [])[Number(el.getAttribute('data-i'))]; if (rec) openTalkReport(rec, false); },
+    'talk-log-del': function (el) {
+      var id = el.getAttribute('data-id');
+      confirm2('이 연습 리포트를 지울까요?', '삭제', true).then(function (ok) {
+        if (!ok) return;
+        S.talkLog = (S.talkLog || []).filter(function (r) { return r.id !== id; }); save(); closeSheet(); RENDER.talk();
+      });
+    },
     'speak-text': function (el) { speak(el.getAttribute('data-text'), 'en'); },
     'color-theme': function (el) { S.settings.colorTheme = el.getAttribute('data-id'); save(); applyTheme(); RENDER.settings({ scroll: 'keep' }); },
     'theme-shuffle': function () { var t = pickRandomTheme(); save(); RENDER.settings({ scroll: 'keep' }); toast('테마: ' + t.name); },
