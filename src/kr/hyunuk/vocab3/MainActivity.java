@@ -62,6 +62,10 @@ public class MainActivity extends Activity {
     private SpeechRecognizer stt;
     private boolean sttPendingStart = false;
     private String sttLang = "en-US";
+    private boolean sttListening = false;   // 사용자가 멈추라고 할 때까지 계속 듣는 중
+    private boolean sttActive = false;      // startListening ~ onResults/onError 사이
+    private String sttText = "";            // 끊긴 구간들을 이어 붙인 문장
+    private int sttSilent = 0;              // 연속으로 아무 말 없던 구간 수
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -183,6 +187,8 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         if (tts != null) tts.stop();
+        // 이제 듣기가 저절로 끝나지 않으므로, 앱이 내려가면 마이크를 반드시 놓아 준다
+        if (sttListening || sttActive) { cancelStt(); runJs("window.onSttState && window.onSttState('cancel')"); }
         runJs("window.onAppPause && window.onAppPause()");
     }
 
@@ -234,31 +240,49 @@ public class MainActivity extends Activity {
                     @Override public void onBeginningOfSpeech() { runJs("window.onSttState && window.onSttState('speech')"); }
                     @Override public void onRmsChanged(float rmsdB) { }
                     @Override public void onBufferReceived(byte[] buffer) { }
-                    @Override public void onEndOfSpeech() { runJs("window.onSttState && window.onSttState('end')"); }
+                    @Override public void onEndOfSpeech() { }   // 한 구간이 끝났을 뿐 — 아직 듣는 중이면 곧 다시 시작한다
                     @Override public void onError(int error) {
+                        // 말을 고르느라 쉬면 인식기가 이렇게 끝낸다 → 오류가 아니라 "빈 구간"으로 치고 이어 듣는다
+                        if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                                || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
+                            sttSegmentDone("");
+                            return;
+                        }
+                        if (!sttListening && !sttActive) return;
+                        sttListening = false; sttActive = false; sttText = ""; sttSilent = 0;
                         String code;
                         switch (error) {
-                            case SpeechRecognizer.ERROR_NO_MATCH: case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: code = "nomatch"; break;
                             case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: code = "permission"; break;
                             case SpeechRecognizer.ERROR_NETWORK: case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: case SpeechRecognizer.ERROR_SERVER: code = "network"; break;
-                            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: code = "busy"; break;
                             default: code = "error" + error;
                         }
                         runJs("window.onSttError && window.onSttError(" + jsString(code) + ")");
                     }
                     @Override public void onResults(Bundle results) {
                         ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                        String best = (list != null && !list.isEmpty()) ? list.get(0) : "";
-                        runJs("window.onStt && window.onStt(" + jsString(best) + ")");
+                        sttSegmentDone((list != null && !list.isEmpty()) ? list.get(0) : "");
                     }
                     @Override public void onPartialResults(Bundle partial) {
+                        if (!sttActive) return;
                         ArrayList<String> list = partial.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                        if (list != null && !list.isEmpty()) runJs("window.onSttPartial && window.onSttPartial(" + jsString(list.get(0)) + ")");
+                        if (list != null && !list.isEmpty()) runJs("window.onSttPartial && window.onSttPartial(" + jsString(sttJoin(sttText, list.get(0))) + ")");
                     }
                     @Override public void onEvent(int eventType, Bundle params) { }
                 });
             }
             if (tts != null) tts.stop();
+            sttListening = true; sttText = ""; sttSilent = 0;
+            listenSegment();
+        } catch (Exception e) {
+            sttListening = false; sttActive = false;
+            runJs("window.onSttError && window.onSttError(" + jsString("exception") + ")");
+        }
+    }
+
+    // 인식기는 짧은 침묵만으로도 스스로 끝나 버린다. 그래서 한 번에 한 구간만 듣고,
+    // 사용자가 멈추기 전까지는 구간을 이어서 다시 듣는다 (재시작 사이 0.15초는 녹음되지 않음).
+    private void listenSegment() {
+        try {
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, sttLang);
@@ -266,10 +290,48 @@ public class MainActivity extends Activity {
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+            sttActive = true;
             stt.startListening(i);
         } catch (Exception e) {
+            sttActive = false; sttListening = false;
             runJs("window.onSttError && window.onSttError(" + jsString("exception") + ")");
         }
+    }
+
+    /** 한 구간의 결과 (빈 문자열 = 그 구간엔 말이 없었음). */
+    private void sttSegmentDone(String text) {
+        if (!sttListening && !sttActive) return;   // 이미 끝났거나 취소된 세션의 뒤늦은 콜백
+        sttActive = false;
+        String seg = (text == null) ? "" : text.trim();
+        if (seg.length() > 0) { sttText = sttJoin(sttText, seg); sttSilent = 0; } else sttSilent++;
+        // ponytail: 계속 조용하면(≈20초) 마이크를 놓는다. 더 오래 쉬고 싶으면 이 숫자만 올리면 됨
+        if (sttListening && sttSilent < 4) {
+            if (web != null) web.postDelayed(new Runnable() {
+                @Override public void run() { if (sttListening && !sttActive) listenSegment(); }
+            }, 150);
+            return;
+        }
+        finishStt();
+    }
+
+    private void finishStt() {
+        sttListening = false; sttActive = false;
+        String out = sttText;
+        sttText = ""; sttSilent = 0;
+        runJs("window.onSttState && window.onSttState('end')");
+        runJs("window.onStt && window.onStt(" + jsString(out) + ")");
+    }
+
+    private void cancelStt() {
+        if (!sttListening && !sttActive) return;
+        sttListening = false; sttActive = false; sttText = ""; sttSilent = 0;
+        try { if (stt != null) stt.cancel(); } catch (Exception ignored) { }
+    }
+
+    private static String sttJoin(String a, String b) {
+        if (a == null || a.length() == 0) return b;
+        if (b == null || b.length() == 0) return a;
+        return a + " " + b;
     }
 
     private void launchService(Intent i) {
@@ -554,7 +616,8 @@ public class MainActivity extends Activity {
             try { return SpeechRecognizer.isRecognitionAvailable(MainActivity.this); } catch (Exception e) { return false; }
         }
 
-        /** Starts one recognition session (lang e.g. "en-US"); results arrive via window.onStt / onSttPartial / onSttError / onSttState. */
+        /** Starts listening (lang e.g. "en-US") and keeps listening across pauses until sttStop();
+         *  the joined sentence arrives once via window.onStt (live text via onSttPartial, problems via onSttError). */
         @JavascriptInterface
         public void sttStart(final String lang) {
             runOnUiThread(new Runnable() {
@@ -575,7 +638,12 @@ public class MainActivity extends Activity {
         public void sttStop() {
             runOnUiThread(new Runnable() {
                 @Override
-                public void run() { try { if (stt != null) stt.stopListening(); } catch (Exception ignored) { } }
+                public void run() {
+                    if (!sttListening && !sttActive) return;
+                    sttListening = false;
+                    if (sttActive) { try { if (stt != null) stt.stopListening(); } catch (Exception ignored) { } }
+                    else finishStt();   // 구간 재시작 사이라 멈출 세션이 없다 → 모아 둔 문장을 바로 넘긴다
+                }
             });
         }
 
@@ -583,7 +651,7 @@ public class MainActivity extends Activity {
         public void sttCancel() {
             runOnUiThread(new Runnable() {
                 @Override
-                public void run() { try { if (stt != null) stt.cancel(); } catch (Exception ignored) { } }
+                public void run() { cancelStt(); }
             });
         }
 

@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.17';
+  var APP_VERSION = '1.18';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -148,15 +148,26 @@
       try {
         if (isAndroid) { window.Android.sttStart(lang || 'en-US'); return; }
         var SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { window.onSttError && window.onSttError('unavailable'); return; }
-        var r = webStt = new SR(); r.lang = lang || 'en-US'; r.interimResults = true; r.maxAlternatives = 1;
-        r.onresult = function (ev) { var fin = '', part = ''; for (var i = ev.resultIndex; i < ev.results.length; i++) { if (ev.results[i].isFinal) fin += ev.results[i][0].transcript; else part += ev.results[i][0].transcript; } if (fin) { window.onStt && window.onStt(fin); } else if (part) { window.onSttPartial && window.onSttPartial(part); } };
-        r.onerror = function (ev) { window.onSttError && window.onSttError(ev.error === 'not-allowed' ? 'permission' : ev.error === 'no-speech' ? 'nomatch' : ev.error); };
-        r.onend = function () { window.onSttState && window.onSttState('end'); };
+        // 안드로이드와 똑같이: 멈추라고 할 때까지 듣고, 끊긴 구간을 이어 붙여 마지막에 한 번만 넘긴다
+        var r = webStt = new SR(); r.lang = lang || 'en-US'; r.interimResults = true; r.maxAlternatives = 1; r.continuous = true;
+        var acc = '';
+        var join = function (a, b) { return a && b ? a + ' ' + b : (a || b); };
+        r.onresult = function (ev) {
+          var fin = '', part = '';
+          for (var i = ev.resultIndex; i < ev.results.length; i++) { if (ev.results[i].isFinal) fin += ev.results[i][0].transcript; else part += ev.results[i][0].transcript; }
+          if (fin) acc = join(acc, fin.trim());
+          window.onSttPartial && window.onSttPartial(join(acc, part.trim()));
+        };
+        r.onerror = function (ev) {
+          if (ev.error === 'no-speech' || ev.error === 'aborted') return;   // 잠깐 쉰 것뿐 — onend 에서 정리한다
+          webStt = null; window.onSttError && window.onSttError(ev.error === 'not-allowed' ? 'permission' : ev.error);
+        };
+        r.onend = function () { if (webStt !== r) return; webStt = null; window.onSttState && window.onSttState('end'); window.onStt && window.onStt(acc); };
         r.start();
       } catch (e) { window.onSttError && window.onSttError('exception'); }
     },
     sttStop: function () { try { if (isAndroid) window.Android.sttStop(); else if (webStt) webStt.stop(); } catch (e) { } },
-    sttCancel: function () { try { if (isAndroid) window.Android.sttCancel(); else if (webStt) webStt.abort(); } catch (e) { } },
+    sttCancel: function () { try { if (isAndroid) window.Android.sttCancel(); else if (webStt) { var w = webStt; webStt = null; w.abort(); } } catch (e) { } },
     // HTTPS JSON request → Promise<{status, text}> (status 0 = network error). Android does it natively (no CORS), browser uses fetch.
     aiCall: function (url, key, body) {
       return new Promise(function (resolve) {
@@ -1024,11 +1035,11 @@
     { id: 'free', name: '자유 주제', icon: '💬', role: 'a friendly conversation partner', desc: 'Whatever the learner wants to talk about' }
   ];
   var LEVELS = { easy: 'CEFR A2 — short simple sentences, very common words', normal: 'CEFR B1 — natural everyday spoken English', hard: 'CEFR B2 — richer vocabulary, idioms, longer turns' };
-  function defaultTalk() { return { level: 'normal', feedbackLang: 'ko', speak: true, autoSend: true, missionN: 5, scenario: 'cafe' }; }
+  function defaultTalk() { return { level: 'normal', feedbackLang: 'ko', speak: true, autoSend: true, missionN: 5, scenario: 'cafe', guide: true }; }
   function scenarioById(id) { for (var i = 0; i < SCENARIOS.length; i++) if (SCENARIOS[i].id === id) return SCENARIOS[i]; return SCENARIOS[0]; }
   var TALK = null;          // 진행 중인 대화 { scenario, custom, level, words:[{id,w,m,used}], msgs:[{role,text,fix,note,hidden}], busy, ended, startedAt }
   var talkSetup = null;     // 설정 화면 상태 { custom, words }
-  var STT = { on: false, partial: '' };
+  var STT = { on: false, partial: '', wait: false, timer: 0 };   // wait: 멈춘 뒤 결과를 기다리는 중
 
   function pickMissionWords(n) {
     if (!n) return [];
@@ -1062,6 +1073,7 @@
       '<div class="switch-row"><div><div class="sw-t">교정 설명</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === t.feedbackLang ? 'on' : '') + '" data-action="talk-set" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
       '<div class="switch-row"><div><div class="sw-t">AI 답변 읽어 주기</div><div class="sw-s">답변이 오면 바로 음성으로 재생</div></div><button class="toggle' + (t.speak ? ' on' : '') + '" data-action="talk-toggle" data-key="speak"></button></div>' +
       '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (t.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>' +
+      '<div class="switch-row"><div><div class="sw-t">할 말 알려주기 (쉬움)</div><div class="sw-s">할 말이 막힐 때 그대로 읽으면 되는 문장 2개를 띄워 줘요</div></div><button class="toggle' + (t.guide ? ' on' : '') + '" data-action="talk-toggle" data-key="guide"></button></div>' +
       '</div>' +
       '<button class="btn primary big" data-action="talk-start">🗣 대화 시작</button>' +
       (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
@@ -1079,7 +1091,7 @@
     }
     var t = S.settings.talk;
     TALK = { scenario: t.scenario, custom: (talkSetup && talkSetup.custom || '').trim(), level: t.level, words: (talkSetup ? talkSetup.words : []).map(function (w) { return { id: w.id, w: w.w, m: w.m, used: false }; }), msgs: [], busy: false, ended: false, startedAt: Date.now(), turns: 0 };
-    STT = { on: false, partial: '' };
+    sttReset();
     go('chat');
     talkTurn(null);
   }
@@ -1094,7 +1106,10 @@
       words.length ? 'Target words the learner is practicing: ' + words.join(', ') + '. Steer the conversation so they get natural chances to use them; you may use them too.' : '',
       'Feedback on the learner\'s LAST message only: if it has a grammar, word-choice or naturalness problem, put the corrected full sentence in "fix" and a one-line explanation in "note" written in ' + fb + '. If it is fine, set "fix" to "" and "note" to a very short praise in ' + fb + '. For the opening turn (no learner message yet) both are "".',
       '"used": the target words the learner actually used in their last message (allow inflections), else [].',
-      'Return JSON only: {"reply": "...", "fix": "...", "note": "...", "used": []}'
+      S.settings.talk.guide
+        ? '"say": 2 different things the learner could say back to your "reply" right now — one short and very easy, one a little fuller. Each is one natural spoken sentence the learner can read aloud as-is (first person, fits the scene, ' + (words.length ? 'prefer the target words when they fit naturally, ' : '') + 'no placeholders like [name]), with "e" = the English sentence and "k" = its Korean translation.'
+        : '"say": [].',
+      'Return JSON only: {"reply": "...", "fix": "...", "note": "...", "used": [], "say": [{"e": "...", "k": "..."}]}'
     ].filter(Boolean).join('\n');
   }
 
@@ -1103,7 +1118,7 @@
     if (!TALK || TALK.busy) return;
     if (userText !== null) TALK.msgs.push({ role: 'user', text: userText });
     else TALK.msgs.push({ role: 'user', text: 'Start the conversation with a natural opening line for the scenario. No feedback yet.', hidden: true });
-    TALK.busy = true; renderChat();
+    TALK.busy = true; TALK.say = []; renderChat();
     var hist = TALK.msgs.slice(-24).map(function (m) { return { role: m.role, parts: [{ text: m.text }] }; });
     var body = JSON.stringify({
       systemInstruction: { parts: [{ text: talkSystem() }] },
@@ -1111,7 +1126,7 @@
       generationConfig: {
         temperature: 0.9,
         responseMimeType: 'application/json',
-        responseSchema: { type: 'OBJECT', properties: { reply: { type: 'STRING' }, fix: { type: 'STRING' }, note: { type: 'STRING' }, used: { type: 'ARRAY', items: { type: 'STRING' } } }, required: ['reply', 'fix', 'note', 'used'] }
+        responseSchema: { type: 'OBJECT', properties: { reply: { type: 'STRING' }, fix: { type: 'STRING' }, note: { type: 'STRING' }, used: { type: 'ARRAY', items: { type: 'STRING' } }, say: { type: 'ARRAY', items: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] } } }, required: ['reply', 'fix', 'note', 'used', 'say'] }
       }
     });
     var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent';
@@ -1131,6 +1146,7 @@
         TALK.turns++;
         markUsed(last.text, out.used || []);
       }
+      TALK.say = S.settings.talk.guide ? (out.say || []).filter(function (s) { return s && s.e; }).slice(0, 2) : [];
       TALK.msgs.push({ role: 'model', text: String(out.reply).trim() });
       TALK.busy = false; renderChat(true);
       if (S.settings.talk.speak) speak(String(out.reply).trim(), 'en');
@@ -1185,9 +1201,14 @@
       }).join('') +
       (TALK.busy ? '<div class="msg ai"><div class="bubble typing"><i></i><i></i><i></i></div></div>' : '') +
       '</div>' +
+      // 가이드 모드: 지금 할 만한 말을 그대로 읽으면 되게 보여 준다 (누르면 입력창에 들어감)
+      (!TALK.busy && t.guide && TALK.say && TALK.say.length
+        ? '<div class="say-bar">' + TALK.say.map(function (s, i) {
+          return '<button class="say" data-action="talk-say" data-i="' + i + '"><span class="say-e">' + esc(s.e) + '</span>' + (s.k ? '<span class="say-k">' + esc(s.k) + '</span>' : '') + '</button>';
+        }).join('') + '</div>' : '') +
       '<div class="chat-bar">' +
-      '<button class="mic' + (STT.on ? ' on' : '') + '" id="micBtn" data-action="talk-mic" aria-label="말하기"' + (TALK.busy ? ' disabled' : '') + '>' + (STT.on ? '■' : '🎤') + '</button>' +
-      '<input id="chatIn" placeholder="' + (STT.on ? '듣고 있어요…' : '영어로 말하거나 입력') + '" autocomplete="off" autocapitalize="sentences" value="' + esc(STT.partial || '') + '">' +
+      '<button class="mic' + (STT.on ? ' on' : STT.wait ? ' thinking' : '') + '" id="micBtn" data-action="talk-mic" aria-label="말하기"' + (TALK.busy || STT.wait ? ' disabled' : '') + '>' + (STT.on ? '■' : STT.wait ? '…' : '🎤') + '</button>' +
+      '<input id="chatIn" placeholder="' + (STT.on ? '듣는 중 · 다 말하면 ■ 누르기' : STT.wait ? '받아 적는 중…' : '영어로 말하거나 입력') + '" autocomplete="off" autocapitalize="sentences" value="' + esc(STT.partial || '') + '">' +
       '<button class="send" data-action="talk-send" aria-label="보내기"' + (TALK.busy ? ' disabled' : '') + '>➤</button>' +
       '</div>';
     v.innerHTML = html;
@@ -1199,32 +1220,44 @@
     var inp = $('#chatIn'); if (!inp) return;
     var text = inp.value.replace(/\s+/g, ' ').trim();
     if (!text || !TALK || TALK.busy) return;
-    if (STT.on) sttStop();
-    STT.partial = '';
+    if (STT.on || STT.wait) { bridge.sttCancel(); sttReset(); }   // 취소 — 안 그러면 뒤늦은 결과가 한 번 더 보내진다
     talkTurn(text);
   }
 
-  /* --- 음성 인식 --- */
+  /* --- 음성 인식: 🎤 를 눌러 시작하고, 다 말한 뒤 ■ 를 눌러 끝낸다 (중간에 쉬어도 안 끊김) --- */
+  function sttReset() { clearTimeout(STT.timer); STT = { on: false, partial: '', wait: false, timer: 0 }; }
   function sttStart() {
-    if (!TALK || TALK.busy) return;
+    if (!TALK || TALK.busy || STT.wait) return;
     if (!bridge.sttAvailable()) { toast('이 기기에서 음성 인식을 쓸 수 없어요. 입력창에 적어 주세요'); return; }
     bridge.stop();
-    STT.on = true; STT.partial = '';
+    sttReset(); STT.on = true;
     renderChat(false);
     bridge.sttStart('en-US');
   }
-  function sttStop() { STT.on = false; bridge.sttStop(); renderChat(false); }
+  function sttStop() {
+    if (!STT.on) return;
+    STT.on = false; STT.wait = true;
+    bridge.sttStop();
+    renderChat(false);
+    // 인식기가 끝내 답이 없으면 화면에 보이던 문장으로 마무리한다
+    STT.timer = setTimeout(function () { if (STT.wait) window.onStt(STT.partial); }, 4000);
+  }
   window.onSttPartial = function (text) { if (!STT.on) return; STT.partial = text; var i = $('#chatIn'); if (i) i.value = text; };
-  window.onSttState = function (st) { if (st === 'end') { var m = $('#micBtn'); if (m) m.classList.add('thinking'); } };
+  window.onSttState = function (st) {
+    if (st === 'cancel') { sttReset(); if (TALK) renderChat(false); return; }   // 앱이 백그라운드로 가서 마이크를 놓음
+    if (st === 'end') { var m = $('#micBtn'); if (m) m.classList.add('thinking'); }
+  };
   window.onStt = function (text) {
-    STT.on = false; STT.partial = '';
-    text = String(text || '').trim();
+    if (!STT.on && !STT.wait) return;   // 이미 처리했거나 취소된 결과
+    sttReset();
+    text = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!TALK) return;
     if (!text) { renderChat(false); toast('잘 못 들었어요. 다시 말해 주세요'); return; }
     if (S.settings.talk.autoSend) { talkTurn(text); }
     else { renderChat(false); var i = $('#chatIn'); if (i) { i.value = text; i.focus(); } }
   };
   window.onSttError = function (code) {
-    STT.on = false; STT.partial = ''; renderChat(false);
+    sttReset(); if (TALK) renderChat(false);
     var msg = { permission: '마이크 권한이 필요해요. 설정에서 허용해 주세요', unavailable: '이 기기에는 음성 인식 서비스가 없어요', nomatch: '잘 못 들었어요. 다시 말해 주세요', network: '음성 인식에 인터넷이 필요해요', busy: '음성 인식이 아직 바빠요. 잠시 후 다시' }[code];
     toast(msg || ('음성 인식 오류 (' + code + ')'));
   };
@@ -1289,8 +1322,8 @@
   }
   function talkBack() {
     if (!TALK) { go('talk', {}, true); return; }
-    if (TALK.turns === 0 && !TALK.busy) { TALK = null; if (STT.on) bridge.sttCancel(); go('talk', {}, true); return; }
-    confirm2('대화를 끝내고 정리할까요?', '끝내기').then(function (ok) { if (ok) { if (STT.on) { STT.on = false; bridge.sttCancel(); } talkEnd(); } });
+    if (TALK.turns === 0 && !TALK.busy) { TALK = null; bridge.sttCancel(); sttReset(); go('talk', {}, true); return; }
+    confirm2('대화를 끝내고 정리할까요?', '끝내기').then(function (ok) { if (ok) { bridge.sttCancel(); sttReset(); talkEnd(); } });
   }
 
   RENDER.list = function (p) {
@@ -1829,6 +1862,12 @@
     'talk-start': function () { talkStart(); },
     'talk-send': function () { talkSendFromInput(); },
     'talk-mic': function () { if (STT.on) sttStop(); else sttStart(); },
+    'talk-say': function (el) {
+      var s = (TALK && TALK.say || [])[+el.getAttribute('data-i')]; if (!s) return;
+      if (STT.on || STT.wait) { bridge.sttCancel(); sttReset(); renderChat(false); }
+      var i = $('#chatIn'); if (i) { i.value = s.e; i.focus(); }
+      speak(s.e, 'en');   // 따라 말할 수 있게 한 번 들려준다
+    },
     'talk-retry': function () { talkRetry(); },
     'talk-end': function () { talkBack(); },
     'talk-add-expr': function () { talkAddExpressions(); },
