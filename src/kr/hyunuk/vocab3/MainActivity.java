@@ -266,10 +266,17 @@ public class MainActivity extends Activity {
                     }
                     @Override public void onPartialResults(Bundle partial) {
                         if (!sttActive) return;
+                        // Google's recognizer splits a partial result in two: the words it is sure about (RESULTS_RECOGNITION)
+                        // and the tail it is still deciding on (UNSTABLE_TEXT). Showing only the first half is why the last
+                        // few words seemed to appear only after ■ — so show both, and keep both for the end-of-segment fallback.
                         ArrayList<String> list = partial.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                        if (list != null && !list.isEmpty()) {
-                            sttSegPartial = list.get(0);
-                            runJs("window.onSttPartial && window.onSttPartial(" + jsString(sttJoin(sttText, list.get(0))) + ")");
+                        ArrayList<String> unstable = partial.getStringArrayList("android.speech.extra.UNSTABLE_TEXT");
+                        String stable = (list != null && !list.isEmpty() && list.get(0) != null) ? list.get(0).trim() : "";
+                        String tail = (unstable != null && !unstable.isEmpty() && unstable.get(0) != null) ? unstable.get(0).trim() : "";
+                        String shown = sttJoin(stable, tail);
+                        if (shown.length() > 0) {
+                            sttSegPartial = shown;
+                            runJs("window.onSttPartial && window.onSttPartial(" + jsString(sttJoin(sttText, shown)) + ")");
                         }
                     }
                     @Override public void onEvent(int eventType, Bundle params) { }
