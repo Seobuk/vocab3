@@ -472,3 +472,11 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .tr > div { flex: 1; min-width: 0; background: var(--surface2); border-radius: 10px; padding: 7px 10px; }
 .tr.me > div { background: var(--primary-soft); }
 .tr .tr-fix { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+/* v1.21: 답변 대기 표시·취소, 첫 인사 실패 말풍선, 설정의 마지막 AI 호출 기록 */
+.wait-info { font-size: 12px; color: var(--muted); margin: 4px 0 0 8px; min-height: 0; }
+.wait-info b { color: var(--primary); text-decoration: underline; margin-left: 4px; }
+.msg.ai .bubble.errb { padding-right: 14px; border-left: 3px solid var(--danger); }
+.bubble.errb small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 3px; line-height: 1.4; }
+.fb.err .fb-note { color: var(--muted); }
+.ai-last { padding: 0 0 12px; line-height: 1.5; word-break: break-all; }
+.ai-last:empty { display: none; }

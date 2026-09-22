@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.20';
+  var APP_VERSION = '1.21';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -169,12 +169,12 @@
     sttStop: function () { try { if (isAndroid) window.Android.sttStop(); else if (webStt) webStt.stop(); } catch (e) { } },
     sttCancel: function () { try { if (isAndroid) window.Android.sttCancel(); else if (webStt) { var w = webStt; webStt = null; w.abort(); } } catch (e) { } },
     // HTTPS JSON request → Promise<{status, text}> (status 0 = network error). Android does it natively (no CORS), browser uses fetch.
-    aiCall: function (url, key, body) {
+    aiCall: function (url, key, body, timeoutMs) {
       return new Promise(function (resolve) {
         if (isAndroid) {
           var id = 'ai' + (++aiSeq);
           aiPending[id] = resolve;
-          setTimeout(function () { if (aiPending[id]) { delete aiPending[id]; resolve({ status: 0, text: 'timeout' }); } }, 45000);
+          setTimeout(function () { if (aiPending[id]) { delete aiPending[id]; resolve({ status: 0, text: 'timeout' }); } }, timeoutMs || 45000);
           try { window.Android.aiCall(id, url, key || '', body || ''); } catch (e) { delete aiPending[id]; resolve({ status: 0, text: String(e) }); }
           return;
         }
@@ -208,7 +208,12 @@
   function aiErrorMessage(res) {
     var msg = '';
     try { var j = JSON.parse(res.text); msg = (j.error && j.error.message) || ''; } catch (e) { }
-    if (res.status === 0) return '인터넷 연결을 확인하세요' + (res.text && res.text !== 'timeout' ? '' : ' (응답 없음)');
+    if (res.status === 0) {
+      var t = String(res.text || '');
+      if (t === 'timeout' || /SocketTimeout|timed? ?out/i.test(t)) return '응답이 너무 늦어요. 서버가 붐비거나 모델이 느린 것 같아요 — 잠시 후 다시 시도해 주세요';
+      if (/UnknownHost|ConnectException|unreachable|Failed to fetch|NetworkError|SSL|Handshake/i.test(t)) return '인터넷 연결을 확인하세요' + (/SSL|Handshake/i.test(t) ? ' (보안 연결 실패)' : '');
+      return '연결 실패' + (t ? ': ' + t.slice(0, 80) : '');
+    }
     if (res.status === 400 && /api key/i.test(msg)) return 'API 키가 올바르지 않아요';
     if (res.status === 401 || res.status === 403) return 'API 키가 거부됐어요 (' + res.status + ')';
     if (res.status === 404) return '모델 "' + AI.model + '"을(를) 찾을 수 없어요. 설정 → 모델 목록에서 골라 주세요';
@@ -216,6 +221,39 @@
     if (res.status === 503) return '"' + AI.model + '" 모델이 지금 붐벼요. 잠시 후 다시 하거나 설정에서 다른 모델을 골라 주세요';
     if (res.status >= 500) return 'Gemini 서버 오류 (' + res.status + ')';
     return '오류 ' + res.status + (msg ? ': ' + msg.slice(0, 90) : '');
+  }
+  // Gemini generateContent with the app's standard resilience: one retry on 503, flash-family models get
+  // thinking turned off (fast replies; a model that rejects thinkingConfig gets one retry without it), and the
+  // last call is recorded (AI.last) so 설정 → AI 예문 shows what happened when something goes wrong on the phone.
+  function aiGenerate(bodyObj, what, timeoutMs) {
+    var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent';
+    var noThink = !AI.noThink && /flash/i.test(AI.model);
+    if (noThink) { bodyObj.generationConfig = bodyObj.generationConfig || {}; bodyObj.generationConfig.thinkingConfig = { thinkingBudget: 0 }; }
+    var t0 = Date.now();
+    function call() { return bridge.aiCall(url, AI.key, JSON.stringify(bodyObj), timeoutMs); }
+    function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    return call().then(function (res) {
+      if (res.status === 503) return wait(1500).then(call);
+      return res;
+    }).then(function (res) {
+      if (res.status === 400 && noThink) {
+        // this model doesn't take thinkingConfig → drop it (remember it for this model) and go again
+        delete bodyObj.generationConfig.thinkingConfig; noThink = false;
+        if (/think/i.test(res.text)) { AI.noThink = true; saveAi(); }
+        return call();
+      }
+      return res;
+    }).then(function (res) {
+      AI.last = { at: Date.now(), ms: Date.now() - t0, status: res.status, what: what || '', err: res.status === 200 ? '' : aiErrorMessage(res) };
+      saveAi();
+      return res;
+    });
+  }
+  function aiLastLine() {
+    var l = AI.last; if (!l || !l.at) return '';
+    var d = new Date(l.at), hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    var what = { example: '예문', talk: '회화', summary: '회화 정리', test: '연결 테스트', models: '모델 목록' }[l.what] || l.what;
+    return '마지막 호출 ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh + ' · ' + what + ' · ' + (l.ms / 1000).toFixed(1) + '초 · ' + (l.status === 200 ? '성공 ✓' : '실패 — ' + esc(l.err || ('HTTP ' + l.status)));
   }
   function aiPrompt(w, hint) {
     return [
@@ -230,22 +268,17 @@
     ].filter(Boolean).join('\n');
   }
   // → Promise<{e, k}>; rejects with {nokey:true} or {msg}
-  function aiGenerateExample(w, hint) {
+  function aiGenerateExample(w, hint, what) {
     if (!AI.key) return Promise.reject({ nokey: true });
-    var body = JSON.stringify({
+    var body = {
       contents: [{ role: 'user', parts: [{ text: aiPrompt(w, hint) }] }],
       generationConfig: {
         temperature: 1.0,
         responseMimeType: 'application/json',
         responseSchema: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] }
       }
-    });
-    var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent';
-    // one retry on 503 ("high demand" spikes are momentary per Google); add backoff only if 503s keep showing up
-    return bridge.aiCall(url, AI.key, body).then(function (res) {
-      if (res.status !== 503) return res;
-      return new Promise(function (r) { setTimeout(r, 1500); }).then(function () { return bridge.aiCall(url, AI.key, body); });
-    }).then(function (res) {
+    };
+    return aiGenerate(body, what || 'example', 45000).then(function (res) {
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = null;
       try {
@@ -1093,7 +1126,7 @@
       return;
     }
     var t = S.settings.talk;
-    TALK = { scenario: t.scenario, custom: (talkSetup && talkSetup.custom || '').trim(), level: t.level, words: (talkSetup ? talkSetup.words : []).map(function (w) { return { id: w.id, w: w.w, m: w.m, used: false }; }), msgs: [], busy: false, ended: false, startedAt: Date.now(), turns: 0 };
+    TALK = { scenario: t.scenario, custom: (talkSetup && talkSetup.custom || '').trim(), level: t.level, words: (talkSetup ? talkSetup.words : []).map(function (w) { return { id: w.id, w: w.w, m: w.m, used: false }; }), msgs: [], busy: false, ended: false, startedAt: Date.now(), turns: 0, req: 0, reqAt: 0 };
     sttReset();
     go('chat');
     talkTurn(null);
@@ -1121,24 +1154,24 @@
     if (!TALK || TALK.busy) return;
     if (userText !== null) TALK.msgs.push({ role: 'user', text: userText });
     else TALK.msgs.push({ role: 'user', text: 'Start the conversation with a natural opening line for the scenario. No feedback yet.', hidden: true });
-    TALK.busy = true; TALK.say = []; renderChat();
-    var hist = TALK.msgs.slice(-24).map(function (m) { return { role: m.role, parts: [{ text: m.text }] }; });
-    var body = JSON.stringify({
-      systemInstruction: { parts: [{ text: talkSystem() }] },
-      contents: hist,
-      generationConfig: {
-        temperature: 0.9,
-        responseMimeType: 'application/json',
-        responseSchema: { type: 'OBJECT', properties: { reply: { type: 'STRING' }, fix: { type: 'STRING' }, note: { type: 'STRING' }, used: { type: 'ARRAY', items: { type: 'STRING' } }, say: { type: 'ARRAY', items: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] } } }, required: ['reply', 'fix', 'note', 'used', 'say'] }
-      }
-    });
-    var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent';
-    var myTalk = TALK;
-    bridge.aiCall(url, AI.key, body).then(function (res) {
-      if (res.status === 503) return new Promise(function (r) { setTimeout(r, 1500); }).then(function () { return bridge.aiCall(url, AI.key, body); });
-      return res;
-    }).then(function (res) {
-      if (TALK !== myTalk) return;
+    var myTalk = TALK, myReq = ++TALK.req;
+    TALK.busy = true; TALK.say = []; TALK.reqAt = Date.now(); renderChat();
+    talkWaitTick();
+    var body;
+    try {
+      var hist = TALK.msgs.filter(function (m) { return !m.failed; }).slice(-24).map(function (m) { return { role: m.role, parts: [{ text: m.text }] }; });
+      body = {
+        systemInstruction: { parts: [{ text: talkSystem() }] },
+        contents: hist,
+        generationConfig: {
+          temperature: 0.9,
+          responseMimeType: 'application/json',
+          responseSchema: { type: 'OBJECT', properties: { reply: { type: 'STRING' }, fix: { type: 'STRING' }, note: { type: 'STRING' }, used: { type: 'ARRAY', items: { type: 'STRING' } }, say: { type: 'ARRAY', items: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] } } }, required: ['reply', 'fix', 'note', 'used', 'say'] }
+        }
+      };
+    } catch (e) { talkFail(myTalk, myReq, '요청을 만들지 못했어요: ' + String(e && e.message || e).slice(0, 60)); return; }
+    aiGenerate(body, 'talk', 80000).then(function (res) {
+      if (TALK !== myTalk || TALK.req !== myReq) return;
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = parseAiJson(res.text);
       if (!out || !out.reply) throw { msg: '응답을 이해하지 못했어요. 다시 보내 보세요' };
@@ -1147,20 +1180,42 @@
         last.fix = String(out.fix || '').trim(); last.note = String(out.note || '').trim();
         if (last.fix && last.fix.toLowerCase() === last.text.trim().toLowerCase()) last.fix = '';
         TALK.turns++;
-        markUsed(last.text, out.used || []);
+        markUsed(last.text, Array.isArray(out.used) ? out.used : []);
       }
-      TALK.say = S.settings.talk.guide ? (out.say || []).filter(function (s) { return s && s.e; }).slice(0, 2) : [];
+      TALK.say = S.settings.talk.guide && Array.isArray(out.say) ? out.say.filter(function (s) { return s && s.e; }).slice(0, 2) : [];
       TALK.msgs.push({ role: 'model', text: String(out.reply).trim() });
       TALK.busy = false; renderChat(true);
       if (S.settings.talk.speak) speak(String(out.reply).trim(), 'en');
     }).catch(function (err) {
-      if (TALK !== myTalk) return;
-      TALK.busy = false;
-      var last = TALK.msgs[TALK.msgs.length - 1];
-      if (last && last.role === 'user') { last.failed = true; if (last.hidden) TALK.msgs.pop(); }
-      renderChat();
-      toast(err && err.msg ? err.msg : '연결에 실패했어요');
+      talkFail(myTalk, myReq, err && err.msg ? err.msg : '연결에 실패했어요');
     });
+  }
+  // 답변을 못 받은 턴 정리 — 내 말은 "다시 보내기", 첫 인사는 말풍선 안 "다시 시도"로 이어 갈 수 있게 남겨 둔다
+  function talkFail(myTalk, myReq, msg) {
+    if (TALK !== myTalk || TALK.req !== myReq) return;
+    TALK.busy = false;
+    var last = TALK.msgs[TALK.msgs.length - 1];
+    if (last && last.role === 'user') { last.failed = true; last.err = msg; }
+    renderChat();
+    if (!(last && last.hidden)) toast(msg);
+  }
+  // 기다리는 동안 몇 초째인지 보여 주고, 오래 걸리면 취소할 수 있게
+  var waitTimer = 0;
+  function talkWaitTick() {
+    clearTimeout(waitTimer);
+    if (!TALK || !TALK.busy) return;
+    var el = $('#waitInfo');
+    if (el) {
+      var sec = Math.round((Date.now() - TALK.reqAt) / 1000);
+      el.innerHTML = sec >= 4 ? (TALK.ended ? '정리하는 중' : '답변 기다리는 중') + ' · ' + sec + '초' + (sec >= 12 && !TALK.ended ? ' <b data-action="talk-cancel">취소</b>' : '') : '';
+    }
+    waitTimer = setTimeout(talkWaitTick, 1000);
+  }
+  function talkCancel() {
+    if (!TALK || !TALK.busy) return;
+    var t = TALK, r = TALK.req;
+    TALK.req++;   // 늦게 도착하는 답은 버린다
+    talkFail(t, TALK.req, '기다리다 취소했어요');
   }
   function parseAiJson(text) {
     try {
@@ -1182,7 +1237,7 @@
   function talkRetry() {
     if (!TALK || TALK.busy) return;
     var last = TALK.msgs[TALK.msgs.length - 1];
-    if (last && last.role === 'user' && last.failed) { TALK.msgs.pop(); talkTurn(last.text); }
+    if (last && last.role === 'user' && last.failed) { TALK.msgs.pop(); talkTurn(last.hidden ? null : last.text); }
   }
 
   RENDER.chat = function () { renderChat(true); };
@@ -1194,15 +1249,16 @@
       '<div class="topbar"><button class="icon-btn" data-action="back" aria-label="닫기">' + ICON_X + '</button><span class="title">' + esc(sc.icon + ' ' + (TALK.custom || sc.name)) + '</span><button class="btn" data-action="talk-end" style="flex:none;padding:8px 12px">끝내기</button></div>' +
       (TALK.words.length ? '<div class="mission-bar"><span class="mb-n">' + usedN + '/' + TALK.words.length + '</span>' + TALK.words.map(function (w) { return '<span class="mchip' + (w.used ? ' done' : '') + '" data-action="speak-text" data-text="' + esc(w.w) + '">' + (w.used ? '✓ ' : '') + esc(w.w) + '</span>'; }).join('') + '</div>' : '') +
       '<div class="chat-log" id="chatLog">' +
-      TALK.msgs.filter(function (m) { return !m.hidden; }).map(function (m, i) {
+      TALK.msgs.filter(function (m) { return !m.hidden || m.failed; }).map(function (m, i) {
+        if (m.hidden) return '<div class="msg ai"><div class="bubble errb">첫 인사를 못 받았어요<small>' + esc(m.err || '') + '</small></div><div class="fb err"><b data-action="talk-retry">다시 시도</b> · <b data-action="talk-end">나가기</b></div></div>';
         if (m.role === 'model') return '<div class="msg ai"><div class="bubble">' + esc(m.text) + '<button class="spk sm" data-action="speak-text" data-text="' + esc(m.text) + '" aria-label="다시 듣기">' + ICON_SPK + '</button></div></div>';
         var fb = '';
-        if (m.failed) fb = '<div class="fb err">전송 실패 · <b data-action="talk-retry">다시 보내기</b></div>';
+        if (m.failed) fb = '<div class="fb err">전송 실패 · <b data-action="talk-retry">다시 보내기</b>' + (m.err ? '<div class="fb-note">' + esc(m.err) + '</div>' : '') + '</div>';
         else if (m.fix) fb = '<div class="fb fix"><div class="fb-fix">✏️ ' + esc(m.fix) + '</div>' + (m.note ? '<div class="fb-note">' + esc(m.note) + '</div>' : '') + '</div>';
         else if (m.note) fb = '<div class="fb ok">👍 ' + esc(m.note) + '</div>';
         return '<div class="msg me"><div class="bubble">' + esc(m.text) + '</div>' + fb + '</div>';
       }).join('') +
-      (TALK.busy ? '<div class="msg ai"><div class="bubble typing"><i></i><i></i><i></i></div></div>' : '') +
+      (TALK.busy ? '<div class="msg ai"><div class="bubble typing"><i></i><i></i><i></i></div><div class="wait-info" id="waitInfo"></div></div>' : '') +
       '</div>' +
       // 가이드 모드: 지금 할 만한 말을 그대로 읽으면 되게 보여 준다 (누르면 입력창에 들어감)
       (!TALK.busy && t.guide && TALK.say && TALK.say.length
@@ -1274,10 +1330,10 @@
     var visible = TALK.msgs.filter(function (m) { return !m.hidden && !m.failed; });
     if (TALK.turns === 0) { TALK = null; go('talk', {}, true); return; }
     if (TALK.busy) { toast('답변을 기다리는 중이에요'); return; }
-    TALK.busy = true; TALK.ended = true; renderChat();
+    TALK.busy = true; TALK.ended = true; TALK.reqAt = Date.now(); renderChat(); talkWaitTick();
     var transcript = visible.map(function (m) { return (m.role === 'user' ? 'Learner: ' : 'Partner: ') + m.text; }).join('\n');
     var fb = S.settings.talk.feedbackLang === 'en' ? 'English' : 'Korean';
-    var body = JSON.stringify({
+    var body = ({
       systemInstruction: { parts: [{ text: 'You are an English tutor reviewing a short practice conversation of a Korean adult learner. Be encouraging and specific. Write "comment" and each "why" in ' + fb + '. "expressions": 2-4 useful natural phrases FROM THE PARTNER\'S LINES worth memorizing, each with a short Korean meaning (m), the sentence it appeared in (e) and its Korean translation (k). "corrections": the learner\'s sentences that had problems, with the corrected version and a one-line reason (at most 5). "score": 1-5 overall.' }] },
       contents: [{ role: 'user', parts: [{ text: 'Transcript:\n' + transcript } ] }],
       generationConfig: {
@@ -1285,8 +1341,8 @@
         responseSchema: { type: 'OBJECT', properties: { score: { type: 'INTEGER' }, comment: { type: 'STRING' }, corrections: { type: 'ARRAY', items: { type: 'OBJECT', properties: { you: { type: 'STRING' }, better: { type: 'STRING' }, why: { type: 'STRING' } }, required: ['you', 'better', 'why'] } }, expressions: { type: 'ARRAY', items: { type: 'OBJECT', properties: { w: { type: 'STRING' }, m: { type: 'STRING' }, e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['w', 'm', 'e', 'k'] } } }, required: ['score', 'comment', 'corrections', 'expressions'] }
       }
     });
-    var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent', myTalk = TALK;
-    bridge.aiCall(url, AI.key, body).then(function (res) {
+    var myTalk = TALK;
+    aiGenerate(body, 'summary', 80000).then(function (res) {
       if (TALK !== myTalk) return;
       var out = res.status === 200 ? parseAiJson(res.text) : null;
       finishTalk(out || { score: 0, comment: '', corrections: [], expressions: [] }, out ? '' : aiErrorMessage(res));
@@ -1572,6 +1628,7 @@
       '<div class="field"><label>모델</label><div class="row"><input id="ai-model" value="' + esc(AI.model) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-models" style="flex:none">목록</button></div></div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://aistudio.google.com/apikey">키 발급 페이지 (무료)</button></div>' +
       '<div class="small muted" style="padding:0 0 12px;line-height:1.5">학습 카드의 <b>예문을 길게 누르면</b> 수정·AI 생성 창이 열려요. 키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. AI 버튼을 누를 때만 단어·뜻·예문이 Google Gemini로 전송돼요.</div>' +
+      '<div class="small muted ai-last" id="ai-last">' + aiLastLine() + '</div>' +
       '</div>' +
       '<div class="section-title">회화 연습</div><div class="settings-group">' +
       '<div class="switch-row"><div><div class="sw-t">교정 설명 언어</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === st.talk.feedbackLang ? 'on' : '') + '" data-action="talk-set-s" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
@@ -1606,7 +1663,7 @@
     if (keepScroll != null) $('#view-settings').scrollTop = keepScroll;
     $('#rate').addEventListener('input', function (e) { S.settings.rate = Number(e.target.value); $('#rateVal').textContent = S.settings.rate.toFixed(1) + 'x'; save(); });
     $('#ai-key').addEventListener('input', function (e) { AI.key = e.target.value.trim(); saveAi(); });
-    $('#ai-model').addEventListener('change', function (e) { AI.model = e.target.value.trim().replace(/^models\//, '') || AI_DEFAULT_MODEL; e.target.value = AI.model; saveAi(); });
+    $('#ai-model').addEventListener('change', function (e) { AI.model = e.target.value.trim().replace(/^models\//, '') || AI_DEFAULT_MODEL; e.target.value = AI.model; AI.noThink = false; saveAi(); });
     if (p && (p.scroll === 'audio' || p.scroll === 'ai')) { var el = $('#' + p.scroll + '-settings'); if (el) setTimeout(function () { el.scrollIntoView({ block: 'start' }); }, 30); }
     if (p && p.scroll === 'ai' && !AI.key) setTimeout(function () { var k = $('#ai-key'); if (k) k.focus(); }, 350);
   };
@@ -1861,9 +1918,9 @@
     'ai-test': function (el) {
       if (!AI.key) { toast('API 키를 먼저 입력해 주세요'); $('#ai-key').focus(); return; }
       var orig = el.textContent; el.disabled = true; el.textContent = '확인 중…';
-      aiGenerateExample({ w: 'figure out', p: 'phr.', m: '알아내다, 해결하다', e: '' }, '').then(function (r) {
+      aiGenerateExample({ w: 'figure out', p: 'phr.', m: '알아내다, 해결하다', e: '' }, '', 'test').then(function (r) {
         toast('연결 성공 ✓  ' + r.e);
-      }, function (err) { toast(err && err.msg ? err.msg : '연결 실패'); }).then(function () { if (el.isConnected) { el.disabled = false; el.textContent = orig; } });
+      }, function (err) { toast(err && err.msg ? err.msg : '연결 실패'); }).then(function () { if (el.isConnected) { el.disabled = false; el.textContent = orig; } var n = $('#ai-last'); if (n) n.innerHTML = aiLastLine(); });
     },
     'ai-models': function (el) {
       if (!AI.key) { toast('API 키를 먼저 입력해 주세요'); $('#ai-key').focus(); return; }
@@ -1875,7 +1932,7 @@
           '</div><div class="sh-actions"><button class="btn" data-action="close-sheet">닫기</button></div>');
       }, function (err) { toast(err && err.msg ? err.msg : '모델 목록을 가져오지 못했어요'); }).then(function () { if (el.isConnected) { el.disabled = false; el.textContent = orig; } });
     },
-    'ai-pick-model': function (el) { AI.model = el.getAttribute('data-model'); saveAi(); closeSheet(); RENDER.settings({ scroll: 'ai' }); toast('모델: ' + AI.model); },
+    'ai-pick-model': function (el) { AI.model = el.getAttribute('data-model'); AI.noThink = false; saveAi(); closeSheet(); RENDER.settings({ scroll: 'ai' }); toast('모델: ' + AI.model); },
     'open-url': function (el) { bridge.openUrl(el.getAttribute('data-url')); },
     /* --- 회화 연습 --- */
     'talk': function () { go('talk'); },
@@ -1896,6 +1953,7 @@
       speak(s.e, 'en');   // 따라 말할 수 있게 한 번 들려준다
     },
     'talk-retry': function () { talkRetry(); },
+    'talk-cancel': function () { talkCancel(); },
     'talk-end': function () { talkBack(); },
     'talk-add-expr': function () { talkAddExpressions(); },
     'talk-log': function (el) { var rec = (S.talkLog || [])[Number(el.getAttribute('data-i'))]; if (rec) openTalkReport(rec, false); },

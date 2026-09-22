@@ -703,7 +703,7 @@ public class MainActivity extends Activity {
                     try {
                         c = (HttpURLConnection) new URL(url).openConnection();
                         c.setConnectTimeout(15000);
-                        c.setReadTimeout(30000);
+                        c.setReadTimeout(60000);   // JSON-schema replies can take a while under load; the JS side keeps its own backstop
                         c.setRequestProperty("Accept", "application/json");
                         if (key != null && key.length() > 0) c.setRequestProperty("x-goog-api-key", key);
                         if (body != null && body.length() > 0) {
