@@ -13,7 +13,11 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
+import java.util.ArrayList;
 import android.graphics.Insets;
 import android.view.View;
 import android.view.Window;
@@ -54,6 +58,10 @@ public class MainActivity extends Activity {
     private String pendingSaveContent = null;
     private static final int REQ_NOTI = 201;
     private Intent pendingAudioStart = null;
+    private static final int REQ_MIC = 301;
+    private SpeechRecognizer stt;
+    private boolean sttPendingStart = false;
+    private String sttLang = "en-US";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -187,6 +195,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        try { if (stt != null) { stt.destroy(); stt = null; } } catch (Exception ignored) { }
         if (tts != null) {
             tts.stop();
             tts.shutdown();
@@ -200,6 +209,66 @@ public class MainActivity extends Activity {
         if (requestCode == REQ_NOTI && pendingAudioStart != null) {
             Intent i = pendingAudioStart; pendingAudioStart = null;
             launchService(i);
+        }
+        if (requestCode == REQ_MIC) {
+            boolean ok = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (ok && sttPendingStart) { sttPendingStart = false; startStt(); }
+            else { sttPendingStart = false; runJs("window.onSttError && window.onSttError('permission')"); }
+        }
+    }
+
+    /* ---------------- speech recognition (회화 연습) ---------------- */
+    private boolean hasMic() {
+        return checkSelfPermission("android.permission.RECORD_AUDIO") == PackageManager.PERMISSION_GRANTED;
+    }
+
+    // Runs on the UI thread. Recognition itself is done by the device's speech service (usually Google);
+    // the app never stores audio — only the recognized text reaches the web UI.
+    private void startStt() {
+        try {
+            if (!SpeechRecognizer.isRecognitionAvailable(this)) { runJs("window.onSttError && window.onSttError('unavailable')"); return; }
+            if (stt == null) {
+                stt = SpeechRecognizer.createSpeechRecognizer(this);
+                stt.setRecognitionListener(new RecognitionListener() {
+                    @Override public void onReadyForSpeech(Bundle params) { runJs("window.onSttState && window.onSttState('ready')"); }
+                    @Override public void onBeginningOfSpeech() { runJs("window.onSttState && window.onSttState('speech')"); }
+                    @Override public void onRmsChanged(float rmsdB) { }
+                    @Override public void onBufferReceived(byte[] buffer) { }
+                    @Override public void onEndOfSpeech() { runJs("window.onSttState && window.onSttState('end')"); }
+                    @Override public void onError(int error) {
+                        String code;
+                        switch (error) {
+                            case SpeechRecognizer.ERROR_NO_MATCH: case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: code = "nomatch"; break;
+                            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: code = "permission"; break;
+                            case SpeechRecognizer.ERROR_NETWORK: case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: case SpeechRecognizer.ERROR_SERVER: code = "network"; break;
+                            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: code = "busy"; break;
+                            default: code = "error" + error;
+                        }
+                        runJs("window.onSttError && window.onSttError(" + jsString(code) + ")");
+                    }
+                    @Override public void onResults(Bundle results) {
+                        ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                        String best = (list != null && !list.isEmpty()) ? list.get(0) : "";
+                        runJs("window.onStt && window.onStt(" + jsString(best) + ")");
+                    }
+                    @Override public void onPartialResults(Bundle partial) {
+                        ArrayList<String> list = partial.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                        if (list != null && !list.isEmpty()) runJs("window.onSttPartial && window.onSttPartial(" + jsString(list.get(0)) + ")");
+                    }
+                    @Override public void onEvent(int eventType, Bundle params) { }
+                });
+            }
+            if (tts != null) tts.stop();
+            Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, sttLang);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, sttLang);
+            i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+            i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+            stt.startListening(i);
+        } catch (Exception e) {
+            runJs("window.onSttError && window.onSttError(" + jsString("exception") + ")");
         }
     }
 
@@ -478,6 +547,44 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String version() {
             return "1.0";
+        }
+
+        @JavascriptInterface
+        public boolean sttAvailable() {
+            try { return SpeechRecognizer.isRecognitionAvailable(MainActivity.this); } catch (Exception e) { return false; }
+        }
+
+        /** Starts one recognition session (lang e.g. "en-US"); results arrive via window.onStt / onSttPartial / onSttError / onSttState. */
+        @JavascriptInterface
+        public void sttStart(final String lang) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    sttLang = (lang == null || lang.length() == 0) ? "en-US" : lang;
+                    if (!hasMic()) {
+                        sttPendingStart = true;
+                        requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, REQ_MIC);
+                        return;
+                    }
+                    startStt();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void sttStop() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() { try { if (stt != null) stt.stopListening(); } catch (Exception ignored) { } }
+            });
+        }
+
+        @JavascriptInterface
+        public void sttCancel() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() { try { if (stt != null) stt.cancel(); } catch (Exception ignored) { } }
+            });
         }
 
         /** Opens a URL in the external browser (used for the API-key help link). */
