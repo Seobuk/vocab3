@@ -570,6 +570,8 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 [data-theme="dark"] .yt-err { color: var(--danger); }
 .yt-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px; scroll-padding-bottom: 150px; }   /* scroll-padding: 따라가기·단어 카드가 오른쪽 아래 버튼에 가리지 않게 */
 .yt-hint { padding: 2px 6px 8px; line-height: 1.5; }
+.yt-old { margin: 2px 4px 10px; padding: 10px 12px; border-radius: 12px; background: var(--primary-soft); font-size: 13px; line-height: 1.55; }
+.yt-old b { color: var(--primary); text-decoration: underline; display: inline-block; padding: 4px 0; }
 .yt-redo { padding: 14px 8px 4px; text-align: center; line-height: 1.6; }
 .yt-redo b { color: var(--primary); text-decoration: underline; font-weight: 600; display: inline-block; padding: 10px 4px; }
 .ys { display: flex; gap: 8px; padding: 10px 8px; border-radius: 14px; }

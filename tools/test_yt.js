@@ -5,9 +5,9 @@ const path = require('path');
 const OUT = path.resolve(__dirname, '..', 'build', 'shots');
 const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok  ' : 'FAIL') + ' ' + name + ': ' + got + (String(got) === String(want) ? '' : ' (기대: ' + want + ')'));
 const SENTS = [
-  { s: 0.5, t: 2.4, e: 'Hi everyone, welcome back.', k: '안녕하세요 여러분, 다시 오신 걸 환영해요.', x: [] },
-  { s: 3.2, t: 6.9, e: "Today we'll dig into why agents really matter.", k: '오늘은 에이전트가 왜 정말 중요한지 파고들어 볼게요.', x: [{ q: 'dig into', w: 'dig into', p: 'phr.', m: '파고들다' }] },
-  { s: 7.8, t: 9.9, e: "Let's figure out the rest.", k: '나머지를 알아내 봅시다.', x: [{ q: 'figure out', w: 'figure out', p: 'phr.', m: '알아내다' }] }
+  { s: '00:00.5', t: '00:02.4', e: 'Hi everyone, welcome back.', k: '안녕하세요 여러분, 다시 오신 걸 환영해요.', x: [] },
+  { s: '00:03.2', t: '00:06.9', e: "Today we'll dig into why agents really matter.", k: '오늘은 에이전트가 왜 정말 중요한지 파고들어 볼게요.', x: [{ q: 'dig into', w: 'dig into', p: 'phr.', m: '파고들다' }] },
+  { s: '00:07.8', t: '00:09.9', e: "Let's figure out the rest.", k: '나머지를 알아내 봅시다.', x: [{ q: 'figure out', w: 'figure out', p: 'phr.', m: '알아내다' }] }
 ];
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
@@ -71,6 +71,7 @@ const SENTS = [
   eq('구간 자르기 안 함', 'videoMetadata' in gem.body.contents[0].parts[0], false);
   eq('스키마: 문장 배열 s/t/e/k/x (끝 시간 t, v2.3)', gem.body.generationConfig.responseSchema.type + ' ' + gem.body.generationConfig.responseSchema.items.required.join(','), 'ARRAY s,t,e,k,x');
   const sysT = gem.body.systemInstruction.parts[0].text;
+  eq('시간은 영상 표기 MM:SS.d 로 받고 초 환산은 앱이 (v2.5)', /MM:SS\.d/.test(sysT) && /do NOT convert them to total seconds/.test(sysT) && gem.body.generationConfig.responseSchema.items.properties.s.type, 'STRING');
   eq('프롬프트: 문장을 쪼개지 말 것 · 화면 자막 줄바꿈 무시 (v2.3)', /Never split a sentence/.test(sysT) && /Ignore on-screen subtitles/.test(sysT) && !/at most about 20 words/.test(sysT), true);
   eq('저해상도 (받아쓰기)', gem.body.generationConfig.mediaResolution, 'MEDIA_RESOLUTION_LOW');
   eq('Gemini 키는 헤더로', gem.headers['x-goog-api-key'], 'TEST-KEY');
@@ -192,6 +193,7 @@ const SENTS = [
   await p.click('#modal .btn.primary'); await p.waitForTimeout(500);
   eq('다시 정리 = Gemini 한 번 더', await p.evaluate(() => window.__calls.filter(c => c.body && c.body.contents[0].parts[0].fileData).length) - g0, 1);
   eq('문장 다시 표시', await p.$$eval('#ytList .ys', x => x.length), 3);
+  eq('새로 정리한 영상엔 다시 정리 안내 없음', await p.$$eval('.yt-old', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').tv), '0 2');
   await p.evaluate(() => { window.__gemEmpty = true; });
   await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(500);
   eq('다시 정리가 빈 결과면 있던 문장 유지 + 안내', await p.$$eval('#ytList .ys', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').sents.length) + ' ' + await p.textContent('#toast').then(t => /다시 정리 실패/.test(t)), '3 3 true');
@@ -224,16 +226,19 @@ const SENTS = [
     const evil = '<img src=x onerror="window.__pwned=1">';
     s.yt.push({ id: 'bad1', vid: 'BBBBBBBBBBB', title: evil, date: evil, addedAt: 5, sents: { length: evil } });
     s.yt.push({ id: 'bad2', vid: 'nope' });
-    s.yt.push({ id: 'uni', vid: 'CCCCCCCCCCC', title: 'Unicode', date: '2026-09-24', addedAt: 9, sents: [{ s: '1', e: "The constructor said let’s go to the café.", k: '건설업자가 카페에 가자고 했어요.', x: [{ q: "let's go", w: "let's go", p: 'phrasal verb', m: '가자' }], lk: { said: { w: 'say', p: 'v.', m: '말하다' } } }] });
+    s.yt.push({ id: 'uni', vid: 'CCCCCCCCCCC', title: 'Unicode', date: '2026-09-24', addedAt: 9, sents: [{ s: '1:15.4', t: '1:18', e: "The constructor said let’s go to the café.", k: '건설업자가 카페에 가자고 했어요.', x: [{ q: "let's go", w: "let's go", p: 'phrasal verb', m: '가자' }], lk: { said: { w: 'say', p: 'v.', m: '말하다' } } }] });
     localStorage.setItem('vocab3.state.v1', JSON.stringify(s)); window.__vocab.reload();
   }); await p.waitForTimeout(300);
   eq('vid 가 이상한 항목은 버림', await p.evaluate(() => window.__vocab.state().yt.map(r => r.id).join()), 'H5hItem,bad1,uni'.replace('H5hItem', await p.evaluate(() => window.__vocab.state().yt[0].id)));
+  eq('예전 방식으로 정리된 영상엔 다시 정리 안내 (v2.5)', await p.evaluate(() => { const r = window.__vocab.state().yt.find(r => r.id === 'uni'); return r.tv === undefined; }), true);
+  eq('MM:SS.d → 초 (1분 넘는 시간: 1:15.4 → 75.4, 1:18 → 78)', await p.evaluate(() => { const x = window.__vocab.state().yt.find(r => r.id === 'uni').sents[0]; return x.s + ',' + x.t; }), '75.4,78');
   eq('sents 가 배열이 아니면 정리 전으로', await p.evaluate(() => window.__vocab.state().yt.find(r => r.id === 'bad1').sents), null);
   await p.click('.quick [data-action="yt"]'); await p.waitForTimeout(200);
   await p.click('[data-action="yt-open"][data-id="bad1"]'); await p.waitForTimeout(300);
   eq('제목·날짜 HTML 은 글자로 (스크립트 실행 안 됨)', await p.evaluate(() => !window.__pwned && document.querySelector('#ytTitle').textContent.startsWith('<img')), true);
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);
   await p.click('[data-action="yt-open"][data-id="uni"]'); await p.waitForTimeout(300);
+  eq('예전 방식 영상을 열면 맨 위에 다시 정리 안내', await p.$$eval('.yt-old [data-action="yt-redo"]', x => x.length), 1);
   eq('악센트 단어는 한 단어, 끝 따옴표 없음', await p.$$eval('#ys0 .yw', x => x.map(e => e.textContent).join('|')), 'The|constructor|said|let’s|go|to|the|café');
   eq('곧은·굽은 따옴표를 같게 보고 표현 밑줄', await p.$$eval('#ys0 .yw.gx', x => x.map(e => e.textContent).join(' ')), 'let’s go');
   await p.click('#ys0 .ys-t'); await p.waitForTimeout(150);

@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.4';
+  var APP_VERSION = '2.5';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -429,7 +429,7 @@
     if (!Array.isArray(s.talkLog)) s.talkLog = [];
     // v2.2 유튜브 쉐도잉 — 백업 파일에서 들어올 수 있으니 모양을 검사해 정리한다
     s.yt = (Array.isArray(s.yt) ? s.yt : []).filter(function (r) { return r && typeof r.id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(r.vid); });
-    s.yt.forEach(function (r) { r.title = String(r.title || ''); r.date = String(r.date || ''); r.addedAt = Number(r.addedAt) || 0; r.sents = Array.isArray(r.sents) ? ytClean(r.sents) : null; });
+    s.yt.forEach(function (r) { r.title = String(r.title || ''); r.date = String(r.date || ''); r.addedAt = Number(r.addedAt) || 0; r.sents = Array.isArray(r.sents) ? ytClean(r.sents) : null; if (r.tv !== 2) delete r.tv; });
     // v1.20: 예전 기록에도 id를 붙여 리포트 삭제가 되게
     s.talkLog.forEach(function (r, i) { if (r && !r.id) r.id = 'tk0' + i + '-' + String(r.date || '').replace(/-/g, ''); });
     var da = defaultAudio(), hadAudio = !!s.settings.audio, a = s.settings.audio || {};
@@ -1656,7 +1656,7 @@
       if (!out) throw { msg: '정리 결과를 이해하지 못했어요. 다시 시도해 주세요' };
       var ns = ytClean(out);
       if (!ns.length && r.sents && r.sents.length) throw { msg: '영어 문장을 찾지 못했어요' };   // 다시 정리가 빈손이면 있던 문장·단어 뜻 캐시를 지우지 않는다
-      r.sents = ns; save();
+      r.sents = ns; r.tv = 2; save();   // tv 2: 시간을 MM:SS 로 받아 앱이 환산한 정리 (v2.5)
       YTJOB[r.id] = { busy: false, err: r.sents.length ? '' : '영어 음성을 찾지 못했어요' };
       if (YTV && YTV.id === r.id) { YTV.act = -1; YTV.cur = -1; YTV.card = null; YTV.ko = {}; YTV.stopAt = null; }   // 문장 번호가 바뀌었다
     }).catch(function (e) {
@@ -1672,7 +1672,7 @@
         'Transcribe ALL English speech in the video, in order, exactly as spoken (leave out filler sounds like "um"; do not correct grammar).',
         'One item = one COMPLETE sentence, from its first word to its final punctuation (. ? !). Never split a sentence into two or more items, even if it is long or the speaker pauses in the middle of it.',
         'Ignore on-screen subtitles and caption line breaks: captions often cut one sentence across two lines, so always merge the pieces back into the full spoken sentence. Follow the speech, not the captions.',
-        'For each item: "s" = the moment the first word of the sentence begins and "t" = the moment its last word ends, both in seconds from the very beginning of the video with 0.1 precision (e.g. 75.3 and 79.8). "t" must not include any of the next sentence or the pause after it. Times increase from item to item. "e" = the English sentence; "k" = a natural Korean translation.',
+        'For each item: "s" = the moment the first word of the sentence begins and "t" = the moment its last word ends, both as timestamps on the video timeline in MM:SS.d format — minutes:seconds with one decimal, e.g. "01:15.4" and "01:19.8" (use H:MM:SS.d past one hour). Read them straight off the MM:SS timestamps you see for the video; do NOT convert them to total seconds. "t" must not include any of the next sentence or the pause after it. Times increase from item to item. "e" = the English sentence; "k" = a natural Korean translation.',
         '"x" = 0 to 3 words or expressions from that sentence worth learning for an intermediate (B1-B2) learner: idioms, phrasal verbs, collocations, less common words; never basic words. Each: "q" = the exact text as it appears in "e", "w" = its dictionary form, "p" = one of n., v., adj., adv., phr., idiom, "m" = a short Korean meaning in this context.',
         'Skip parts that are not English speech (music, Korean narration). If there is no English speech at all, return [].'
       ].join('\n') }] },
@@ -1681,21 +1681,28 @@
         mediaResolution: 'MEDIA_RESOLUTION_LOW',   // 받아쓰기엔 화면이 거의 필요 없다 (2.5 계열에선 토큰 1/4)
         responseMimeType: 'application/json',
         responseSchema: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
-          s: { type: 'NUMBER' }, t: { type: 'NUMBER' }, e: { type: 'STRING' }, k: { type: 'STRING' },
+          s: { type: 'STRING' }, t: { type: 'STRING' }, e: { type: 'STRING' }, k: { type: 'STRING' },
           x: { type: 'ARRAY', items: { type: 'OBJECT', properties: { q: { type: 'STRING' }, w: { type: 'STRING' }, p: { type: 'STRING' }, m: { type: 'STRING' } }, required: ['q', 'w', 'p', 'm'] } }
         }, required: ['s', 't', 'e', 'k', 'x'] } }
       }
     };
   }
+  // "01:15.4" · "1:02:03" · 75.4 → 초. 예전 데이터(숫자)도 그대로 받는다
+  function ytSec(v) {
+    if (typeof v === 'number') return v;
+    var m = String(v == null ? '' : v).trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/);
+    if (m) return (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]);
+    var n = parseFloat(v); return isNaN(n) ? NaN : n;
+  }
   function ytClean(arr) {
     var prev = 0;
     return arr.filter(function (x) { return x && x.e && String(x.e).trim(); }).map(function (x) {
-      var s = Math.max(prev, Number(x.s) || 0); prev = s;   // 시간이 거꾸로 가면 앞 문장에 맞춘다 (유튜브 링크의 타임스탬프는 조금씩 어긋난다)
+      var s = Math.max(prev, ytSec(x.s) || 0); prev = s;   // 시간이 거꾸로 가면 앞 문장에 맞춘다 (유튜브 링크의 타임스탬프는 조금씩 어긋난다)
       var o = {
         s: Math.round(s * 10) / 10, e: String(x.e).trim(), k: String(x.k || '').trim(),
         x: (Array.isArray(x.x) ? x.x : []).filter(function (g) { return g && g.q && g.w; }).slice(0, 3).map(function (g) { return { q: String(g.q), w: String(g.w), p: String(g.p || ''), m: String(g.m || '') }; })
       };
-      var t = Number(x.t); if (t > o.s) o.t = Math.round(t * 10) / 10;   // 문장 끝 (v2.3 — 예전 데이터엔 없음)
+      var t = ytSec(x.t); if (t > o.s) o.t = Math.round(t * 10) / 10;   // 문장 끝 (v2.3 — 예전 데이터엔 없음)
       if (x.lk && typeof x.lk === 'object') {   // 눌러 본 단어 뜻 캐시 (복원 데이터면 모양 검사)
         o.lk = {};
         for (var key in x.lk) if (Object.prototype.hasOwnProperty.call(x.lk, key) && x.lk[key] && x.lk[key].w) o.lk[key] = { w: String(x.lk[key].w), p: String(x.lk[key].p || ''), m: String(x.lk[key].m || '') };
@@ -1728,7 +1735,8 @@
     body.innerHTML = (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요</div>' : '') + (j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<br><span class="small">영상 길이에 따라 1~3분 걸려요. 그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
       : j.err ? '<div class="empty">' + esc(j.err) + '<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">다시 시도</button></div>'
       : !has ? '<div class="empty">아직 정리 전이에요<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">문장 정리하기</button></div>'
-      : '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 재생한 문장의 단어를 누르면 뜻 · 한글은 눌러서 보기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
+      : (r.tv === 2 ? '' : '<div class="yt-old">1분 넘는 곳부터 문장 시간이 어긋나던 문제를 고쳤어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
+        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 재생한 문장의 단어를 누르면 뜻 · 한글은 눌러서 보기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
         '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b></div>');
   }
   function ytRowHTML(r, i) {

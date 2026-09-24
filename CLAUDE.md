@@ -2,7 +2,7 @@
 
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (MIT). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.4 (versionCode 28).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.5 (versionCode 29).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -20,7 +20,7 @@
   - AI: `aiGenerate(bodyObj, what, timeoutMs)` 공용 헬퍼(503 재시도, flash 계열 thinking 끔, `AI.last` 기록). 키·모델은 별도 키 `vocab3.ai.v1` — **코드·저장소·백업에 절대 안 들어감.**
   - 회화: `TALK`(진행 중 대화), `talkTurn()`(JSON 스키마 reply/ko/fix/note/used/say), `renderChat()`, STT(`sttStart('en'|'ko')`, 한국어는 `koTranslate()` 로 번역), 리포트 `S.talkLog`.
   - 학습 완료 연출 `celebrate()`(컨페티 canvas·카운트업·WebAudio 효과음), 단어 추가 `aiFillWords()`(8개 배치).
-  - 유튜브 쉐도잉 `S.yt`(v2.2~): 링크 → oEmbed(제목) + Gemini `fileData.fileUri`(영상 통째, 구간 자르기 안 씀) → 문장 `{s,t(끝),e,k,x:[익힐 표현]}`
+  - 유튜브 쉐도잉 `S.yt`(v2.2~): 링크 → oEmbed(제목) + Gemini `fileData.fileUri`(영상 통째, 구간 자르기 안 씀) → 문장 `{s,t(끝),e,k,x:[익힐 표현]}` — 시간은 Gemini 에게 영상 표기 MM:SS.d 로 받아 `ytSec()` 로 초 환산(초로 달라고 하면 1분 넘어서 틀림, v2.5; `r.tv=2`)
     (한 문장은 끝까지 한 항목, 화면 자막 줄바꿈 무시). `yt` 목록 · `ytv` 영상 화면(YouTube IFrame API 는 이 화면에서만 로드).
     플레이어(#ytBox)는 목록(#ytList) 맨 위에 sticky 로 제자리, 목록을 올리면 불투명한 #ytBody 가 그 위를 덮는다 (v2.4, 사용자 요청 —
     v2.3 의 따라다니는 작은 창은 거슬린다고 뺐다). 버튼은 오른쪽 아래 #ytFab (z-index 19, 어두운 막 20 아래).
