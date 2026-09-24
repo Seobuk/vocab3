@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.2';
+  var APP_VERSION = '2.3';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -1654,10 +1654,15 @@
       var out = parseAiJson(res.text);
       out = Array.isArray(out) ? out : out && Array.isArray(out.sents) ? out.sents : null;
       if (!out) throw { msg: '정리 결과를 이해하지 못했어요. 다시 시도해 주세요' };
-      r.sents = ytClean(out); save();
+      var ns = ytClean(out);
+      if (!ns.length && r.sents && r.sents.length) throw { msg: '영어 문장을 찾지 못했어요' };   // 다시 정리가 빈손이면 있던 문장·단어 뜻 캐시를 지우지 않는다
+      r.sents = ns; save();
       YTJOB[r.id] = { busy: false, err: r.sents.length ? '' : '영어 음성을 찾지 못했어요' };
+      if (YTV && YTV.id === r.id) { YTV.act = -1; YTV.cur = -1; YTV.card = null; YTV.ko = {}; YTV.stopAt = null; }   // 문장 번호가 바뀌었다
     }).catch(function (e) {
-      YTJOB[r.id] = { busy: false, err: e && e.msg ? e.msg : '정리하지 못했어요' };
+      var msg = e && e.msg ? e.msg : '정리하지 못했어요';
+      if (r.sents && r.sents.length) { YTJOB[r.id] = { busy: false, err: '' }; toast('다시 정리 실패 — ' + msg); }   // 다시 정리가 실패하면 있던 문장을 그대로 둔다
+      else YTJOB[r.id] = { busy: false, err: msg };
     }).then(function () { ytRefresh(r.id); });
   }
   function ytBody(watch) {
@@ -1665,8 +1670,9 @@
       systemInstruction: { parts: [{ text: [
         'You transcribe YouTube videos for a Korean adult who studies English by shadowing (repeating each sentence right after hearing it).',
         'Transcribe ALL English speech in the video, in order, exactly as spoken (leave out filler sounds like "um"; do not correct grammar).',
-        'Split it into short natural sentences: one item per sentence, at most about 20 words; split long run-on speech at natural pauses.',
-        'For each item: "s" = when the sentence starts, in seconds from the very beginning of the video (e.g. 75.5), increasing; "e" = the English sentence; "k" = a natural Korean translation.',
+        'One item = one COMPLETE sentence, from its first word to its final punctuation (. ? !). Never split a sentence into two or more items, even if it is long or the speaker pauses in the middle of it.',
+        'Ignore on-screen subtitles and caption line breaks: captions often cut one sentence across two lines, so always merge the pieces back into the full spoken sentence. Follow the speech, not the captions.',
+        'For each item: "s" = the moment the first word of the sentence begins and "t" = the moment its last word ends, both in seconds from the very beginning of the video with 0.1 precision (e.g. 75.3 and 79.8). "t" must not include any of the next sentence or the pause after it. Times increase from item to item. "e" = the English sentence; "k" = a natural Korean translation.',
         '"x" = 0 to 3 words or expressions from that sentence worth learning for an intermediate (B1-B2) learner: idioms, phrasal verbs, collocations, less common words; never basic words. Each: "q" = the exact text as it appears in "e", "w" = its dictionary form, "p" = one of n., v., adj., adv., phr., idiom, "m" = a short Korean meaning in this context.',
         'Skip parts that are not English speech (music, Korean narration). If there is no English speech at all, return [].'
       ].join('\n') }] },
@@ -1675,9 +1681,9 @@
         mediaResolution: 'MEDIA_RESOLUTION_LOW',   // 받아쓰기엔 화면이 거의 필요 없다 (2.5 계열에선 토큰 1/4)
         responseMimeType: 'application/json',
         responseSchema: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
-          s: { type: 'NUMBER' }, e: { type: 'STRING' }, k: { type: 'STRING' },
+          s: { type: 'NUMBER' }, t: { type: 'NUMBER' }, e: { type: 'STRING' }, k: { type: 'STRING' },
           x: { type: 'ARRAY', items: { type: 'OBJECT', properties: { q: { type: 'STRING' }, w: { type: 'STRING' }, p: { type: 'STRING' }, m: { type: 'STRING' } }, required: ['q', 'w', 'p', 'm'] } }
-        }, required: ['s', 'e', 'k', 'x'] } }
+        }, required: ['s', 't', 'e', 'k', 'x'] } }
       }
     };
   }
@@ -1689,6 +1695,7 @@
         s: Math.round(s * 10) / 10, e: String(x.e).trim(), k: String(x.k || '').trim(),
         x: (Array.isArray(x.x) ? x.x : []).filter(function (g) { return g && g.q && g.w; }).slice(0, 3).map(function (g) { return { q: String(g.q), w: String(g.w), p: String(g.p || ''), m: String(g.m || '') }; })
       };
+      var t = Number(x.t); if (t > o.s) o.t = Math.round(t * 10) / 10;   // 문장 끝 (v2.3 — 예전 데이터엔 없음)
       if (x.lk && typeof x.lk === 'object') {   // 눌러 본 단어 뜻 캐시 (복원 데이터면 모양 검사)
         o.lk = {};
         for (var key in x.lk) if (Object.prototype.hasOwnProperty.call(x.lk, key) && x.lk[key] && x.lk[key].w) o.lk[key] = { w: String(x.lk[key].w), p: String(x.lk[key].p || ''), m: String(x.lk[key].m || '') };
@@ -1704,22 +1711,27 @@
     YTV.ready = false; YTV.perr = null; YTV.pending = null;
     $('#view-ytv').innerHTML =
       '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title" id="ytTitle"></span><span style="width:42px"></span></div>' +
-      '<div class="yt-player"><div id="ytPlayer"></div></div>' +
-      '<div class="yt-bar" id="ytBar"></div><div class="yt-list" id="ytList"></div>';
+      // v2.3: 영상도 문장과 함께 스크롤. 영상 자리가 화면 밖일 때 문장을 누르면 왼쪽 아래 작은 창(200×200)으로 띄워 재생 —
+      // 유튜브 정책상 보이지 않는 플레이어로 재생하지 않는다. 버튼은 오른손 엄지 자리(오른쪽 아래)
+      '<div class="yt-list" id="ytList"><div class="yt-slot" id="ytSlot"><div class="yt-player" id="ytBox"><div id="ytPlayer"></div></div></div><div id="ytBody"></div></div>' +
+      '<button class="yt-pip-x" data-action="yt-pip-close" aria-label="작은 창 닫기">' + ICON_X + '</button>' +
+      '<div class="yt-fab" id="ytFab"></div>';
     ytRenderBody();
     ytMakePlayer(r.vid);
+    ytWatch();
   };
   function ytRenderBody() {
-    var r = YTV && ytRec(YTV.id), bar = $('#ytBar'), list = $('#ytList'); if (!r || !bar || !list) return;
+    var r = YTV && ytRec(YTV.id), body = $('#ytBody'), fab = $('#ytFab'); if (!r || !body || !fab) return;
     var j = YTJOB[r.id] || {}, has = r.sents && r.sents.length;
     $('#ytTitle').textContent = r.title || '유튜브';
-    bar.innerHTML = (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요</div>' : '') +
-      (has ? '<button class="guide-pill' + (S.settings.ytPause ? ' on' : '') + '" data-action="yt-pause-mode" aria-pressed="' + !!S.settings.ytPause + '">⏸ 문장마다 멈춤</button>' +
-        '<button class="guide-pill" data-action="yt-replay"' + (YTV.act < 0 ? ' disabled' : '') + '>↻ 한 번 더</button><span class="small muted" style="margin-left:auto">' + esc(r.sents.length) + '문장</span>' : '');
-    list.innerHTML = j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<br><span class="small">영상 길이에 따라 1~3분 걸려요. 그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
+    // 오른쪽 아래: "한 번 더"는 오른손 엄지로 계속 누르게 된다 — 크게
+    fab.innerHTML = has ? '<button class="guide-pill yt-pm' + (S.settings.ytPause ? ' on' : '') + '" data-action="yt-pause-mode" aria-pressed="' + !!S.settings.ytPause + '" aria-label="문장마다 멈춤">⏸ 문장마다</button>' +
+      '<button class="yt-again" data-action="yt-replay" aria-label="한 번 더"' + (YTV.act < 0 ? ' disabled' : '') + '><span>↻</span><small>한 번 더</small></button>' : '';
+    body.innerHTML = (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요</div>' : '') + (j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<br><span class="small">영상 길이에 따라 1~3분 걸려요. 그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
       : j.err ? '<div class="empty">' + esc(j.err) + '<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">다시 시도</button></div>'
       : !has ? '<div class="empty">아직 정리 전이에요<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">문장 정리하기</button></div>'
-      : '<div class="yt-hint small muted">문장을 누르면 그 부분부터 재생 · 재생한 문장의 단어를 누르면 뜻 · 한글은 눌러서 보기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('');
+      : '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 재생한 문장의 단어를 누르면 뜻 · 한글은 눌러서 보기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
+        '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b></div>');
   }
   function ytRowHTML(r, i) {
     var x = r.sents[i], toks = ytTokens(x.e), gm = ytGlossMap(x, toks), c = YTV.card && YTV.card.i === i ? YTV.card : null;
@@ -1773,6 +1785,7 @@
             if (p != null && !document.hidden) ytPlaySent(p);   // 앱이 내려간 사이 준비됐으면 재생하지 않는다 (백그라운드 재생 금지)
           },
           onError: function (e) { if (YTV === myV) ytPlayerError(e && e.data); },
+          onStateChange: function (e) { if (YTV !== myV) return; YTV.playing = !!e && (e.data === 1 || e.data === 3); if (e && e.data === 1) YTV.pipOff = false; ytFloat(); },   // 3 버퍼링도 재생 중으로 (작은 창이 깜빡이지 않게)
           onAutoplayBlocked: function () { toast('재생이 막혔어요 — 영상의 ▶를 한 번 눌러 주세요'); }
         }
       });
@@ -1780,12 +1793,24 @@
       clearTimeout(myV.readyTimer); myV.readyTimer = setTimeout(function () { if (YTV === myV && !myV.ready && !myV.perr) ytPlayerError('load'); }, 20000);
     });
   }
+  // 영상 자리가 반 넘게 화면 밖인데 재생 중이거나 방금 문장을 눌렀으면 → 왼쪽 아래 작은 창 (크기만 바꿔 iframe 은 그대로)
+  function ytFloat() {
+    var box = $('#ytBox'), x = $('.yt-pip-x'), v = $('#view-ytv'); if (!box || !YTV) return;
+    var on = !YTV.perr && !YTV.slotVis && !YTV.pipOff && (YTV.playing || YTV.tapped);
+    box.classList.toggle('pip', on); if (x) x.classList.toggle('show', on); if (v) v.classList.toggle('has-pip', on);
+  }
+  function ytWatch() {
+    YTV.slotVis = true; YTV.pipOff = false; YTV.tapped = false;   // tapped: 이번 방문에서 문장을 눌렀나 (다시 열었을 때 안 누른 영상이 뜨지 않게)
+    var slot = $('#ytSlot'); if (!slot || !window.IntersectionObserver) return;
+    YTV.io = new IntersectionObserver(function (en) { if (!YTV) return; YTV.slotVis = en[en.length - 1].intersectionRatio >= 0.5; ytFloat(); }, { root: $('#ytList'), threshold: [0, 0.5, 1] });
+    YTV.io.observe(slot);
+  }
   function ytStopPlayer() {
     clearInterval(ytTimer); ytTimer = 0;
     if (YTP) { try { YTP.destroy(); } catch (e) { } YTP = null; }
-    if (YTV) { YTV.ready = false; YTV.stopAt = null; YTV.pending = null; }   // 다시 들어왔을 때 옛 멈춤 지점이 남지 않게
+    if (YTV) { YTV.ready = false; YTV.stopAt = null; YTV.pending = null; YTV.playing = false; if (YTV.io) { YTV.io.disconnect(); YTV.io = null; } }   // 다시 들어왔을 때 옛 멈춤 지점이 남지 않게
   }
-  function ytPlayerError(code) { if (!YTV) return; YTV.perr = code || 'load'; YTV.pending = null; ytRenderBody(); }
+  function ytPlayerError(code) { if (!YTV) return; YTV.perr = code || 'load'; YTV.pending = null; ytRenderBody(); ytFloat(); }
   function ytPlaySent(i) {
     var r = YTV && ytRec(YTV.id), x = r && r.sents && r.sents[i]; if (!x) return;
     var prev = YTV.act; YTV.act = i;
@@ -1796,9 +1821,13 @@
     if (YTV.perr) { bridge.openUrl('https://youtu.be/' + r.vid + '?t=' + Math.floor(x.s)); return; }
     if (!YTP || !YTV.ready) { YTV.pending = i; return; }
     bridge.stop();
+    YTV.pipOff = false; YTV.tapped = true; ytFloat();   // 영상 자리가 화면 밖이면 작은 창으로 띄운 뒤에 재생
     var next = r.sents[i + 1];
     YTV.from = Math.max(0, Math.round((x.s - 0.3) * 10) / 10);   // 타임스탬프가 조금 늦게 찍히곤 해서 살짝 앞에서
-    YTV.stopAt = S.settings.ytPause ? (next ? Math.max(x.s + 0.5, next.s - 0.15) : x.s + 12) : null; YTV.armed = false;
+    // 다음 문장 시작 시간은 늦게 찍히곤 해서 거기까지 가면 다음 문장 앞부분까지 읽는다 → 문장 끝(t) 바로 뒤에서 멈춘다
+    var end = x.t != null ? x.t + 0.15 : next ? next.s - 0.15 : x.s + 12;
+    if (next && end > next.s) end = next.s;
+    YTV.stopAt = S.settings.ytPause ? Math.max(x.s + 0.5, end) : null; YTV.armed = false;
     YTP.seekTo(YTV.from, true);
     YTP.playVideo();
   }
@@ -2487,6 +2516,11 @@
       });
     },
     'yt-retry': function () { var r = YTV && ytRec(YTV.id); if (r) ytProcess(r); },
+    'yt-redo': function () {
+      var r = YTV && ytRec(YTV.id); if (!r) return;
+      if (YTP) { try { YTP.pauseVideo(); } catch (e) { } }   // 확인 창(어두운 막) 뒤에서 재생되지 않게
+      confirm2('문장을 처음부터 다시 정리할까요?\n(단어장에 추가한 단어는 그대로 있어요)', '다시 정리').then(function (ok) { if (ok) ytProcess(r); });
+    },
     'yt-sent': function (el) { ytPlaySent(+el.getAttribute('data-i')); },
     'yt-word': function (el) { var i = +el.getAttribute('data-i'); if (YTV.act !== i) ytPlaySent(i); else ytWord(i, +el.getAttribute('data-t')); },   // 처음 누르면 재생, 재생한 문장에서 누르면 뜻
     'yt-ko': function (el) { var i = +el.getAttribute('data-i'); YTV.ko[i] = !YTV.ko[i]; el.classList.toggle('blur', !YTV.ko[i]); },
@@ -2495,6 +2529,11 @@
     'yt-add-word': function (el) { ytAddWord(+el.getAttribute('data-stage')); },
     'yt-pause-mode': function (el) { var on = S.settings.ytPause = !S.settings.ytPause; save(); el.classList.toggle('on', on); el.setAttribute('aria-pressed', String(on)); if (!on && YTV) YTV.stopAt = null; },
     'yt-replay': function () { if (YTV && YTV.act >= 0) ytPlaySent(YTV.act); },
+    'yt-pip-close': function () {   // 작은 창 닫기 = 멈춤 (안 보이는 플레이어는 재생하지 않는다)
+      if (!YTV) return; YTV.pipOff = true; YTV.stopAt = null;
+      if (YTP) { try { YTP.pauseVideo(); } catch (e) { } }
+      ytFloat();
+    },
     'go-settings-ai': function () { go('settings', { scroll: 'ai' }); },
     'talk-scenario': function (el) { S.settings.talk.scenario = el.getAttribute('data-id'); save(); RENDER.talk(); },
     'talk-mission-n': function (el) { S.settings.talk.missionN = Number(el.getAttribute('data-n')); talkSetup.words = pickMissionWords(S.settings.talk.missionN); save(); RENDER.talk(); },

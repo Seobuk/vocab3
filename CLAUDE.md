@@ -20,8 +20,11 @@
   - AI: `aiGenerate(bodyObj, what, timeoutMs)` 공용 헬퍼(503 재시도, flash 계열 thinking 끔, `AI.last` 기록). 키·모델은 별도 키 `vocab3.ai.v1` — **코드·저장소·백업에 절대 안 들어감.**
   - 회화: `TALK`(진행 중 대화), `talkTurn()`(JSON 스키마 reply/ko/fix/note/used/say), `renderChat()`, STT(`sttStart('en'|'ko')`, 한국어는 `koTranslate()` 로 번역), 리포트 `S.talkLog`.
   - 학습 완료 연출 `celebrate()`(컨페티 canvas·카운트업·WebAudio 효과음), 단어 추가 `aiFillWords()`(8개 배치).
-  - 유튜브 쉐도잉 `S.yt`(v2.2): 링크 → oEmbed(제목) + Gemini `fileData.fileUri`(영상 통째, 구간 자르기 안 씀) → 문장 `{s,e,k,x:[익힐 표현]}`.
-    `yt` 목록 · `ytv` 영상 화면(YouTube IFrame API 는 이 화면에서만 로드). 유튜브 정책: 플레이어 위를 덮지 않음(단어 뜻은 문장 아래 카드), 떠나거나 앱이 내려가면 멈춤, 다운로드 금지.
+  - 유튜브 쉐도잉 `S.yt`(v2.2~): 링크 → oEmbed(제목) + Gemini `fileData.fileUri`(영상 통째, 구간 자르기 안 씀) → 문장 `{s,t(끝),e,k,x:[익힐 표현]}`
+    (한 문장은 끝까지 한 항목, 화면 자막 줄바꿈 무시). `yt` 목록 · `ytv` 영상 화면(YouTube IFrame API 는 이 화면에서만 로드).
+    플레이어(#ytSlot>#ytBox)는 목록과 함께 스크롤, 화면 밖인데 재생·문장 탭이면 `ytFloat()` 가 왼쪽 아래 200×200 작은 창(.pip). 버튼은 오른쪽 아래 #ytFab.
+    유튜브 정책: 보이지 않는 플레이어로 재생 시작 금지·플레이어 위를 덮지 않음(단어 뜻은 문장 아래 카드, 떠 있는 컨트롤은 z-index 17~19 로 어두운 막 아래)·떠나거나 앱이 내려가면 멈춤·다운로드/음성만 재생 금지.
+  - `#app`·`#view-ytv` 는 `overflow: clip` — hidden 이면 scrollIntoView 가 틀을 밀어 숨긴 시트가 올라온다.
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
 - `tools/test_*.js`, `tools/shots.js` — Playwright UI 테스트 (Gemini·음성인식은 stub). 스크린샷 `build/shots/`.
 - `store/` — Play 등록 문구·개인정보처리방침(권한·외부 전송이 바뀌면 같이 갱신). `docs/screenshots/` README 용.
