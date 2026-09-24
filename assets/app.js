@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.0';
+  var APP_VERSION = '2.1';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -655,7 +655,7 @@
     var html =
       '<div class="wrap">' +
       '<div class="home-head"><div><div class="eyebrow">' + fmtToday() + '</div><h1>3단계 단어장</h1></div>' +
-      '<div class="streak">🔥 ' + streak + '일 연속</div></div>' +
+      '<div class="hh-r"><div class="eyebrow ver">v' + APP_VERSION + '</div><div class="streak">🔥 ' + streak + '일 연속</div></div></div>' +
       '<div class="today"><div class="t-eyebrow">TODAY</div><div class="t-title">오늘의 학습</div><div class="t-sub">' + sub + '</div>' +
       '<div class="t-bar"><div style="width:' + pct + '%"></div></div>' + cta + '</div>' +
       // 자주 쓰는 세 가지는 한 번에: 회화 · 단어 추가 · 듣기
@@ -1201,13 +1201,12 @@
       '</div>' +
       '<div class="settings-group">' +
       '<div class="switch-row"><div><div class="sw-t">난이도</div></div><div class="pick">' + [['easy', '쉽게'], ['normal', '보통'], ['hard', '어렵게']].map(function (o) { return '<button class="' + (o[0] === t.level ? 'on' : '') + '" data-action="talk-set" data-key="level" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
-      '<button class="switch-row more-row" data-action="talk-more"><div><div class="sw-t">세부 설정</div><div class="sw-s">' + esc([t.feedbackLang === 'en' ? '교정 영어' : '교정 한국어', t.speak ? '읽어 주기' : '', t.autoSend ? '바로 보내기' : '', t.guide ? '할 말 가이드' : '', t.showKo ? '한글 번역' : ''].filter(Boolean).join(' · ')) + '</div></div><span class="chev">' + (talkSetup.more ? '▴' : '▾') + '</span></button>' +
+      '<button class="switch-row more-row" data-action="talk-more"><div><div class="sw-t">세부 설정</div><div class="sw-s">' + esc([t.feedbackLang === 'en' ? '교정 영어' : '교정 한국어', t.speak ? '읽어 주기' : '', t.autoSend ? '바로 보내기' : '', t.showKo ? '한글 번역' : ''].filter(Boolean).join(' · ')) + '</div></div><span class="chev">' + (talkSetup.more ? '▴' : '▾') + '</span></button>' +
       (talkSetup.more ?
         '<div class="switch-row"><div><div class="sw-t">교정 설명</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === t.feedbackLang ? 'on' : '') + '" data-action="talk-set" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
         '<div class="switch-row"><div><div class="sw-t">AI 답변 읽어 주기</div><div class="sw-s">답변이 오면 바로 음성으로 재생</div></div><button class="toggle' + (t.speak ? ' on' : '') + '" data-action="talk-toggle" data-key="speak"></button></div>' +
         '<div class="switch-row"><div><div class="sw-t">AI 답변 한글 번역</div><div class="sw-s">말풍선 아래 흐리게 보여 주고, 누르면 선명해져요</div></div><button class="toggle' + (t.showKo ? ' on' : '') + '" data-action="talk-toggle" data-key="showKo"></button></div>' +
-        '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (t.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>' +
-        '<div class="switch-row"><div><div class="sw-t">할 말 알려주기 (쉬움)</div><div class="sw-s">할 말이 막힐 때 그대로 읽으면 되는 문장 2개를 띄워 줘요</div></div><button class="toggle' + (t.guide ? ' on' : '') + '" data-action="talk-toggle" data-key="guide"></button></div>'
+        '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (t.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>'
         : '') +
       '</div>' +
       '<button class="btn primary big" data-action="talk-start">🗣 대화 시작</button>' +
@@ -1243,9 +1242,8 @@
       'When the learner\'s last message had a mistake, open your "reply" by naturally echoing the corrected wording inside the conversation (a recast — learner: "I go there yesterday" → reply begins "Oh, you went there yesterday? Nice!"), then carry on. Never explain grammar inside "reply".',
       '"ko": a natural, casual Korean translation of your "reply" (same meaning, spoken style).',
       '"used": the target words the learner actually used in their last message (allow inflections), else [].',
-      S.settings.talk.guide
-        ? '"say": 2 different things the learner could say back to your "reply" right now — one short and very easy, one a little fuller. Each is one natural spoken sentence the learner can read aloud as-is (first person, fits the scene, ' + (words.length ? 'prefer the target words when they fit naturally, ' : '') + 'no placeholders like [name]), with "e" = the English sentence and "k" = its Korean translation.'
-        : '"say": [].',
+      // 할 말 알려주기는 대화 중에 켜고 끄므로 "say" 는 항상 받아 두고 표시만 토글한다
+      '"say": 2 different things the learner could say back to your "reply" right now — one short and very easy, one a little fuller. Each is one natural spoken sentence the learner can read aloud as-is (first person, fits the scene, ' + (words.length ? 'prefer the target words when they fit naturally, ' : '') + 'no placeholders like [name]), with "e" = the English sentence and "k" = its Korean translation.',
       'Return JSON only: {"reply": "...", "ko": "...", "fix": "...", "note": "...", "used": [], "say": [{"e": "...", "k": "..."}]}'
     ].filter(Boolean).join('\n');
   }
@@ -1257,7 +1255,7 @@
     else TALK.msgs.push({ role: 'user', text: 'Start the conversation with a natural opening line for the scenario. No feedback yet.', hidden: true });
     var myTalk = TALK, myReq = ++TALK.req;
     KO = { src: '', busy: false };
-    TALK.busy = true; TALK.say = []; TALK.reqAt = Date.now(); renderChat();
+    TALK.busy = true; TALK.reqAt = Date.now(); renderChat();   // TALK.say 는 남겨 둔다 — 실패·취소 뒤에도 아직 답할 AI 말에 대한 할 말 (busy 동안엔 안 보임)
     talkWaitTick();
     var body;
     try {
@@ -1284,7 +1282,7 @@
         TALK.turns++;
         markUsed(last.text, Array.isArray(out.used) ? out.used : []);
       }
-      TALK.say = S.settings.talk.guide && Array.isArray(out.say) ? out.say.filter(function (s) { return s && s.e; }).slice(0, 2) : [];
+      TALK.say = Array.isArray(out.say) ? out.say.filter(function (s) { return s && s.e; }).slice(0, 2) : [];
       TALK.msgs.push({ role: 'model', text: String(out.reply).trim(), ko: String(out.ko || '').trim() });
       TALK.busy = false; renderChat(true);
       if (S.settings.talk.speak) speak(String(out.reply).trim(), 'en');
@@ -1365,15 +1363,16 @@
       }).join('') +
       (TALK.busy ? '<div class="msg ai"><div class="bubble typing"><i></i><i></i><i></i></div><div class="wait-info" id="waitInfo"></div></div>' : '') +
       '</div>' +
-      // 가이드 모드: 지금 할 만한 말을 그대로 읽으면 되게 보여 준다 (누르면 입력창에 들어감)
-      (!TALK.busy && t.guide && TALK.say && TALK.say.length
-        ? '<div class="say-bar">' + TALK.say.map(function (s, i) {
+      // 가이드 모드: 지금 할 만한 말을 그대로 읽으면 되게 보여 준다 (누르면 입력창에 들어감). 💡 로 대화 중에 켜고 끔
+      (!TALK.busy && TALK.say && TALK.say.length
+        ? '<div class="say-bar"' + (t.guide ? '' : ' hidden') + '>' + TALK.say.map(function (s, i) {
           return '<button class="say" data-action="talk-say" data-i="' + i + '"><span class="say-e">' + esc(s.e) + '</span>' + (s.k ? '<span class="say-k">' + esc(s.k) + '</span>' : '') + '</button>';
         }).join('') + '</div>' : '') +
       // 한국어로 말하기 — 알약 버튼: 한국어 인식 → 영어 번역 → 입력창(또는 바로 전송)
       '<div class="ko-row">' +
       '<button class="ko-pill' + (koOn ? ' on' : KO.busy ? ' busy' : '') + '" id="koBtn" data-action="talk-ko"' + (TALK.busy || KO.busy || enOn || STT.wait ? ' disabled' : '') + '>' + (koOn ? '■ 다 말했어요' : KO.busy ? '번역 중…' : '🇰🇷 한국어로 말하기') + '</button>' +
       (KO.src && !koOn && !KO.busy ? '<span class="ko-src">“' + esc(KO.src) + '”</span>' : '') +
+      '<button class="guide-pill' + (t.guide ? ' on' : '') + '" data-action="talk-guide" aria-label="할 말 알려주기" aria-pressed="' + !!t.guide + '">💡 할 말</button>' +
       '</div>' +
       '<div class="chat-bar">' +
       '<button class="mic' + (enOn ? ' on' : STT.wait ? ' thinking' : '') + '" id="micBtn" data-action="talk-mic" aria-label="말하기"' + (TALK.busy || STT.wait || koOn || KO.busy ? ' disabled' : '') + '>' + (enOn ? '■' : STT.wait ? '…' : '🎤') + '</button>' +
@@ -2195,6 +2194,13 @@
     'talk-mic': function () { if (STT.on) sttStop(); else sttStart('en'); },
     'talk-ko': function () { if (STT.on && STT.lang === 'ko') sttStop(); else if (!STT.on) sttStart('ko'); },
     'ko-reveal': function (el) { var m = TALK && TALK.msgs[Number(el.getAttribute('data-i'))]; if (!m) return; m.koOpen = !m.koOpen; el.classList.toggle('blur', !m.koOpen); },
+    'talk-guide': function (el) {   // 입력창을 지우지 않게 다시 그리지 않고 칩 줄만 보이고 숨긴다
+      var on = S.settings.talk.guide = !S.settings.talk.guide; save();
+      el.classList.toggle('on', on); el.setAttribute('aria-pressed', String(on));
+      var bar = $('.say-bar'), log = $('#chatLog');
+      if (bar) bar.hidden = !on; else if (on && TALK && !TALK.busy) toast('다음 답변부터 할 말을 알려 드릴게요');
+      if (log) log.scrollTop = log.scrollHeight;
+    },
     'talk-say': function (el) {
       var s = (TALK && TALK.say || [])[+el.getAttribute('data-i')]; if (!s) return;
       if (STT.on || STT.wait) { bridge.sttCancel(); sttReset(); renderChat(false); }

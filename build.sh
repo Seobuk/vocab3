@@ -35,11 +35,11 @@ pyrun() {   # python 스크립트를 stdin 으로 실행 (zip 조작용 — 윈�
 SDK_DIR="${SDK_DIR:-./sdk}"
 BUNDLETOOL="${BUNDLETOOL:-$SDK_DIR/bundletool.jar}"
 COMPILE_SDK_FLAGS="--compile-sdk-version-code 36 --compile-sdk-version-name 16"
-KS="${KS:-keystore/vocab3.jks}"
+KS_SET="${KS+1}"; KS="${KS:-keystore/vocab3.jks}"
 KS_ALIAS="${KS_ALIAS:-vocab3}"
 DEBUG_KEY=0
 if [ ! -f "$KS" ]; then   # 릴리스 키가 없으면 build/debug.jks 로 — keystore/ 에는 절대 만들지 않는다 (진짜 키로 착각하게 됨)
-  [ "$KS" = keystore/vocab3.jks ] || { echo "keystore not found: $KS"; exit 1; }
+  [ -z "$KS_SET" ] || { echo "keystore not found: $KS"; exit 1; }   # KS 를 직접 줬으면 디버그로 넘어가지 않는다
   DEBUG_KEY=1; KS=build/debug.jks; KS_ALIAS=vocab3; KS_PASS=android
 elif [ -z "${KS_PASS:-}" ]; then
   [ -f keystore/PASSWORD.txt ] || { echo "keystore/PASSWORD.txt 가 없어요 (비밀번호 한 줄, 또는 KS_PASS 환경변수)"; exit 1; }
@@ -50,14 +50,15 @@ OUT="build/vocab3.apk"
 AAB="build/vocab3.aab"
 
 if SDK="$(find_sdk)"; then
-  BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"; BT="${BT%/}"
+  BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1 || true)"; BT="${BT%/}"
   [ -n "$BT" ] || { echo "build-tools 가 없어요: $SDK/build-tools — tools/setup-sdk.ps1 을 실행하세요"; exit 1; }
   AAPT2="$BT/aapt2$EXE"; ZIPALIGN="$BT/zipalign$EXE"
   APKSIGNER=(java -jar "$BT/lib/apksigner.jar")
   DEXER=d8; D8=(java -cp "$BT/lib/d8.jar" com.android.tools.r8.D8)
   P36="$SDK/platforms/android-36/android.jar"; P34="$SDK/platforms/android-34/android.jar"
-  SDK_JAR="${SDK_JAR:-$([ -f "$P36" ] && echo "$P36" || echo "$P34")}"
-  RES_JAR="${RES_JAR:-$([ -f "$P36" ] && echo "$P36" || echo "$P34")}"   # 공식 aapt2 는 API 36 jar 로 링크해도 된다
+  first() { local f; for f; do [ -f "$f" ] && { echo "$f"; return; }; done; echo "$1"; }   # 있는 첫 jar (없으면 아래에서 missing 안내)
+  SDK_JAR="${SDK_JAR:-$(first "$P36" "$P34" "$SDK_DIR/android-36.jar")}"
+  RES_JAR="${RES_JAR:-$(first "$P36" "$P34" "$SDK_DIR/android-36.jar" "$SDK_DIR/android-34.jar")}"   # 공식 aapt2 는 API 36 jar 로 링크해도 된다
   echo "SDK: $SDK  (build-tools $(basename "$BT"))"
 else
   AAPT2=aapt2; ZIPALIGN=zipalign; APKSIGNER=(apksigner); DEXER=dx

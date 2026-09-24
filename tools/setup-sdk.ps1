@@ -19,7 +19,7 @@ if (-not $javac) {
   Write-Host "JDK 설치됨. 새 터미널을 열고 이 스크립트를 다시 실행하세요 (PATH 갱신)."
   exit 1
 }
-Write-Host "JDK: $((& javac -version 2>&1) -join ' ')"
+Write-Host "JDK: $(& javac -version)"   # 2>&1 금지 — 5.1 에선 stderr 한 줄(JAVA_TOOL_OPTIONS 등)이 Stop 으로 스크립트를 끊는다
 
 # --- cmdline-tools (sdkmanager) ---
 $sdkmanager = Join-Path $Sdk 'cmdline-tools\latest\bin\sdkmanager.bat'

@@ -42,6 +42,10 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
 
   // --- 홈: 빠른 실행 3개 ---
   eq('홈 빠른 실행 타일', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent).join('/')), '회화 연습/단어 추가/듣기 복습');
+  // v2.1: 홈 오른쪽 위 버전 = manifest versionName (APP_VERSION 과 어긋나면 여기서 걸린다)
+  const verName = require('fs').readFileSync(path.resolve(__dirname, '..', 'AndroidManifest.xml'), 'utf8').match(/versionName="([^"]+)"/)[1];
+  eq('홈 오른쪽 위 버전', await p.textContent('.home-head .hh-r .ver'), 'v' + verName);
+  eq('버전이 연속 학습일 위', await p.evaluate(() => { const v = document.querySelector('.home-head .ver').getBoundingClientRect(), s = document.querySelector('.home-head .streak').getBoundingClientRect(); return v.bottom <= s.top && v.right >= s.right - 1; }), true);
   await p.screenshot({ path: OUT + '/200-home.png' });
 
   // --- 학습 카드 ★ ---
@@ -81,9 +85,10 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.click('#tabbar [data-tab="home"]'); await p.waitForTimeout(200);
   await p.click('.quick [data-action="talk"]'); await p.waitForTimeout(300);
   eq('미션 첫 단어가 ★', await p.$$eval('.mission .mchip', x => x[0].classList.contains('starred') && x[0].textContent.startsWith('★ ')), true);
-  eq('세부 설정 접힘', await p.$$eval('[data-action="talk-toggle"][data-key="guide"]', x => x.length), 0);
+  eq('세부 설정 접힘', await p.$$eval('[data-action="talk-toggle"][data-key="showKo"]', x => x.length), 0);
   await p.click('[data-action="talk-more"]'); await p.waitForTimeout(150);
-  eq('세부 설정 펼침', await p.$$eval('[data-action="talk-toggle"][data-key="guide"]', x => x.length), 1);
+  eq('세부 설정 펼침', await p.$$eval('[data-action="talk-toggle"][data-key="showKo"]', x => x.length), 1);
+  eq('할 말 알려주기는 대화 화면(💡)으로 옮김 (v2.1)', await p.$$eval('[data-action="talk-toggle"][data-key="guide"]', x => x.length), 0);
   await p.click('[data-action="talk-more"]'); await p.waitForTimeout(150);
   await p.click('.mission .mchip'); await p.waitForTimeout(300);
   eq('미션 칩 팝업 = 단어장 데이터', await p.evaluate(() => { const s = window.__vocab.state(); const w = s.words.find(w => w.star); return document.querySelector('#sheet .sh-word span').textContent === w.w && document.querySelector('#sheet .sh-m').textContent === w.m; }), true);
@@ -118,6 +123,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   eq('번역 요청 나감', await p.evaluate(() => window.__calls.some(c => /Translate what they want to say/.test(c.body.systemInstruction.parts[0].text) && /오트 밀크/.test(c.body.contents[0].parts[0].text))), true);
   eq('영어가 입력창에', await p.inputValue('#chatIn'), 'Could I get a latte with oat milk, please?');
   eq('원문 표시', await p.textContent('.ko-src'), '“오트 밀크 넣은 라떼 한 잔 주세요”');
+  eq('원문은 💡 아래 한 줄 통째로 (안 잘림, v2.1)', await p.evaluate(() => { const s = document.querySelector('.ko-src'), g = document.querySelector('.guide-pill'); return s.scrollWidth <= s.clientWidth && s.getBoundingClientRect().top >= g.getBoundingClientRect().bottom; }), true);
   const before = await p.$$eval('.msg', x => x.length);
   eq('바로 보내지 않음 (확인 후)', before, 3);
   await p.screenshot({ path: OUT + '/208-ko-translated.png' });

@@ -67,6 +67,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   eq('전송 실패 표시', await p.$$eval('.fb.err', x => x.length), 1);
   eq('이유 문구', await p.textContent('.fb.err .fb-note'), '응답이 너무 늦어요. 서버가 붐비거나 모델이 느린 것 같아요 — 잠시 후 다시 시도해 주세요');
   eq('설정용 마지막 기록', await p.evaluate(() => { const a = JSON.parse(window.Android.load('vocab3.ai.v1')); return a.last.what + '/' + a.last.status + '/' + (a.last.err ? 'err' : ''); }), 'talk/0/err');
+  eq('실패 뒤에도 아직 답할 말의 할 말 칩 (v2.1)', await p.$$eval('.say-bar:not([hidden]) .say', x => x.map(e => e.querySelector('.say-e').textContent).join()), 'A latte, please.');
 
   // --- 3. thinkingConfig 거부(400) → 빼고 재시도 ---
   await p.click('[data-action="talk-retry"]'); await p.waitForTimeout(200);

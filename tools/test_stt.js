@@ -79,14 +79,27 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.click('.say-bar .say'); await p.waitForTimeout(150);
   eq('칩 → 입력창', await p.inputValue('#chatIn'), 'Can I get a latte, please?');
 
-  // --- 가이드 끄면 칩이 안 뜬다 ---
+  // --- v2.1: 💡 로 대화 중에 할 말 알려주기 끄고 켜기 ---
+  const chips = () => p.$$eval('.say-bar:not([hidden]) .say', x => x.length);
+  await p.fill('#chatIn', 'I was typing');
+  await p.click('[data-action="talk-guide"]'); await p.waitForTimeout(150);
+  eq('💡 끄면 칩 숨김', await chips(), 0);
+  eq('💡 꺼짐 표시', await p.getAttribute('[data-action="talk-guide"]', 'aria-pressed'), 'false');
+  eq('입력 중인 글은 그대로', await p.inputValue('#chatIn'), 'I was typing');
+  eq('설정에 저장', await p.evaluate(() => window.__vocab.state().settings.talk.guide), 'false');
+  await p.fill('#chatIn', 'Thanks'); await p.click('[data-action="talk-send"]'); await p.waitForTimeout(600);
+  eq('꺼져 있어도 다음 할 말은 받아 둠', await p.$$eval('.say-bar[hidden] .say', x => x.length), 2);
+  await p.click('[data-action="talk-guide"]'); await p.waitForTimeout(150);
+  eq('💡 켜면 지금 답에 대한 칩이 바로', await chips(), 2);
+  await p.screenshot({ path: OUT + '/105-talk-guide-toggle.png' });
+  await p.click('[data-action="talk-guide"]'); await p.waitForTimeout(150);
+
+  // --- 끈 채로 새 대화: 처음부터 칩 없이 시작 ---
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);
   await p.click('#modal .btn.primary'); await p.waitForTimeout(600);
   await p.click('[data-action="close-sheet"]'); await p.waitForTimeout(300);
-  await p.click('[data-action="talk-more"]'); await p.waitForTimeout(150);   // v2.0: 세부 설정은 접혀 있다
-  await p.click('[data-action="talk-toggle"][data-key="guide"]'); await p.waitForTimeout(150);
   await p.click('[data-action="talk-start"]'); await p.waitForTimeout(500);
-  eq('가이드 끄면 칩 없음', await p.$$eval('.say-bar .say', x => x.length), 0);
+  eq('가이드 끄면 칩 없음', await chips(), 0);
   eq('그래도 대화는 시작됨', await p.$$eval('.msg.ai', x => x.length), 1);
 
   console.log('errors:', errs);
