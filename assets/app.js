@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.9';
+  var APP_VERSION = '2.10';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -1856,7 +1856,8 @@
     // 다음 문장 시작 시간은 늦게 찍히곤 해서 거기까지 가면 다음 문장 앞부분까지 읽는다 → 문장 끝(t) 바로 뒤에서 멈춘다
     var end = x.t != null ? x.t + 0.1 : next ? next.s - 0.15 : x.s + 12;   // 멈춤이 정확해져서 끝 여유 0.15 → 0.1
     if (next && end > next.s) end = next.s;
-    YTV.stopAt = S.settings.ytPause ? Math.max(x.s + 0.5, end) : null; YTV.armed = false;
+    YTV.end = Math.max(x.s + 0.5, end);
+    YTV.stopAt = S.settings.ytPause ? YTV.end : null; YTV.armed = false;
     YTP.seekTo(YTV.from, true);
     YTP.playVideo();
   }
@@ -1872,6 +1873,8 @@
       else if ((YTV.stopAt - t) / ((YTP.getPlaybackRate && YTP.getPlaybackRate()) || 1) < 0.45) ytFinish();
     }
     var cur = -1; for (var i = 0; i < r.sents.length && r.sents[i].s <= t + 0.3; i++) cur = i;
+    // 문장마다 멈춤: 누른 문장 구간(시작 조금 앞 ~ 끝 +0.3초)에선 괄호도 그 문장 — 끝이 다음 문장 시작과 붙어 있으면 멈춘 자리에서 괄호만 다음 문장으로 넘어가 강조와 어긋났다
+    if (S.settings.ytPause && YTV.act >= 0 && YTV.end != null && t >= YTV.from - 0.5 && t < YTV.end + 0.3) cur = YTV.act;
     if (cur === YTV.cur) return;
     var old = $('#ys' + YTV.cur); if (old) old.classList.remove('cur');
     YTV.cur = cur;

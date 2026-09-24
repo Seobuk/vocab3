@@ -122,17 +122,26 @@ const SENTS = [
   eq('seek 직후 옛 시간(7.7)이어도 바로 안 멈춤', (await yt('pause')).length, 1);
   await p.waitForTimeout(500); await p.evaluate(() => { window.__seekDelay = 100; window.__ytT = 7.7; }); await p.waitForTimeout(300);
   eq('다시 끝에 오면 멈춤', (await yt('pause')).length, 2);
+  // --- 문장 끝이 다음 문장 시작과 붙어 있어도 멈춘 자리의 괄호(cur)는 누른 문장(act)에 (v2.10) ---
+  await p.evaluate(() => { window.__vocab.state().yt[0].sents[2].s = 7.1; });
+  await p.click('[data-action="yt-replay"]'); await p.waitForTimeout(300);
+  await p.evaluate(() => { window.__ytT = 6.8; }); await p.waitForTimeout(260);
+  await p.evaluate(() => { window.__ytT = 7.0; }); await p.waitForTimeout(300);
+  eq('멈춘 자리(7.0)에서 강조·괄호 같은 문장 — 다음 문장(7.1)으로 안 넘어감', (await yt('pause')).length + ' ' + await p.$$eval('#ytList .ys.act', x => x.map(e => e.id).join()) + ' ' + await p.$$eval('#ytList .ys.cur', x => x.map(e => e.id).join()), '3 ys1 ys1');
+  await p.evaluate(() => { window.__ytT = 7.6; }); await p.waitForTimeout(300);
+  eq('영상을 눌러 이어 보면 괄호는 시간 따라 다음 문장으로', await p.$$eval('#ytList .ys.cur', x => x.map(e => e.id).join()), 'ys2');
+  await p.evaluate(() => { window.__vocab.state().yt[0].sents[2].s = 7.8; });
 
   // --- 한글 가림 → 누르면 보임 ---
   await p.click('#ys1 .ko-line'); await p.waitForTimeout(100);
   eq('누른 문장만 한글 보임', await p.$$eval('#ytList .ko-line.blur', x => x.length), 2);
-  eq('한글 눌러도 재생 안 함', (await yt('seek')).length, 2);
+  eq('한글 눌러도 재생 안 함', (await yt('seek')).length, 3);
 
   // --- 재생한 문장의 단어: 익힐 표현은 바로 뜻 ---
   await p.click('#ys1 .yw[data-t="5"]'); await p.waitForTimeout(150);
   eq('표현 카드', await p.textContent('#ys1 .ycard .yc-h b') + ' = ' + await p.textContent('#ys1 .ycard .yc-m'), 'dig into = 파고들다');
   eq('표현은 Gemini 안 부름', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)).length), 0);
-  eq('단어 누른 건 재생 아님', (await yt('seek')).length, 2);
+  eq('단어 누른 건 재생 아님', (await yt('seek')).length, 3);
   await p.screenshot({ path: OUT + '/302-yt-word.png' });
   await p.click('#ys1 [data-action="yt-add-word"][data-stage="1"]'); await p.waitForTimeout(150);
   const added = await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'dig into'); return w && [w.stage, w.m, w.e, w.k, w.t, w.dailyDate ? 'd' : ''].join('|'); });
