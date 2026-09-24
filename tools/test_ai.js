@@ -95,13 +95,15 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   await p.click('[data-action="ex-edit"]'); await p.waitForTimeout(300);
   console.log('editor from list:', !!(await p.$('#ex-e')));
   await p.click('[data-action="close-sheet"]'); await p.waitForTimeout(250);
-  await p.click('[data-action="tab"][data-tab="edit"]'); await p.waitForTimeout(200);
+  await p.click('#tabbar [data-tab="edit"]'); await p.waitForTimeout(200);
+  await p.click('[data-action="add-mode"][data-mode="one"]'); await p.waitForTimeout(150);   // v2.0: 기본은 붙여넣기 탭
   await p.fill('#f-w', 'hectic'); await p.fill('#f-m', '정신없이 바쁜');
   await p.click('[data-action="ai-edit-example"]'); await p.waitForTimeout(400);
   console.log('edit screen AI:', await p.inputValue('#f-e'), '/', await p.inputValue('#f-k'));
   // (7) invalid key → readable error
   await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'BAD', model: 'gemini-2.5-flash' })); }); await p.reload(); await p.waitForTimeout(300);
-  await p.click('[data-action="tab"][data-tab="edit"]'); await p.waitForTimeout(200);
+  await p.click('#tabbar [data-tab="edit"]'); await p.waitForTimeout(200);
+  await p.click('[data-action="add-mode"][data-mode="one"]'); await p.waitForTimeout(150);   // v2.0: 기본은 붙여넣기 탭
   await p.fill('#f-w', 'hectic'); await p.fill('#f-m', '정신없이 바쁜');
   await p.click('[data-action="ai-edit-example"]'); await p.waitForTimeout(400);
   console.log('bad key toast:', await p.textContent('#toast'));

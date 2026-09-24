@@ -93,6 +93,8 @@ fs.mkdirSync(OUT, { recursive: true });
 
   // edit
   await page.click('#tabbar [data-tab="edit"]');
+  await shot('11-add-bulk');
+  await page.click('[data-action="add-mode"][data-mode="one"]');
   await shot('11-edit');
   await page.fill('#f-w', 'ballpark figure');
   await page.fill('#f-m', '대략적인 수치');
@@ -105,7 +107,7 @@ fs.mkdirSync(OUT, { recursive: true });
 
   // import
   await page.click('#tabbar [data-tab="edit"]');
-  await page.click('[data-action="go-import"]');
+  await page.click('[data-action="add-mode"][data-mode="bulk"]');   // v2.0: 붙여넣기 탭
   await page.fill('#imp', 'touch base | 연락하다 | Let me touch base with you next week. | 다음 주에 연락할게.\nballpark figure | dup | x | y\nbad line');
   await shot('13-import');
   await page.click('[data-action="do-import"]');

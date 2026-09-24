@@ -83,6 +83,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);
   await p.click('#modal .btn.primary'); await p.waitForTimeout(600);
   await p.click('[data-action="close-sheet"]'); await p.waitForTimeout(300);
+  await p.click('[data-action="talk-more"]'); await p.waitForTimeout(150);   // v2.0: 세부 설정은 접혀 있다
   await p.click('[data-action="talk-toggle"][data-key="guide"]'); await p.waitForTimeout(150);
   await p.click('[data-action="talk-start"]'); await p.waitForTimeout(500);
   eq('가이드 끄면 칩 없음', await p.$$eval('.say-bar .say', x => x.length), 0);

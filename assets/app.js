@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '1.22';
+  var APP_VERSION = '2.0';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -388,7 +388,7 @@
   var S = null;
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk' };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
@@ -399,7 +399,7 @@
   }
   function mkWord(o) {
     var now = Date.now();
-    var w = { id: uid(), w: '', p: '', m: '', e: '', k: '', t: '', src: 'user', order: now, stage: 0, addedAt: now, stageAt: now, dailyDate: null, seen: 0, lastSeen: 0, right: 0, wrong: 0 };
+    var w = { id: uid(), w: '', p: '', m: '', e: '', k: '', t: '', src: 'user', order: now, stage: 0, addedAt: now, stageAt: now, dailyDate: null, seen: 0, lastSeen: 0, right: 0, wrong: 0, star: false };
     for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) w[k] = o[k];
     return w;
   }
@@ -436,7 +436,9 @@
     s.settings.audio = a;
     s.words = Array.isArray(s.words) ? s.words : [];
     s.studyDays = s.studyDays || {};
-    s.words.forEach(function (w) { if (typeof w.stage !== 'number') w.stage = 0; });
+    s.words.forEach(function (w) { if (typeof w.stage !== 'number') w.stage = 0; if (typeof w.star !== 'boolean') w.star = false; });
+    // v2.0: 연속 학습일 신기록 연출 — 기존 사용자는 지금까지의 최고 기록을 기준선으로
+    if (typeof s.streakRecord !== 'number') s.streakRecord = bestStreakOf(s.studyDays);
     return s;
   }
   function loadState() {
@@ -461,6 +463,7 @@
     S.words.forEach(function (w) { c[w.stage] = (c[w.stage] || 0) + 1; });
     return c;
   }
+  function starCount() { var n = 0; S.words.forEach(function (w) { if (w.star) n++; }); return n; }
   function dayStat() {
     var k = localDate();
     if (!S.studyDays[k]) S.studyDays[k] = { judged: 0, memorized: 0 };
@@ -655,14 +658,18 @@
       '<div class="streak">🔥 ' + streak + '일 연속</div></div>' +
       '<div class="today"><div class="t-eyebrow">TODAY</div><div class="t-title">오늘의 학습</div><div class="t-sub">' + sub + '</div>' +
       '<div class="t-bar"><div style="width:' + pct + '%"></div></div>' + cta + '</div>' +
+      // 자주 쓰는 세 가지는 한 번에: 회화 · 단어 추가 · 듣기
+      '<div class="quick">' +
+      '<button class="q" data-action="talk"><span class="q-ic">🗣</span><span class="q-t">회화 연습</span><span class="q-s">AI와 영어로</span></button>' +
+      '<button class="q" data-action="tab" data-tab="edit"><span class="q-ic">＋</span><span class="q-t">단어 추가</span><span class="q-s">붙여넣기 · AI</span></button>' +
+      '<button class="q" data-action="audio"><span class="q-ic">🎧</span><span class="q-t">듣기 복습</span><span class="q-s">' + (AUD.active ? (AUD.playing ? '재생 중' : '일시정지') : '운전 중에') + '</span></button>' +
+      '</div>' +
       '<div class="stages">' +
       stageTile(1, c[1]) + stageTile(2, c[2]) + stageTile(3, c[3]) +
       '</div>' +
       '<button class="review-btn" style="--c:var(--s2)" data-action="start" data-stage="2"' + (c[2] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">2단계 복습</div><div class="rb-s">주기적으로 복습 → 확실하면 3단계로</div></div><span class="rb-n">' + c[2] + '</span><span class="chev">›</span></button>' +
       '<button class="review-btn" style="--c:var(--s3)" data-action="start" data-stage="3"' + (c[3] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">3단계 최종 점검</div><div class="rb-s">최종 확인 → 통과하면 졸업</div></div><span class="rb-n">' + c[3] + '</span><span class="chev">›</span></button>' +
-      '<button class="review-btn" style="--c:var(--s4)" data-action="audio"><span class="dot"></span><div><div class="rb-t">🎧 듣기 복습</div><div class="rb-s">단어 → 예문 → 뜻을 읽어 줘요 · 운전 중 귀로 복습</div></div><span class="rb-n">' + (AUD.active ? (AUD.playing ? '재생 중' : '일시정지') : '') + '</span><span class="chev">›</span></button>' +
-      '<button class="review-btn" style="--c:var(--s2)" data-action="talk"><span class="dot"></span><div><div class="rb-t">🗣 회화 연습</div><div class="rb-s">상황을 고르고 AI와 영어로 대화 · 말하면 바로 교정</div></div><span class="chev">›</span></button>' +
-      '<div class="row"><button class="btn" data-action="list" data-stage="0">대기 ' + c[0] + '개</button><button class="btn" data-action="list" data-stage="4">졸업 ' + c[4] + '개</button></div>' +
+      '<div class="row"><button class="btn" data-action="list" data-stage="0">대기 ' + c[0] + '개</button><button class="btn" data-action="list-starred">★ 중요 ' + starCount() + '개</button><button class="btn" data-action="list" data-stage="4">졸업 ' + c[4] + '개</button></div>' +
       (S.settings.tipDismissed ? '' :
         '<div class="tip"><button class="close" data-action="tip-close">×</button><b>3단계 단어장 사용법</b><br>매일 새 단어 ' + goal + '개를 예문과 함께 익히고, 단어와 예문이 자연스럽게 나오면 오른쪽으로 스와이프하세요.' +
         '<div class="flow"><span>1단계 새 단어장</span><i>→</i><span>2단계 외운 단어장</span><i>→</i><span>3단계 완전 암기장</span><i>→</i><span>졸업</span></div></div>') +
@@ -743,7 +750,8 @@
     var badge = kind === 'yes' ? '<span class="judged-badge yes">✓ ' + (SES.stage === 3 ? '졸업' : '외웠다') + '</span>' :
       kind === 'no' ? '<span class="judged-badge no">아직</span>' : kind === 'demote' ? '<span class="judged-badge no">1단계로</span>' : '';
     var top = '<div class="card-top">' + (w.p ? '<span class="tag">' + esc(w.p) + '</span>' : '') + (w.t ? '<span class="tag theme">' + esc(w.t) + '</span>' : '') +
-      '<span class="tag pos">' + (SES.i + 1) + ' / ' + SES.ids.length + '</span>' + badge + '</div>';
+      '<span class="tag pos">' + (SES.i + 1) + ' / ' + SES.ids.length + '</span>' + badge +
+      '<button class="star' + (w.star ? ' on' : '') + '" data-action="star" data-id="' + esc(w.id) + '" aria-label="중요 단어 표시">★</button></div>';
     var stamps = '<div class="stamp yes pos-t">' + (SES.stage === 3 ? '졸업' : '외웠다') + '</div><div class="stamp no pos-b">아직</div>';
     if (st.mode === 'en') {
       return top +
@@ -953,26 +961,108 @@
     var st = SES.stage, n = SES.ids.length, moved = sesList('yes').length, kept = sesList('no').length, dem = sesList('demote').length;
     var next = st === 3 ? '졸업' : STAGE_SHORT[st + 1] + '로 이동';
     var allDone = kept === 0 && dem === 0;
+    // 연속 학습일 신기록 — 오늘 처음 넘어서는 순간에만 크게 축하 (같은 날 두 번째 세션부터는 보통)
+    var streak = calcStreak(), record = false;
+    if (streak >= 2 && streak > (S.streakRecord || 0)) { record = true; S.streakRecord = streak; save(); }
     $('#view-summary').innerHTML =
-      '<div class="summary"><div class="emoji">' + (allDone ? '🎉' : '👍') + '</div>' +
+      '<div class="summary' + (record ? ' big' : '') + '"><canvas class="confetti" id="confetti"></canvas>' +
+      '<div class="emoji pop">' + (record ? '🏆' : allDone ? '🎉' : '👍') + '</div>' +
       '<h2>' + (st === 1 ? '오늘의 학습 완료!' : st === 2 ? '복습 완료!' : '최종 점검 완료!') + '</h2>' +
+      (record ? '<div class="record">🔥 연속 ' + streak + '일 — 신기록!</div>' : '') +
       '<p class="muted">' + STAGE_SHORT[st] + ' ' + n + '개를 확인했어요' + (allDone ? '. 전부 넘겼어요!' : '') + '</p>' +
       '<div class="sum-grid">' +
-      '<div><b style="color:var(--ok)">' + moved + '</b><span>' + next + '</span></div>' +
-      '<div><b style="color:var(--danger)">' + kept + '</b><span>' + STAGE_SHORT[st] + ' 유지</span></div>' +
-      (dem ? '<div><b style="color:var(--s1)">' + dem + '</b><span>1단계로 되돌림</span></div>' : '') +
-      '<div><b>' + calcStreak() + '</b><span>연속 학습일</span></div>' +
+      '<div><b style="color:var(--ok)" data-count="' + moved + '">0</b><span>' + next + '</span></div>' +
+      '<div><b style="color:var(--danger)" data-count="' + kept + '">0</b><span>' + STAGE_SHORT[st] + ' 유지</span></div>' +
+      (dem ? '<div><b style="color:var(--s1)" data-count="' + dem + '">0</b><span>1단계로 되돌림</span></div>' : '') +
+      '<div><b data-count="' + streak + '">0</b><span>연속 학습일</span></div>' +
       '</div>' +
       '<div class="actions">' +
       (kept ? '<button class="btn primary big" data-action="retry">아직인 ' + kept + '개 바로 다시 보기</button>' : '') +
       '<button class="btn big" data-action="home">홈으로</button>' +
       '</div></div>';
+    celebrate(record);
   };
 
+  /* --- 축하 연출: 컨페티 + 숫자 카운트업 + 효과음 (신기록이면 더 길고 크게) --- */
+  var audioCtx = null;
+  function playChime(big) {
+    if (!S.settings.sfx) return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      if (!audioCtx) audioCtx = new AC();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      var t0 = audioCtx.currentTime + 0.03;
+      function tone(freq, at, vol, dur, type) {
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = type || 'triangle'; o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(vol, at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+        o.connect(g); g.connect(audioCtx.destination); o.start(at); o.stop(at + dur + 0.05);
+      }
+      // 밝은 아르페지오 C–E–G–C, 신기록이면 한 옥타브 더 + 팡파르 꼬리
+      var notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach(function (f, i) { tone(f, t0 + i * 0.1, 0.22, i === notes.length - 1 ? 0.55 : 0.28); tone(f * 2, t0 + i * 0.1, 0.05, 0.25, 'sine'); });
+      if (big) {
+        [1318.5, 1567.98].forEach(function (f, i) { tone(f, t0 + 0.4 + i * 0.1, 0.22, 0.5); });
+        [783.99, 1046.5, 1318.5].forEach(function (f, i) { tone(f, t0 + 0.95 + i * 0.16, 0.2, i === 2 ? 0.9 : 0.35); tone(f / 2, t0 + 0.95 + i * 0.16, 0.12, i === 2 ? 0.9 : 0.35, 'sine'); });
+      }
+    } catch (e) { }
+  }
+  function countUp(el, target, ms) {
+    var t0 = null;
+    function frame(t) {
+      if (!t0) t0 = t;
+      var p = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(target * e);
+      if (p < 1 && el.isConnected) requestAnimationFrame(frame); else el.textContent = target;
+    }
+    requestAnimationFrame(frame);
+  }
+  var confettiRun = 0;
+  function confetti(canvas, big) {
+    var run = ++confettiRun, ctx = canvas.getContext('2d'); if (!ctx) return;
+    var W = canvas.clientWidth || 360, H = canvas.clientHeight || 640, dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = W * dpr; canvas.height = H * dpr; ctx.scale(dpr, dpr);
+    var cs = getComputedStyle(document.documentElement);
+    var colors = ['--primary', '--primary-2', '--s1', '--s2', '--s3', '--s4', '--ok'].map(function (v) { return cs.getPropertyValue(v).trim() || '#4F46E5'; });
+    var parts = [], t0 = performance.now(), life = big ? 4600 : 2600;
+    function burst(n, y0, spread) {
+      for (var i = 0; i < n; i++) {
+        var a = -Math.PI / 2 + (Math.random() - 0.5) * spread, sp = 4 + Math.random() * (big ? 9 : 7);
+        parts.push({ x: W / 2 + (Math.random() - 0.5) * W * 0.3, y: y0, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, w: 6 + Math.random() * 6, h: 4 + Math.random() * 5, r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3, c: colors[i % colors.length], born: performance.now(), circle: Math.random() < 0.3 });
+      }
+    }
+    burst(big ? 160 : 110, H * 0.55, 1.6);
+    if (big) { setTimeout(function () { if (run === confettiRun) burst(120, H * 0.45, 2.2); }, 700); setTimeout(function () { if (run === confettiRun) burst(90, H * 0.6, 1.4); }, 1500); }
+    function frame(now) {
+      if (run !== confettiRun || !canvas.isConnected) return;
+      var el = now - t0; ctx.clearRect(0, 0, W, H);
+      var alive = 0;
+      parts.forEach(function (p) {
+        p.vy += 0.16; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+        var age = now - p.born, fade = Math.max(0, 1 - age / (life * 0.75));
+        if (p.y > H + 20 || fade <= 0) return; alive++;
+        ctx.save(); ctx.globalAlpha = fade; ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c;
+        if (p.circle) { ctx.beginPath(); ctx.arc(0, 0, p.w / 2.4, 0, Math.PI * 2); ctx.fill(); } else ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      });
+      if (el < life && alive) requestAnimationFrame(frame); else ctx.clearRect(0, 0, W, H);
+    }
+    requestAnimationFrame(frame);
+  }
+  function celebrate(big) {
+    var c = $('#confetti'); if (c) confetti(c, big);
+    $$('#view-summary [data-count]').forEach(function (el) { countUp(el, Number(el.getAttribute('data-count')) || 0, big ? 1100 : 800); });
+    playChime(big);
+    bridge.vibrate(big ? 40 : 15);
+  }
 
   /* ================= STATS (통계) ================= */
-  function bestStreak() {
-    var days = Object.keys(S.studyDays).filter(function (k) { return S.studyDays[k].judged > 0; }).sort();
+  function bestStreak() { return bestStreakOf(S.studyDays); }
+  function bestStreakOf(studyDays) {
+    studyDays = studyDays || {};
+    var days = Object.keys(studyDays).filter(function (k) { return studyDays[k] && studyDays[k].judged > 0; }).sort();
     var best = 0, run = 0, prev = null;
     days.forEach(function (k) {
       var d = new Date(k + 'T00:00:00');
@@ -1060,7 +1150,7 @@
   };
 
   /* ================= LIST ================= */
-  var listState = { stage: 'all', q: '' };
+  var listState = { stage: 'all', q: '', star: false };
   /* ================= 회화 연습 (TALK) ================= */
   // 말하기(기기 음성인식) → Gemini(대화 + 한 줄 교정) → 듣기(기기 TTS). 미션 단어는 1단계 단어에서 뽑는다.
   var SCENARIOS = [
@@ -1071,26 +1161,29 @@
     { id: 'free', name: '자유 주제', icon: '💬', role: 'a friendly conversation partner', desc: 'Whatever the learner wants to talk about' }
   ];
   var LEVELS = { easy: 'CEFR A2 — short simple sentences, very common words', normal: 'CEFR B1 — natural everyday spoken English', hard: 'CEFR B2 — richer vocabulary, idioms, longer turns' };
-  function defaultTalk() { return { level: 'normal', feedbackLang: 'ko', speak: true, autoSend: false, missionN: 5, scenario: 'cafe', guide: true }; }
+  function defaultTalk() { return { level: 'normal', feedbackLang: 'ko', speak: true, autoSend: false, missionN: 5, scenario: 'cafe', guide: true, missionSrc: 'star', showKo: true }; }
   function scenarioById(id) { for (var i = 0; i < SCENARIOS.length; i++) if (SCENARIOS[i].id === id) return SCENARIOS[i]; return SCENARIOS[0]; }
   var TALK = null;          // 진행 중인 대화 { scenario, custom, level, words:[{id,w,m,used}], msgs:[{role,text,fix,note,hidden}], busy, ended, startedAt }
   var talkSetup = null;     // 설정 화면 상태 { custom, words }
   var STT = { on: false, partial: '', wait: false, timer: 0 };   // wait: 멈춘 뒤 결과를 기다리는 중
 
+  // 미션 단어 뽑기 — 'star': ★ 단어 먼저(모자라면 아래 순서로 채움), 'auto': 1단계 → 2단계 → 나머지
   function pickMissionWords(n) {
     if (!n) return [];
-    var pool = S.words.filter(function (w) { return w.stage === 1; });
-    if (pool.length < n) pool = pool.concat(S.words.filter(function (w) { return w.stage === 2; }));
-    if (pool.length < n) pool = pool.concat(S.words.filter(function (w) { return w.stage === 3 || w.stage === 0; }));
-    pool = pool.slice();
-    for (var i = pool.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
-    return pool.slice(0, n).map(function (w) { return { id: w.id, w: w.w, m: w.m, used: false }; });
+    function shuf(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+    var out = [], have = {};
+    function take(list) { shuf(list).forEach(function (w) { if (out.length < n && !have[w.id]) { have[w.id] = true; out.push(w); } }); }
+    if (S.settings.talk.missionSrc === 'star') take(S.words.filter(function (w) { return w.star; }));
+    if (out.length < n) take(S.words.filter(function (w) { return w.stage === 1; }));
+    if (out.length < n) take(S.words.filter(function (w) { return w.stage === 2; }));
+    if (out.length < n) take(S.words.filter(function (w) { return w.stage === 3 || w.stage === 0; }));
+    return out.map(function (w) { return { id: w.id, w: w.w, m: w.m, star: !!w.star, used: false }; });
   }
 
   RENDER.talk = function (p) {
     var t = S.settings.talk;
-    if (!talkSetup || (p && p.reset)) talkSetup = { custom: '', words: pickMissionWords(t.missionN) };
-    var log = (S.talkLog || []).slice(-10).reverse();
+    if (!talkSetup || (p && p.reset)) talkSetup = { custom: '', words: pickMissionWords(t.missionN), more: false };
+    var log = (S.talkLog || []).slice(-10).reverse(), stars = starCount();
     $('#view-talk').innerHTML =
       '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title">회화 연습</span><span style="width:42px"></span></div>' +
       '<div class="wrap">' +
@@ -1101,15 +1194,21 @@
       (t.scenario === 'free' ? '<div class="field" style="margin-top:8px"><input id="talk-custom" placeholder="원하는 상황 (예: 학회에서 발표 후 질문 받기)" value="' + esc(talkSetup.custom) + '"></div>' : '') +
       '<div class="section-title">미션 단어 <span class="muted">— 대화 중에 써 보세요</span></div>' +
       '<div class="card-box mission-box">' +
-      (talkSetup.words.length ? '<div class="mission">' + talkSetup.words.map(function (w) { return '<span class="mchip" title="' + esc(w.m) + '">' + esc(w.w) + '</span>'; }).join('') + '</div>' : '<div class="muted small">미션 단어 없이 자유롭게 대화해요</div>') +
+      (talkSetup.words.length ? '<div class="mission">' + talkSetup.words.map(function (w) { return '<button class="mchip' + (w.star ? ' starred' : '') + '" data-action="mission-word" data-id="' + esc(w.id) + '">' + (w.star ? '★ ' : '') + esc(w.w) + '</button>'; }).join('') + '</div>' : '<div class="muted small">미션 단어 없이 자유롭게 대화해요</div>') +
       '<div class="row" style="margin-top:10px"><div class="pick" style="flex:1">' + [0, 3, 5, 8].map(function (n) { return '<button class="' + (n === t.missionN ? 'on' : '') + '" data-action="talk-mission-n" data-n="' + n + '">' + (n ? n + '개' : '없음') + '</button>'; }).join('') + '</div><button class="btn" data-action="talk-reroll" style="flex:none">🎲 다시 뽑기</button></div>' +
+      '<div class="row" style="margin-top:8px;align-items:center"><span class="small muted" style="flex:none">뽑는 순서</span><div class="pick" style="flex:1">' + [['star', '★ 단어 먼저' + (stars ? ' (' + stars + ')' : '')], ['auto', '오늘 학습 단어']].map(function (o) { return '<button class="' + (o[0] === (t.missionSrc || 'star') ? 'on' : '') + '" data-action="talk-src" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
+      (stars || t.missionSrc !== 'star' ? '' : '<div class="small muted" style="margin-top:6px">학습 카드에서 ★을 누른 단어가 여기 먼저 나와요. 아직 없어서 오늘 학습 단어로 채웠어요.</div>') +
       '</div>' +
       '<div class="settings-group">' +
       '<div class="switch-row"><div><div class="sw-t">난이도</div></div><div class="pick">' + [['easy', '쉽게'], ['normal', '보통'], ['hard', '어렵게']].map(function (o) { return '<button class="' + (o[0] === t.level ? 'on' : '') + '" data-action="talk-set" data-key="level" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
-      '<div class="switch-row"><div><div class="sw-t">교정 설명</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === t.feedbackLang ? 'on' : '') + '" data-action="talk-set" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
-      '<div class="switch-row"><div><div class="sw-t">AI 답변 읽어 주기</div><div class="sw-s">답변이 오면 바로 음성으로 재생</div></div><button class="toggle' + (t.speak ? ' on' : '') + '" data-action="talk-toggle" data-key="speak"></button></div>' +
-      '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (t.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>' +
-      '<div class="switch-row"><div><div class="sw-t">할 말 알려주기 (쉬움)</div><div class="sw-s">할 말이 막힐 때 그대로 읽으면 되는 문장 2개를 띄워 줘요</div></div><button class="toggle' + (t.guide ? ' on' : '') + '" data-action="talk-toggle" data-key="guide"></button></div>' +
+      '<button class="switch-row more-row" data-action="talk-more"><div><div class="sw-t">세부 설정</div><div class="sw-s">' + esc([t.feedbackLang === 'en' ? '교정 영어' : '교정 한국어', t.speak ? '읽어 주기' : '', t.autoSend ? '바로 보내기' : '', t.guide ? '할 말 가이드' : '', t.showKo ? '한글 번역' : ''].filter(Boolean).join(' · ')) + '</div></div><span class="chev">' + (talkSetup.more ? '▴' : '▾') + '</span></button>' +
+      (talkSetup.more ?
+        '<div class="switch-row"><div><div class="sw-t">교정 설명</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === t.feedbackLang ? 'on' : '') + '" data-action="talk-set" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
+        '<div class="switch-row"><div><div class="sw-t">AI 답변 읽어 주기</div><div class="sw-s">답변이 오면 바로 음성으로 재생</div></div><button class="toggle' + (t.speak ? ' on' : '') + '" data-action="talk-toggle" data-key="speak"></button></div>' +
+        '<div class="switch-row"><div><div class="sw-t">AI 답변 한글 번역</div><div class="sw-s">말풍선 아래 흐리게 보여 주고, 누르면 선명해져요</div></div><button class="toggle' + (t.showKo ? ' on' : '') + '" data-action="talk-toggle" data-key="showKo"></button></div>' +
+        '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (t.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>' +
+        '<div class="switch-row"><div><div class="sw-t">할 말 알려주기 (쉬움)</div><div class="sw-s">할 말이 막힐 때 그대로 읽으면 되는 문장 2개를 띄워 줘요</div></div><button class="toggle' + (t.guide ? ' on' : '') + '" data-action="talk-toggle" data-key="guide"></button></div>'
+        : '') +
       '</div>' +
       '<button class="btn primary big" data-action="talk-start">🗣 대화 시작</button>' +
       (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
@@ -1126,8 +1225,8 @@
       return;
     }
     var t = S.settings.talk;
-    TALK = { scenario: t.scenario, custom: (talkSetup && talkSetup.custom || '').trim(), level: t.level, words: (talkSetup ? talkSetup.words : []).map(function (w) { return { id: w.id, w: w.w, m: w.m, used: false }; }), msgs: [], busy: false, ended: false, startedAt: Date.now(), turns: 0, req: 0, reqAt: 0 };
-    sttReset();
+    TALK = { scenario: t.scenario, custom: (talkSetup && talkSetup.custom || '').trim(), level: t.level, words: (talkSetup ? talkSetup.words : []).map(function (w) { return { id: w.id, w: w.w, m: w.m, star: !!w.star, used: false }; }), msgs: [], busy: false, ended: false, startedAt: Date.now(), turns: 0, req: 0, reqAt: 0 };
+    sttReset(); KO = { src: '', busy: false };
     go('chat');
     talkTurn(null);
   }
@@ -1141,11 +1240,13 @@
       'Each "reply": 1-3 short spoken sentences, English only, and end with a question or prompt so the learner keeps talking.',
       words.length ? 'Target words the learner is practicing: ' + words.join(', ') + '. Steer the conversation so they get natural chances to use them; you may use them too.' : '',
       'Feedback on the learner\'s LAST message only: if it has a grammar, word-choice or naturalness problem, put the corrected full sentence in "fix" and a one-line explanation in "note" written in ' + fb + '. If it is fine, set "fix" to "" and "note" to a very short praise in ' + fb + '. For the opening turn (no learner message yet) both are "".',
+      'When the learner\'s last message had a mistake, open your "reply" by naturally echoing the corrected wording inside the conversation (a recast — learner: "I go there yesterday" → reply begins "Oh, you went there yesterday? Nice!"), then carry on. Never explain grammar inside "reply".',
+      '"ko": a natural, casual Korean translation of your "reply" (same meaning, spoken style).',
       '"used": the target words the learner actually used in their last message (allow inflections), else [].',
       S.settings.talk.guide
         ? '"say": 2 different things the learner could say back to your "reply" right now — one short and very easy, one a little fuller. Each is one natural spoken sentence the learner can read aloud as-is (first person, fits the scene, ' + (words.length ? 'prefer the target words when they fit naturally, ' : '') + 'no placeholders like [name]), with "e" = the English sentence and "k" = its Korean translation.'
         : '"say": [].',
-      'Return JSON only: {"reply": "...", "fix": "...", "note": "...", "used": [], "say": [{"e": "...", "k": "..."}]}'
+      'Return JSON only: {"reply": "...", "ko": "...", "fix": "...", "note": "...", "used": [], "say": [{"e": "...", "k": "..."}]}'
     ].filter(Boolean).join('\n');
   }
 
@@ -1155,6 +1256,7 @@
     if (userText !== null) TALK.msgs.push({ role: 'user', text: userText });
     else TALK.msgs.push({ role: 'user', text: 'Start the conversation with a natural opening line for the scenario. No feedback yet.', hidden: true });
     var myTalk = TALK, myReq = ++TALK.req;
+    KO = { src: '', busy: false };
     TALK.busy = true; TALK.say = []; TALK.reqAt = Date.now(); renderChat();
     talkWaitTick();
     var body;
@@ -1166,7 +1268,7 @@
         generationConfig: {
           temperature: 0.9,
           responseMimeType: 'application/json',
-          responseSchema: { type: 'OBJECT', properties: { reply: { type: 'STRING' }, fix: { type: 'STRING' }, note: { type: 'STRING' }, used: { type: 'ARRAY', items: { type: 'STRING' } }, say: { type: 'ARRAY', items: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] } } }, required: ['reply', 'fix', 'note', 'used', 'say'] }
+          responseSchema: { type: 'OBJECT', properties: { reply: { type: 'STRING' }, ko: { type: 'STRING' }, fix: { type: 'STRING' }, note: { type: 'STRING' }, used: { type: 'ARRAY', items: { type: 'STRING' } }, say: { type: 'ARRAY', items: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] } } }, required: ['reply', 'ko', 'fix', 'note', 'used', 'say'] }
         }
       };
     } catch (e) { talkFail(myTalk, myReq, '요청을 만들지 못했어요: ' + String(e && e.message || e).slice(0, 60)); return; }
@@ -1183,7 +1285,7 @@
         markUsed(last.text, Array.isArray(out.used) ? out.used : []);
       }
       TALK.say = S.settings.talk.guide && Array.isArray(out.say) ? out.say.filter(function (s) { return s && s.e; }).slice(0, 2) : [];
-      TALK.msgs.push({ role: 'model', text: String(out.reply).trim() });
+      TALK.msgs.push({ role: 'model', text: String(out.reply).trim(), ko: String(out.ko || '').trim() });
       TALK.busy = false; renderChat(true);
       if (S.settings.talk.speak) speak(String(out.reply).trim(), 'en');
     }).catch(function (err) {
@@ -1245,13 +1347,16 @@
     if (!TALK) { go('talk', {}, true); return; }
     var v = $('#view-chat'), sc = scenarioById(TALK.scenario), t = S.settings.talk;
     var usedN = TALK.words.filter(function (w) { return w.used; }).length;
+    var koOn = STT.on && STT.lang === 'ko', enOn = STT.on && STT.lang !== 'ko';
     var html =
       '<div class="topbar"><button class="icon-btn" data-action="back" aria-label="닫기">' + ICON_X + '</button><span class="title">' + esc(sc.icon + ' ' + (TALK.custom || sc.name)) + '</span><button class="btn" data-action="talk-end" style="flex:none;padding:8px 12px">끝내기</button></div>' +
-      (TALK.words.length ? '<div class="mission-bar"><span class="mb-n">' + usedN + '/' + TALK.words.length + '</span>' + TALK.words.map(function (w) { return '<span class="mchip' + (w.used ? ' done' : '') + '" data-action="speak-text" data-text="' + esc(w.w) + '">' + (w.used ? '✓ ' : '') + esc(w.w) + '</span>'; }).join('') + '</div>' : '') +
+      (TALK.words.length ? '<div class="mission-bar"><span class="mb-n">' + usedN + '/' + TALK.words.length + '</span>' + TALK.words.map(function (w) { return '<button class="mchip' + (w.used ? ' done' : '') + '" data-action="mission-word" data-id="' + esc(w.id || '') + '" data-w="' + esc(w.w) + '">' + (w.used ? '✓ ' : w.star ? '★ ' : '') + esc(w.w) + '</button>'; }).join('') + '</div>' : '') +
       '<div class="chat-log" id="chatLog">' +
-      TALK.msgs.filter(function (m) { return !m.hidden || m.failed; }).map(function (m, i) {
+      TALK.msgs.map(function (m, i) {
+        if (m.hidden && !m.failed) return '';
         if (m.hidden) return '<div class="msg ai"><div class="bubble errb">첫 인사를 못 받았어요<small>' + esc(m.err || '') + '</small></div><div class="fb err"><b data-action="talk-retry">다시 시도</b> · <b data-action="talk-end">나가기</b></div></div>';
-        if (m.role === 'model') return '<div class="msg ai"><div class="bubble">' + esc(m.text) + '<button class="spk sm" data-action="speak-text" data-text="' + esc(m.text) + '" aria-label="다시 듣기">' + ICON_SPK + '</button></div></div>';
+        if (m.role === 'model') return '<div class="msg ai"><div class="bubble">' + esc(m.text) + '<button class="spk sm" data-action="speak-text" data-text="' + esc(m.text) + '" aria-label="다시 듣기">' + ICON_SPK + '</button></div>' +
+          (t.showKo && m.ko ? '<button class="ko-line' + (m.koOpen ? '' : ' blur') + '" data-action="ko-reveal" data-i="' + i + '">' + esc(m.ko) + '</button>' : '') + '</div>';
         var fb = '';
         if (m.failed) fb = '<div class="fb err">전송 실패 · <b data-action="talk-retry">다시 보내기</b>' + (m.err ? '<div class="fb-note">' + esc(m.err) + '</div>' : '') + '</div>';
         else if (m.fix) fb = '<div class="fb fix"><div class="fb-fix">✏️ ' + esc(m.fix) + '</div>' + (m.note ? '<div class="fb-note">' + esc(m.note) + '</div>' : '') + '</div>';
@@ -1265,9 +1370,14 @@
         ? '<div class="say-bar">' + TALK.say.map(function (s, i) {
           return '<button class="say" data-action="talk-say" data-i="' + i + '"><span class="say-e">' + esc(s.e) + '</span>' + (s.k ? '<span class="say-k">' + esc(s.k) + '</span>' : '') + '</button>';
         }).join('') + '</div>' : '') +
+      // 한국어로 말하기 — 알약 버튼: 한국어 인식 → 영어 번역 → 입력창(또는 바로 전송)
+      '<div class="ko-row">' +
+      '<button class="ko-pill' + (koOn ? ' on' : KO.busy ? ' busy' : '') + '" id="koBtn" data-action="talk-ko"' + (TALK.busy || KO.busy || enOn || STT.wait ? ' disabled' : '') + '>' + (koOn ? '■ 다 말했어요' : KO.busy ? '번역 중…' : '🇰🇷 한국어로 말하기') + '</button>' +
+      (KO.src && !koOn && !KO.busy ? '<span class="ko-src">“' + esc(KO.src) + '”</span>' : '') +
+      '</div>' +
       '<div class="chat-bar">' +
-      '<button class="mic' + (STT.on ? ' on' : STT.wait ? ' thinking' : '') + '" id="micBtn" data-action="talk-mic" aria-label="말하기"' + (TALK.busy || STT.wait ? ' disabled' : '') + '>' + (STT.on ? '■' : STT.wait ? '…' : '🎤') + '</button>' +
-      '<input id="chatIn" placeholder="' + (STT.on ? '듣는 중 · 다 말하면 ■ 누르기' : STT.wait ? '받아 적는 중…' : '영어로 말하거나 입력') + '" autocomplete="off" autocapitalize="sentences" value="' + esc(STT.partial || '') + '">' +
+      '<button class="mic' + (enOn ? ' on' : STT.wait ? ' thinking' : '') + '" id="micBtn" data-action="talk-mic" aria-label="말하기"' + (TALK.busy || STT.wait || koOn || KO.busy ? ' disabled' : '') + '>' + (enOn ? '■' : STT.wait ? '…' : '🎤') + '</button>' +
+      '<input id="chatIn" placeholder="' + (enOn ? '듣는 중 · 다 말하면 ■ 누르기' : koOn ? '한국어로 말하는 중 · 다 말하면 ■' : STT.wait ? '받아 적는 중…' : KO.busy ? '영어로 옮기는 중…' : '영어로 말하거나 입력') + '" autocomplete="off" autocapitalize="sentences" value="' + esc(STT.partial || '') + '">' +
       '<button class="send" data-action="talk-send" aria-label="보내기"' + (TALK.busy ? ' disabled' : '') + '>➤</button>' +
       '</div>';
     v.innerHTML = html;
@@ -1284,14 +1394,40 @@
   }
 
   /* --- 음성 인식: 🎤 를 눌러 시작하고, 다 말한 뒤 ■ 를 눌러 끝낸다 (중간에 쉬어도 안 끊김) --- */
-  function sttReset() { clearTimeout(STT.timer); STT = { on: false, partial: '', wait: false, timer: 0 }; }
-  function sttStart() {
-    if (!TALK || TALK.busy || STT.wait) return;
+  var KO = { src: '', busy: false };   // 한국어로 말하기: 마지막 원문 · 번역 중
+  function sttReset() { clearTimeout(STT.timer); STT = { on: false, partial: '', wait: false, timer: 0, lang: 'en' }; }
+  function sttStart(lang) {
+    if (!TALK || TALK.busy || STT.wait || KO.busy) return;
     if (!bridge.sttAvailable()) { toast('이 기기에서 음성 인식을 쓸 수 없어요. 입력창에 적어 주세요'); return; }
     bridge.stop();
-    sttReset(); STT.on = true;
+    sttReset(); STT.on = true; STT.lang = lang === 'ko' ? 'ko' : 'en';
+    KO.src = '';
     renderChat(false);
-    bridge.sttStart('en-US');
+    bridge.sttStart(STT.lang === 'ko' ? 'ko-KR' : 'en-US');
+  }
+  // 한국어 원문 → 지금 대화에 맞는 자연스러운 영어 한 문장
+  function koTranslate(src) {
+    if (!TALK) return;
+    var lastAi = ''; for (var i = TALK.msgs.length - 1; i >= 0; i--) if (TALK.msgs[i].role === 'model') { lastAi = TALK.msgs[i].text; break; }
+    KO = { src: src, busy: true }; renderChat(false);
+    var myTalk = TALK, myKo = KO;
+    var body = {
+      systemInstruction: { parts: [{ text: 'A Korean learner is practicing English conversation. Translate what they want to say (given in Korean) into natural spoken English they would say to their partner — first person, same intent and tone, ' + (LEVELS[TALK.level] || LEVELS.normal) + '. One or two short sentences. No explanations.' }] },
+      contents: [{ role: 'user', parts: [{ text: (lastAi ? 'Partner just said: "' + lastAi + '"\n' : '') + 'Learner wants to say (Korean): "' + src + '"' }] }],
+      generationConfig: { temperature: 0.3, responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { en: { type: 'STRING' } }, required: ['en'] } }
+    };
+    aiGenerate(body, 'translate', 30000).then(function (res) {
+      if (TALK !== myTalk || KO !== myKo) return;
+      var out = res.status === 200 ? parseAiJson(res.text) : null;
+      var en = out && out.en ? String(out.en).replace(/\s+/g, ' ').trim() : '';
+      if (!en) { KO = { src: '', busy: false }; renderChat(false); toast(res.status === 200 ? '번역을 이해하지 못했어요. 다시 말해 주세요' : aiErrorMessage(res)); return; }
+      KO = { src: src, busy: false };
+      if (S.settings.talk.autoSend) { talkTurn(en); return; }
+      renderChat(false);
+      var inp = $('#chatIn'); if (inp) { inp.value = en; inp.placeholder = '확인하고 ➤ 누르기'; inp.focus(); try { inp.setSelectionRange(en.length, en.length); } catch (e) { } }
+      var sb = $('.chat-bar .send'); if (sb) sb.classList.add('ready');
+      speak(en, 'en');   // 한 번 들려줘서 따라 말할 수 있게
+    }).catch(function () { if (TALK === myTalk && KO === myKo) { KO = { src: '', busy: false }; renderChat(false); toast('번역에 실패했어요'); } });
   }
   function sttStop() {
     if (!STT.on) return;
@@ -1308,10 +1444,12 @@
   };
   window.onStt = function (text) {
     if (!STT.on && !STT.wait) return;   // 이미 처리했거나 취소된 결과
+    var lang = STT.lang || 'en';
     sttReset();
     text = String(text || '').replace(/\s+/g, ' ').trim();
     if (!TALK) return;
     if (!text) { renderChat(false); toast('잘 못 들었어요. 다시 말해 주세요'); return; }
+    if (lang === 'ko') { koTranslate(text); return; }
     if (S.settings.talk.autoSend) { talkTurn(text); return; }
     // 기본: 입력창에 넣어 주고, 확인·수정한 뒤 ➤ 로 보낸다
     renderChat(false);
@@ -1359,7 +1497,7 @@
       corrections: (sum.corrections || []).filter(function (c) { return c && c.better; }).slice(0, 5).map(function (c) { return { you: String(c.you || ''), better: String(c.better || ''), why: String(c.why || '') }; }),
       expressions: (sum.expressions || []).filter(function (x) { return x && x.w; }).slice(0, 4).map(function (x) { return { w: String(x.w), m: String(x.m || ''), e: String(x.e || ''), k: String(x.k || '') }; }),
       // 대화 전문 — 리포트를 나중에 다시 볼 때 같이 보여 준다
-      msgs: t.msgs.filter(function (m) { return !m.hidden && !m.failed; }).map(function (m) { var o = { r: m.role === 'user' ? 'u' : 'a', t: m.text }; if (m.fix) o.f = m.fix; if (m.note) o.n = m.note; return o; })
+      msgs: t.msgs.filter(function (m) { return !m.hidden && !m.failed; }).map(function (m) { var o = { r: m.role === 'user' ? 'u' : 'a', t: m.text }; if (m.fix) o.f = m.fix; if (m.note) o.n = m.note; if (m.ko) o.k = m.ko; return o; })
     };
     S.talkLog = (S.talkLog || []).concat([rec]).slice(-30);
     var d = dayStat(); d.talk = (d.talk || 0) + 1;
@@ -1387,12 +1525,24 @@
         return '<div class="corr"><div class="c-better"><b>' + esc(x.w) + '</b> <span class="muted">' + esc(x.m) + '</span>' + (have[String(x.w).toLowerCase()] ? ' <span class="tag" style="flex:none">단어장에 있음</span>' : '') + '</div><div class="c-why">' + esc(x.e) + '</div></div>';
       }).join('') + (newEx.length ? '<button class="btn block" data-action="talk-add-expr" style="margin-top:8px">＋ 표현 ' + newEx.length + '개를 대기 단어장에 추가</button>' : '') : '') +
       (msgs.length ? '<div class="section-title" style="margin-top:14px">대화 다시 보기</div><div class="transcript">' + msgs.map(function (m) {
-        return '<div class="tr ' + (m.r === 'u' ? 'me' : 'ai') + '"><span class="who">' + (m.r === 'u' ? '나' : 'AI') + '</span><div><div>' + esc(m.t) + '</div>' + (m.f ? '<div class="tr-fix">✏️ ' + esc(m.f) + '</div>' : '') + '</div></div>';
+        return '<div class="tr ' + (m.r === 'u' ? 'me' : 'ai') + '"><span class="who">' + (m.r === 'u' ? '나' : 'AI') + '</span><div><div>' + esc(m.t) + '</div>' + (m.f ? '<div class="tr-fix">✏️ ' + esc(m.f) + '</div>' : '') + (m.k ? '<div class="tr-fix">' + esc(m.k) + '</div>' : '') + '</div></div>';
       }).join('') + '</div>' : '') +
       '<div class="sh-actions">' + (fresh ? '' : '<button class="btn danger" data-action="talk-log-del" data-id="' + esc(rec.id || '') + '">삭제</button>') + '<button class="btn primary" data-action="close-sheet">닫기</button></div>'
     );
   }
   var lastSummaryExpr = [];
+  // 미션 단어 칩 → 단어장 데이터 그대로 (뜻·예문·해석·★)
+  function openMissionWord(id, wtext) {
+    var w = id ? byId(id) : null;
+    if (!w) { if (wtext) speak(wtext, 'en'); return; }
+    openSheet(
+      '<div class="sh-word"><span>' + esc(w.w) + '</span><button class="spk" data-action="speak-id" data-id="' + esc(w.id) + '" data-what="w">' + ICON_SPK + '</button></div>' +
+      ((w.p || w.t) ? '<div class="row" style="gap:6px;margin-top:6px">' + (w.p ? '<span class="tag" style="flex:none">' + esc(w.p) + '</span>' : '') + (w.t ? '<span class="tag theme" style="flex:none">' + esc(w.t) + '</span>' : '') + '<span class="tag" style="flex:none">' + STAGE_SHORT[w.stage] + '</span></div>' : '') +
+      '<div class="sh-m">' + esc(w.m) + '</div>' +
+      '<div class="sh-e"><div class="en"><span>' + esc(w.e || '—') + '</span><button class="spk sm" data-action="speak-id" data-id="' + esc(w.id) + '" data-what="e">' + ICON_SPK + '</button></div>' + (w.k ? '<div class="ko">' + esc(w.k) + '</div>' : '') + '</div>' +
+      '<div class="sh-actions"><button class="btn' + (w.star ? ' star-on' : '') + '" data-action="star" data-id="' + esc(w.id) + '">' + (w.star ? '★ 표시됨' : '☆ 중요') + '</button><button class="btn primary" data-action="close-sheet">닫기</button></div>'
+    );
+  }
   function talkAddExpressions() {
     var have = {}; S.words.forEach(function (w) { have[w.w.toLowerCase()] = true; });
     var n = 0;
@@ -1419,7 +1569,7 @@
       '<div class="seg">' + tabs.map(function (t) {
         return '<button class="' + (String(t[0]) === String(listState.stage) ? 'on' : '') + '" data-action="list-tab" data-stage="' + t[0] + '">' + t[1] + '<small>' + t[2] + '</small></button>';
       }).join('') + '</div>' +
-      '<div class="search"><span class="muted">🔍</span><input id="q" placeholder="단어·뜻·예문 검색" value="' + esc(listState.q) + '"><button class="chip' + (S.settings.listExample ? ' on' : '') + '" data-action="list-example" title="예문 표시">예문</button></div>' +
+      '<div class="search"><span class="muted">🔍</span><input id="q" placeholder="단어·뜻·예문 검색" value="' + esc(listState.q) + '"><button class="chip' + (listState.star ? ' on' : '') + '" data-action="list-star" title="★ 단어만">★' + (starCount() ? ' ' + starCount() : '') + '</button><button class="chip' + (S.settings.listExample ? ' on' : '') + '" data-action="list-example" title="예문 표시">예문</button></div>' +
       '<div class="list' + (S.settings.listExample ? ' with-ex' : '') + '" id="listBody"></div>' +
       '</div>';
     renderListBody();
@@ -1427,7 +1577,7 @@
   };
   function listItems() {
     var st = listState.stage, q = listState.q.trim().toLowerCase();
-    var arr = S.words.filter(function (w) { return st === 'all' || w.stage === Number(st); });
+    var arr = S.words.filter(function (w) { return (st === 'all' || w.stage === Number(st)) && (!listState.star || w.star); });
     if (q) arr = arr.filter(function (w) { return (w.w + ' ' + w.m + ' ' + w.e + ' ' + w.k + ' ' + w.t).toLowerCase().indexOf(q) >= 0; });
     var rank = { 1: 0, 2: 1, 3: 2, 0: 3, 4: 4 };
     if (st === 'all') arr.sort(function (a, b) { return rank[a.stage] - rank[b.stage] || a.order - b.order; });
@@ -1439,7 +1589,7 @@
     var arr = listItems();
     var body = $('#listBody');
     if (!arr.length) {
-      body.innerHTML = '<div class="empty">' + (listState.q ? '검색 결과가 없어요' : (String(listState.stage) === '0' ? '대기 중인 단어가 없어요.<br>단어를 추가하거나 기본 세트를 불러오세요.' : '여기에는 아직 단어가 없어요')) + '</div>';
+      body.innerHTML = '<div class="empty">' + (listState.q ? '검색 결과가 없어요' : listState.star ? '★ 표시한 단어가 없어요.<br>학습 카드 오른쪽 위 ★을 눌러 표시해요.' : (String(listState.stage) === '0' ? '대기 중인 단어가 없어요.<br>단어를 추가하거나 기본 세트를 불러오세요.' : '여기에는 아직 단어가 없어요')) + '</div>';
       return;
     }
     var show = arr.slice(0, 300);
@@ -1447,7 +1597,7 @@
     body.innerHTML = show.map(function (w) {
       // 한 줄: 단어 + 뜻 / 아래: 영어 예문 / 그 아래: 우리말 해석 (설정으로 접을 수 있음)
       return '<button class="item" style="--c:' + STAGE_COLOR[w.stage] + '" data-action="open" data-id="' + esc(w.id) + '">' +
-        '<span class="dot"></span><div class="it-body"><div class="it-head"><span class="it-w">' + esc(w.w) + '</span><span class="it-m">' + esc(w.m) + '</span></div>' +
+        '<span class="dot"></span><div class="it-body"><div class="it-head"><span class="it-w">' + (w.star ? '<i class="star-i">★</i>' : '') + esc(w.w) + '</span><span class="it-m">' + esc(w.m) + '</span></div>' +
         (ex && w.e ? '<div class="it-e">' + esc(w.e) + '</div>' + (w.k ? '<div class="it-k">' + esc(w.k) + '</div>' : '') : '') +
         '</div><span class="it-tag">' + STAGE_SHORT[w.stage] + '</span></button>';
     }).join('') + (arr.length > 300 ? '<div class="empty">외 ' + (arr.length - 300) + '개 — 검색으로 좁혀 보세요</div>' : '');
@@ -1493,19 +1643,15 @@
       '<div class="stage-select">' + [0, 1, 2, 3, 4].map(function (s) {
         return '<button style="--c:' + STAGE_COLOR[s] + '" class="' + (w.stage === s ? 'on' : '') + '" data-action="set-stage" data-id="' + esc(w.id) + '" data-stage="' + s + '">' + STAGE_SHORT[s] + '</button>';
       }).join('') + '</div>' +
-      '<div class="sh-actions"><button class="btn ai" data-action="ex-edit" data-id="' + esc(w.id) + '">✨ 예문 수정·AI</button><button class="btn" data-action="edit" data-id="' + esc(w.id) + '">수정</button><button class="btn danger" data-action="delete" data-id="' + esc(w.id) + '">삭제</button></div>'
+      '<div class="sh-actions"><button class="btn' + (w.star ? ' star-on' : '') + '" data-action="star" data-id="' + esc(w.id) + '">' + (w.star ? '★ 표시됨' : '☆ 중요') + '</button><button class="btn ai" data-action="ex-edit" data-id="' + esc(w.id) + '">✨ 예문·AI</button><button class="btn" data-action="edit" data-id="' + esc(w.id) + '">수정</button><button class="btn danger" data-action="delete" data-id="' + esc(w.id) + '">삭제</button></div>'
     );
   }
 
-  /* ================= EDIT ================= */
-  RENDER.edit = function (p) {
-    var w = p && p.id ? byId(p.id) : null;
-    var isNew = !w;
-    var v = w || { w: '', p: '', m: '', e: '', k: '', t: '' };
-    $('#view-edit').innerHTML =
-      '<div class="topbar">' + (isNew ? '<span style="width:42px"></span>' : '<button class="icon-btn" data-action="back">' + ICON_BACK + '</button>') + '<span class="title">' + (isNew ? '단어 추가' : '단어 수정') + '</span><span style="width:42px"></span></div>' +
-      '<div class="wrap">' +
-      '<div class="field"><label>단어 / 표현 *</label><input id="f-w" value="' + esc(v.w) + '" placeholder="예: figure out" autocapitalize="off" autocomplete="off"></div>' +
+  /* ================= ADD / EDIT ================= */
+  // v2.0: "추가" 탭은 여러 단어 붙여넣기가 기본 — 단어만 적어도 AI(Gemini)가 뜻·예문·해석을 채운다. 한 단어 폼은 보조 탭.
+  var addState = { text: '', target: 1, ai: true, busy: false };
+  function singleFormHTML(v, isNew) {
+    return '<div class="field"><label>단어 / 표현 *</label><input id="f-w" value="' + esc(v.w) + '" placeholder="예: figure out" autocapitalize="off" autocomplete="off"></div>' +
       '<div class="row"><div class="field" style="flex:0 0 38%"><label>품사</label><select id="f-p">' + POS_LIST.map(function (x) { return '<option value="' + x + '"' + (x === v.p ? ' selected' : '') + '>' + (x || '(선택)') + '</option>'; }).join('') + '</select></div>' +
       '<div class="field"><label>테마 (선택)</label><input id="f-t" value="' + esc(v.t) + '" placeholder="예: 업무·회의"></div></div>' +
       '<div class="field"><label>뜻 *</label><input id="f-m" value="' + esc(v.m) + '" placeholder="예: 알아내다, 해결하다"></div>' +
@@ -1513,11 +1659,50 @@
       '<div class="field"><label>예문 해석</label><textarea id="f-k" placeholder="이걸 어떻게 설정하는지 도무지 모르겠어.">' + esc(v.k) + '</textarea></div>' +
       '<div class="ai-row"><input id="f-hint" placeholder="AI에게 상황 요청 (선택) 예: 여행 중" autocomplete="off"><button class="btn ai" data-action="ai-edit-example">✨ AI 예문 생성</button></div>' +
       (isNew ? '<div class="switch-row"><div><div class="sw-t">오늘 학습(1단계)에 바로 추가</div><div class="sw-s">끄면 대기 목록에 들어가 순서대로 나와요</div></div><button class="toggle on" id="f-now" data-action="toggle-el"></button></div>' : '') +
-      '<div class="row">' + (isNew ? '<button class="btn" data-action="save-word" data-more="1">저장하고 계속</button>' : '') + '<button class="btn primary" data-action="save-word">저장</button></div>' +
-      (isNew ? '<button class="btn ghost block" data-action="go-import">여러 단어 한꺼번에 붙여넣기 →</button>' : '') +
+      '<div class="row">' + (isNew ? '<button class="btn" data-action="save-word" data-more="1">저장하고 계속</button>' : '') + '<button class="btn primary" data-action="save-word">저장</button></div>';
+  }
+  RENDER.edit = function (p) {
+    var w = p && p.id ? byId(p.id) : null;
+    var v = $('#view-edit');
+    if (w) {
+      v.innerHTML = '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title">단어 수정</span><span style="width:42px"></span></div><div class="wrap">' + singleFormHTML(w, false) + '</div>';
+      v.setAttribute('data-id', w.id);
+      return;
+    }
+    var mode = (p && p.mode) || S.settings.addMode || 'bulk';
+    v.setAttribute('data-id', '');
+    v.innerHTML =
+      '<div class="wrap">' +
+      '<div class="home-head"><h1>단어 추가</h1></div>' +
+      '<div class="seg add-seg"><button class="' + (mode === 'bulk' ? 'on' : '') + '" data-action="add-mode" data-mode="bulk">📋 여러 단어 붙여넣기</button><button class="' + (mode === 'one' ? 'on' : '') + '" data-action="add-mode" data-mode="one">✏️ 한 단어씩</button></div>' +
+      (mode === 'one' ? singleFormHTML({ w: '', p: '', m: '', e: '', k: '', t: '' }, true) : bulkFormHTML()) +
       '</div>';
-    $('#view-edit').setAttribute('data-id', w ? w.id : '');
+    if (mode === 'bulk') {
+      var ta = $('#imp');
+      ta.addEventListener('input', function (e) { addState.text = e.target.value; updateImportPreview(); });
+      updateImportPreview();
+    }
   };
+  function bulkFormHTML() {
+    return '<div class="tip"><b>한 줄에 한 단어</b>만 적어도 돼요 — 뜻·예문·해석은 AI가 채워요.<br><span class="small">직접 넣으려면 <b>|</b> 로 구분: 단어 | 뜻 | 예문 | 해석 | 품사</span></div>' +
+      '<div class="field"><textarea id="imp" class="tall" placeholder="hectic\nrun late | 늦어지다\nfigure out | 알아내다 | I can\'t figure it out. | 도무지 모르겠어.\n\n(메모·사전·기사에서 복사한 목록을 그대로 붙여넣어도 돼요)">' + esc(addState.text) + '</textarea></div>' +
+      '<div class="imp-prev" id="impPrev"></div>' +
+      '<div class="settings-group">' +
+      '<div class="switch-row"><div><div class="sw-t">가져올 위치</div><div class="sw-s">1단계면 오늘 학습에 바로 포함돼요</div></div><div class="pick" id="imp-target"><button class="' + (addState.target === 1 ? 'on' : '') + '" data-action="imp-target" data-value="1">1단계</button><button class="' + (addState.target === 0 ? 'on' : '') + '" data-action="imp-target" data-value="0">대기</button></div></div>' +
+      '<div class="switch-row"><div><div class="sw-t">AI로 뜻·예문 자동 채우기</div><div class="sw-s">' + (AI.key ? '비어 있는 뜻·예문·해석·품사를 Gemini가 채워요' : 'Gemini API 키가 필요해요 — <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>') + '</div></div><button class="toggle' + (addState.ai && AI.key ? ' on' : '') + '" data-action="imp-ai"' + (AI.key ? '' : ' disabled') + '></button></div>' +
+      '</div>' +
+      '<button class="btn primary big" id="impGo" data-action="do-import">추가하기</button>';
+  }
+  function updateImportPreview() {
+    var el = $('#impPrev'); if (!el) return;
+    var rows = parseLines(addState.text), noM = 0, noE = 0;
+    rows.forEach(function (r) { if (!r.m) noM++; if (!r.e) noE++; });
+    if (!rows.length) { el.innerHTML = ''; return; }
+    var useAi = addState.ai && !!AI.key;
+    el.innerHTML = '<b>' + rows.length + '개</b> 인식' + (noM ? ' · 뜻 없음 ' + noM + '개' : '') + (noE ? ' · 예문 없음 ' + noE + '개' : '') +
+      ((noM || noE) ? (useAi ? ' → <span class="ai-mark">✨ AI가 채워요</span>' : (noM ? ' → 뜻 없는 단어는 <b>건너뛰어요</b> (AI 채우기를 켜 보세요)' : '')) : '');
+    var go = $('#impGo'); if (go && !addState.busy) go.textContent = '추가하기 (' + rows.length + '개)';
+  }
   function saveWord(more) {
     var id = $('#view-edit').getAttribute('data-id');
     var w = id ? byId(id) : null;
@@ -1534,49 +1719,91 @@
     if (now) { nw.stage = 1; nw.dailyDate = localDate(); }
     S.words.push(nw); save();
     toast(dup ? '저장했어요 (같은 단어가 이미 있어요)' : '저장했어요' + (now ? ' · 1단계' : ' · 대기'));
-    if (more) { RENDER.edit({}); $('#f-w').focus(); }
+    if (more) { RENDER.edit({ mode: 'one' }); $('#f-w').focus(); }
     else go('list', { stage: now ? 1 : 0 }, true);
   }
 
-  /* ================= IMPORT ================= */
-  RENDER.import = function (p) {
-    $('#view-import').innerHTML =
-      '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title">여러 단어 가져오기</span><span style="width:42px"></span></div>' +
-      '<div class="wrap">' +
-      '<div class="tip">한 줄에 한 단어씩, <b>|</b> (세로줄) 또는 탭으로 구분해서 붙여넣으세요.<br><span class="small">단어 | 뜻 | 예문 | 예문 해석 | 품사(선택)</span></div>' +
-      '<div class="field"><textarea id="imp" class="tall" placeholder="grab | (간단히) 사다·먹다 | Could you grab me a coffee? | 커피 하나 사다 줄 수 있어?\nrun late | 늦어지다 | Sorry, I\'m running late. | 미안, 좀 늦을 것 같아.">' + esc((p && p.text) || '') + '</textarea></div>' +
-      '<div class="switch-row"><div><div class="sw-t">가져올 위치</div><div class="sw-s">1단계면 오늘 학습에 바로 포함돼요</div></div><div class="pick" id="imp-target"><button class="on" data-action="pick" data-group="imp-target" data-value="1">1단계</button><button data-action="pick" data-group="imp-target" data-value="0">대기</button></div></div>' +
-      '<button class="btn primary big" data-action="do-import">가져오기</button>' +
-      '</div>';
-  };
+  /* ================= IMPORT (여러 단어) ================= */
+  RENDER.import = function (p) { if (p && p.text) addState.text = p.text; S.settings.addMode = 'bulk'; go('edit', { mode: 'bulk' }, true); };   // 예전 진입점 → 추가 탭(붙여넣기)
+  // 한 줄 = 한 단어. 구분자: | · 탭 · " - " · " – " · " — " · " : ". 단어만 있어도 OK (뜻·예문은 AI가 채움)
   function parseLines(text) {
-    var out = [];
-    text.split(/\r?\n/).forEach(function (line) {
-      line = line.trim(); if (!line) return;
-      var parts = line.indexOf('\t') >= 0 ? line.split('\t') : line.split('|');
+    var out = [], seen = {};
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      line = line.replace(/^\s*(?:[-*•·▪]|\d+[.)])\s+/, '').trim(); if (!line) return;
+      var parts;
+      if (line.indexOf('|') >= 0) parts = line.split('|');
+      else if (line.indexOf('\t') >= 0) parts = line.split('\t');
+      else if (/\s[-–—:]\s/.test(line)) parts = line.split(/\s[-–—:]\s/);
+      else parts = [line];
       parts = parts.map(function (x) { return x.trim(); });
-      if (parts.length < 2 || !parts[0] || !parts[1]) return;
-      out.push({ w: parts[0], m: parts[1], e: parts[2] || '', k: parts[3] || '', p: parts[4] || '' });
+      var w = parts[0]; if (!w || w.length > 60) return;
+      var key = w.toLowerCase(); if (seen[key]) return; seen[key] = true;
+      out.push({ w: w, m: parts[1] || '', e: parts[2] || '', k: parts[3] || '', p: parts[4] || '' });
     });
     return out;
   }
+  // 비어 있는 뜻·예문·해석·품사를 Gemini가 채운다 (8개씩 묶어서). onProgress(done, total)
+  function aiFillWords(rows, onProgress) {
+    var batches = [], i;
+    for (i = 0; i < rows.length; i += 8) batches.push(rows.slice(i, i + 8));
+    var done = 0;
+    function one(batch) {
+      var body = {
+        systemInstruction: { parts: [{ text: 'You complete vocabulary entries for a Korean adult learner of everyday spoken English. For each item return: "w" exactly as given; "p" part of speech — one of n., v., adj., adv., phr., idiom, prep., conj., interj.; "m" a concise Korean meaning like a dictionary entry (main senses separated by commas, under 30 characters); "e" ONE natural sentence a person would actually say (8-16 words) using the word in that meaning; "k" a colloquial Korean translation of "e". If an item already provides a field, copy it unchanged. Return a JSON array in the same order.' }] },
+        contents: [{ role: 'user', parts: [{ text: JSON.stringify(batch.map(function (r) { return { w: r.w, p: r.p, m: r.m, e: r.e, k: r.k }; })) }] }],
+        generationConfig: { temperature: 0.7, responseMimeType: 'application/json', responseSchema: { type: 'ARRAY', items: { type: 'OBJECT', properties: { w: { type: 'STRING' }, p: { type: 'STRING' }, m: { type: 'STRING' }, e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['w', 'p', 'm', 'e', 'k'] } } }
+      };
+      return aiGenerate(body, 'fill', 60000).then(function (res) {
+        if (res.status !== 200) throw { msg: aiErrorMessage(res) };
+        var arr = parseAiJson(res.text);
+        if (!Array.isArray(arr)) throw { msg: '응답을 이해하지 못했어요' };
+        var byW = {}; arr.forEach(function (x) { if (x && x.w) byW[String(x.w).toLowerCase()] = x; });
+        batch.forEach(function (r, idx) {
+          var x = byW[r.w.toLowerCase()] || arr[idx] || {};
+          if (!r.m && x.m) r.m = String(x.m).replace(/\s+/g, ' ').trim();
+          if (!r.e && x.e) r.e = String(x.e).replace(/\s+/g, ' ').trim();
+          if (!r.k && x.k) r.k = String(x.k).replace(/\s+/g, ' ').trim();
+          if (!r.p && x.p && POS_LIST.indexOf(String(x.p)) >= 0) r.p = String(x.p);
+          r.ai = true;
+        });
+        done += batch.length; if (onProgress) onProgress(done, rows.length);
+      });
+    }
+    return batches.reduce(function (pr, b) { return pr.then(function () { return one(b); }); }, Promise.resolve());
+  }
   function doImport() {
-    var rows = parseLines($('#imp').value);
-    if (!rows.length) { toast('가져올 줄이 없어요. 형식을 확인해 주세요'); return; }
-    var target = Number($('#imp-target .on').getAttribute('data-value'));
-    var have = {}; S.words.forEach(function (w) { have[w.w.toLowerCase()] = true; });
-    var added = 0, skipped = 0, today = localDate();
-    rows.forEach(function (r) {
-      if (have[r.w.toLowerCase()]) { skipped++; return; }
-      have[r.w.toLowerCase()] = true;
-      var nw = mkWord(r);
-      if (target === 1) { nw.stage = 1; nw.dailyDate = today; }
-      S.words.push(nw); added++;
+    if (addState.busy) return;
+    var rows = parseLines(addState.text);
+    if (!rows.length) { toast('추가할 줄이 없어요. 한 줄에 한 단어씩 적어 주세요'); return; }
+    var target = addState.target, useAi = addState.ai && !!AI.key;
+    var need = rows.filter(function (r) { return !r.m || !r.e; });
+    function finish() {
+      var have = {}; S.words.forEach(function (w) { have[w.w.toLowerCase()] = true; });
+      var added = 0, skipped = 0, noMeaning = 0, today = localDate();
+      rows.forEach(function (r) {
+        if (have[r.w.toLowerCase()]) { skipped++; return; }
+        if (!r.m) { noMeaning++; return; }
+        have[r.w.toLowerCase()] = true;
+        var nw = mkWord({ w: r.w, m: r.m, e: r.e, k: r.k, p: r.p, t: r.ai ? 'AI 채움' : '' });
+        if (target === 1) { nw.stage = 1; nw.dailyDate = today; }
+        S.words.push(nw); added++;
+      });
+      save();
+      addState.text = ''; addState.busy = false;
+      toast(added + '개 추가' + (skipped ? ' · 중복 ' + skipped : '') + (noMeaning ? ' · 뜻 없음 ' + noMeaning + '개 건너뜀' : ''));
+      stack = [{ view: 'home', params: {} }];
+      go('list', { stage: target });
+    }
+    if (!need.length || !useAi) { finish(); return; }
+    addState.busy = true;
+    var btn = $('#impGo'); if (btn) { btn.disabled = true; btn.textContent = '✨ AI가 채우는 중… 0/' + need.length; }
+    var ta = $('#imp'); if (ta) ta.disabled = true;
+    aiFillWords(need, function (d, tot) { var b = $('#impGo'); if (b) b.textContent = '✨ AI가 채우는 중… ' + d + '/' + tot; }).then(finish, function (err) {
+      addState.busy = false;
+      var b = $('#impGo'); if (b) { b.disabled = false; } var t2 = $('#imp'); if (t2) t2.disabled = false;
+      updateImportPreview();
+      confirm2('AI 채우기에 실패했어요: ' + (err && err.msg ? err.msg : '오류') + '\n뜻이 있는 단어만 먼저 추가할까요?', '추가').then(function (ok) { if (ok) finish(); });
     });
-    save();
-    toast(added + '개 추가' + (skipped ? ' · 중복 ' + skipped + '개 건너뜀' : ''));
-    stack = [{ view: 'home', params: {} }];
-    go('list', { stage: target });
   }
 
   /* ================= SETTINGS ================= */
@@ -1610,6 +1837,7 @@
       sw('hideMeaning', '뜻 가리기', '카드에서 뜻을 탭해야 보여요', st.hideMeaning) +
       sw('hideExample', '예문 가리기', '예문을 먼저 떠올린 뒤 탭해서 확인', st.hideExample) +
       sw('autoSpeak', '자동 발음', '카드가 나오면 단어를, 영어 예문이 보이는 순간 예문을 자동 재생', st.autoSpeak) +
+      sw('sfx', '학습 완료 효과음', '완료 화면의 축하 소리 (컨페티는 항상)', st.sfx) +
       '<div class="switch-row"><div style="flex:1"><div class="sw-t">발음 속도 <span class="muted" id="rateVal">' + st.rate.toFixed(1) + 'x</span></div><input type="range" id="rate" min="0.5" max="1.3" step="0.1" value="' + st.rate + '"></div><button class="btn" data-action="tts-test">테스트</button></div>' +
       '</div>' +
       '<div class="section-title" id="audio-settings">듣기 복습 (읽어 주기)</div><div class="settings-group">' +
@@ -1827,11 +2055,23 @@
       if (n && S.settings.themeRandom) t = pickRandomTheme();
       save(); toast(n ? '새 단어 ' + n + '개를 1단계로 가져왔어요' + (t ? ' · 테마: ' + t.name : '') : '대기 중인 단어가 없어요'); render();
     },
-    'list': function (el) { stack = [{ view: 'home', params: {} }]; go('list', { stage: el.getAttribute('data-stage') === 'all' ? 'all' : Number(el.getAttribute('data-stage')) }); },
+    'list': function (el) { stack = [{ view: 'home', params: {} }]; listState.star = false; go('list', { stage: el.getAttribute('data-stage') === 'all' ? 'all' : Number(el.getAttribute('data-stage')) }); },
     'list-example': function () { S.settings.listExample = !S.settings.listExample; save(); RENDER.list({}); },
     'list-tab': function (el) { var s = el.getAttribute('data-stage'); listState.stage = s === 'all' ? 'all' : Number(s); RENDER.list({}); },
     'tip-close': function () { S.settings.tipDismissed = true; save(); render(); },
     'open': function (el) { openWord(el.getAttribute('data-id')); },
+    'star': function (el) {
+      var w = byId(el.getAttribute('data-id')); if (!w) return;
+      w.star = !w.star; save(); bridge.vibrate(8);
+      $$('[data-action="star"][data-id="' + w.id + '"]').forEach(function (b) {
+        if (b.classList.contains('star')) b.classList.toggle('on', w.star);
+        else { b.classList.toggle('star-on', w.star); b.textContent = w.star ? '★ 표시됨' : '☆ 중요'; }
+      });
+      toast(w.star ? '★ 중요 단어로 표시 — 회화 미션에 우선 나와요' : '★ 표시를 해제했어요');
+      if (current().view === 'list') renderListBody();
+    },
+    'list-star': function () { listState.star = !listState.star; RENDER.list({}); },
+    'list-starred': function () { stack = [{ view: 'home', params: {} }]; listState.star = true; go('list', { stage: 'all' }); },
     'speak': function (el) {
       var w = currentWord(); if (!w) return;
       var what = el.getAttribute('data-what');
@@ -1883,7 +2123,10 @@
     'toggle-el': function (el) { el.classList.toggle('on'); },
     'pick': function (el) { $$('[data-group="' + el.getAttribute('data-group') + '"]').forEach(function (b) { b.classList.toggle('on', b === el); }); },
     'save-word': function (el) { saveWord(el.getAttribute('data-more') === '1'); },
-    'go-import': function () { go('import', {}); },
+    'go-import': function () { S.settings.addMode = 'bulk'; save(); RENDER.edit({ mode: 'bulk' }); },
+    'add-mode': function (el) { S.settings.addMode = el.getAttribute('data-mode'); save(); RENDER.edit({ mode: S.settings.addMode }); if (S.settings.addMode === 'one') { var f = $('#f-w'); if (f) f.focus(); } },
+    'imp-target': function (el) { addState.target = Number(el.getAttribute('data-value')); $$('#imp-target button').forEach(function (b) { b.classList.toggle('on', b === el); }); },
+    'imp-ai': function (el) { addState.ai = !addState.ai; el.classList.toggle('on', addState.ai); updateImportPreview(); },
     'do-import': function () { doImport(); },
     'setting-toggle': function (el) { var k = el.getAttribute('data-key'); S.settings[k] = !S.settings[k]; save(); el.classList.toggle('on', S.settings[k]); },
     'setting-pick': function (el) {
@@ -1940,12 +2183,18 @@
     'talk-scenario': function (el) { S.settings.talk.scenario = el.getAttribute('data-id'); save(); RENDER.talk(); },
     'talk-mission-n': function (el) { S.settings.talk.missionN = Number(el.getAttribute('data-n')); talkSetup.words = pickMissionWords(S.settings.talk.missionN); save(); RENDER.talk(); },
     'talk-reroll': function () { talkSetup.words = pickMissionWords(S.settings.talk.missionN); RENDER.talk(); },
+    'talk-src': function (el) { S.settings.talk.missionSrc = el.getAttribute('data-value'); talkSetup.words = pickMissionWords(S.settings.talk.missionN); save(); RENDER.talk(); },
+    'talk-more': function () { talkSetup.more = !talkSetup.more; RENDER.talk(); },
+    // 미션 단어 칩 → 단어장에 있는 뜻·예문 그대로 팝업
+    'mission-word': function (el) { openMissionWord(el.getAttribute('data-id'), el.getAttribute('data-w')); },
     'talk-set': function (el) { S.settings.talk[el.getAttribute('data-key')] = el.getAttribute('data-value'); save(); RENDER.talk(); },
     'talk-set-s': function (el) { S.settings.talk[el.getAttribute('data-key')] = el.getAttribute('data-value'); save(); RENDER.settings({ scroll: 'keep' }); },
     'talk-toggle': function (el) { var k = el.getAttribute('data-key'); S.settings.talk[k] = !S.settings.talk[k]; save(); el.classList.toggle('on', S.settings.talk[k]); },
     'talk-start': function () { talkStart(); },
     'talk-send': function () { talkSendFromInput(); },
-    'talk-mic': function () { if (STT.on) sttStop(); else sttStart(); },
+    'talk-mic': function () { if (STT.on) sttStop(); else sttStart('en'); },
+    'talk-ko': function () { if (STT.on && STT.lang === 'ko') sttStop(); else if (!STT.on) sttStart('ko'); },
+    'ko-reveal': function (el) { var m = TALK && TALK.msgs[Number(el.getAttribute('data-i'))]; if (!m) return; m.koOpen = !m.koOpen; el.classList.toggle('blur', !m.koOpen); },
     'talk-say': function (el) {
       var s = (TALK && TALK.say || [])[+el.getAttribute('data-i')]; if (!s) return;
       if (STT.on || STT.wait) { bridge.sttCancel(); sttReset(); renderChat(false); }
