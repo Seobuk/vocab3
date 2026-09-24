@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.3';
+  var APP_VERSION = '2.4';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -1711,14 +1711,12 @@
     YTV.ready = false; YTV.perr = null; YTV.pending = null;
     $('#view-ytv').innerHTML =
       '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title" id="ytTitle"></span><span style="width:42px"></span></div>' +
-      // v2.3: 영상도 문장과 함께 스크롤. 영상 자리가 화면 밖일 때 문장을 누르면 왼쪽 아래 작은 창(200×200)으로 띄워 재생 —
-      // 유튜브 정책상 보이지 않는 플레이어로 재생하지 않는다. 버튼은 오른손 엄지 자리(오른쪽 아래)
-      '<div class="yt-list" id="ytList"><div class="yt-slot" id="ytSlot"><div class="yt-player" id="ytBox"><div id="ytPlayer"></div></div></div><div id="ytBody"></div></div>' +
-      '<button class="yt-pip-x" data-action="yt-pip-close" aria-label="작은 창 닫기">' + ICON_X + '</button>' +
+      // v2.4: 영상은 맨 위 제자리에 고정(sticky)되고, 목록을 올리면 문장 영역이 그 위를 덮어 화면을 넓게 쓴다 (사용자 요청).
+      // 따라다니는 작은 창은 없음. ※ 덮인 채로 문장을 누르면 가려진 플레이어로 재생된다 — 유튜브 정책(보이지 않는 플레이어 재생 금지)과 어긋남을 알고 고른 방식
+      '<div class="yt-list" id="ytList"><div class="yt-player" id="ytBox"><div id="ytPlayer"></div></div><div class="yt-body" id="ytBody"></div></div>' +
       '<div class="yt-fab" id="ytFab"></div>';
     ytRenderBody();
     ytMakePlayer(r.vid);
-    ytWatch();
   };
   function ytRenderBody() {
     var r = YTV && ytRec(YTV.id), body = $('#ytBody'), fab = $('#ytFab'); if (!r || !body || !fab) return;
@@ -1785,7 +1783,6 @@
             if (p != null && !document.hidden) ytPlaySent(p);   // 앱이 내려간 사이 준비됐으면 재생하지 않는다 (백그라운드 재생 금지)
           },
           onError: function (e) { if (YTV === myV) ytPlayerError(e && e.data); },
-          onStateChange: function (e) { if (YTV !== myV) return; YTV.playing = !!e && (e.data === 1 || e.data === 3); if (e && e.data === 1) YTV.pipOff = false; ytFloat(); },   // 3 버퍼링도 재생 중으로 (작은 창이 깜빡이지 않게)
           onAutoplayBlocked: function () { toast('재생이 막혔어요 — 영상의 ▶를 한 번 눌러 주세요'); }
         }
       });
@@ -1793,24 +1790,12 @@
       clearTimeout(myV.readyTimer); myV.readyTimer = setTimeout(function () { if (YTV === myV && !myV.ready && !myV.perr) ytPlayerError('load'); }, 20000);
     });
   }
-  // 영상 자리가 반 넘게 화면 밖인데 재생 중이거나 방금 문장을 눌렀으면 → 왼쪽 아래 작은 창 (크기만 바꿔 iframe 은 그대로)
-  function ytFloat() {
-    var box = $('#ytBox'), x = $('.yt-pip-x'), v = $('#view-ytv'); if (!box || !YTV) return;
-    var on = !YTV.perr && !YTV.slotVis && !YTV.pipOff && (YTV.playing || YTV.tapped);
-    box.classList.toggle('pip', on); if (x) x.classList.toggle('show', on); if (v) v.classList.toggle('has-pip', on);
-  }
-  function ytWatch() {
-    YTV.slotVis = true; YTV.pipOff = false; YTV.tapped = false;   // tapped: 이번 방문에서 문장을 눌렀나 (다시 열었을 때 안 누른 영상이 뜨지 않게)
-    var slot = $('#ytSlot'); if (!slot || !window.IntersectionObserver) return;
-    YTV.io = new IntersectionObserver(function (en) { if (!YTV) return; YTV.slotVis = en[en.length - 1].intersectionRatio >= 0.5; ytFloat(); }, { root: $('#ytList'), threshold: [0, 0.5, 1] });
-    YTV.io.observe(slot);
-  }
   function ytStopPlayer() {
     clearInterval(ytTimer); ytTimer = 0;
     if (YTP) { try { YTP.destroy(); } catch (e) { } YTP = null; }
-    if (YTV) { YTV.ready = false; YTV.stopAt = null; YTV.pending = null; YTV.playing = false; if (YTV.io) { YTV.io.disconnect(); YTV.io = null; } }   // 다시 들어왔을 때 옛 멈춤 지점이 남지 않게
+    if (YTV) { YTV.ready = false; YTV.stopAt = null; YTV.pending = null; }   // 다시 들어왔을 때 옛 멈춤 지점이 남지 않게
   }
-  function ytPlayerError(code) { if (!YTV) return; YTV.perr = code || 'load'; YTV.pending = null; ytRenderBody(); ytFloat(); }
+  function ytPlayerError(code) { if (!YTV) return; YTV.perr = code || 'load'; YTV.pending = null; ytRenderBody(); }
   function ytPlaySent(i) {
     var r = YTV && ytRec(YTV.id), x = r && r.sents && r.sents[i]; if (!x) return;
     var prev = YTV.act; YTV.act = i;
@@ -1821,7 +1806,6 @@
     if (YTV.perr) { bridge.openUrl('https://youtu.be/' + r.vid + '?t=' + Math.floor(x.s)); return; }
     if (!YTP || !YTV.ready) { YTV.pending = i; return; }
     bridge.stop();
-    YTV.pipOff = false; YTV.tapped = true; ytFloat();   // 영상 자리가 화면 밖이면 작은 창으로 띄운 뒤에 재생
     var next = r.sents[i + 1];
     YTV.from = Math.max(0, Math.round((x.s - 0.3) * 10) / 10);   // 타임스탬프가 조금 늦게 찍히곤 해서 살짝 앞에서
     // 다음 문장 시작 시간은 늦게 찍히곤 해서 거기까지 가면 다음 문장 앞부분까지 읽는다 → 문장 끝(t) 바로 뒤에서 멈춘다
@@ -2529,11 +2513,6 @@
     'yt-add-word': function (el) { ytAddWord(+el.getAttribute('data-stage')); },
     'yt-pause-mode': function (el) { var on = S.settings.ytPause = !S.settings.ytPause; save(); el.classList.toggle('on', on); el.setAttribute('aria-pressed', String(on)); if (!on && YTV) YTV.stopAt = null; },
     'yt-replay': function () { if (YTV && YTV.act >= 0) ytPlaySent(YTV.act); },
-    'yt-pip-close': function () {   // 작은 창 닫기 = 멈춤 (안 보이는 플레이어는 재생하지 않는다)
-      if (!YTV) return; YTV.pipOff = true; YTV.stopAt = null;
-      if (YTP) { try { YTP.pauseVideo(); } catch (e) { } }
-      ytFloat();
-    },
     'go-settings-ai': function () { go('settings', { scroll: 'ai' }); },
     'talk-scenario': function (el) { S.settings.talk.scenario = el.getAttribute('data-id'); save(); RENDER.talk(); },
     'talk-mission-n': function (el) { S.settings.talk.missionN = Number(el.getAttribute('data-n')); talkSetup.words = pickMissionWords(S.settings.talk.missionN); save(); RENDER.talk(); },

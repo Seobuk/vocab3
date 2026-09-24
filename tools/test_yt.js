@@ -82,7 +82,7 @@ const SENTS = [
   eq('플레이어 = 그 영상', await p.evaluate(() => window.__yt[0].videoId), 'H5h_GUaR-bU');
   eq('저장됨', await p.evaluate(() => window.__vocab.state().yt.length + '/' + window.__vocab.state().yt[0].sents.length), '1/3');
   eq('"한 번 더"는 오른쪽 아래(오른손 엄지), "문장마다"는 그 위 (v2.3)', await p.evaluate(() => { const rp = document.querySelector('[data-action="yt-replay"]').getBoundingClientRect(), pm = document.querySelector('[data-action="yt-pause-mode"]').getBoundingClientRect(); return innerWidth - rp.right < 24 && innerHeight - rp.bottom < 30 && rp.width >= 60 && pm.bottom <= rp.top; }), true);
-  eq('영상은 목록 안에서 문장과 함께 스크롤 (v2.3)', await p.evaluate(() => document.querySelector('#ytList').contains(document.querySelector('#ytBox'))), true);
+  eq('영상은 맨 위 제자리 고정(sticky), 처음엔 다 보임 (v2.4)', await p.evaluate(() => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(); return getComputedStyle(b).position + ' ' + b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }), 'sticky true');
   await p.screenshot({ path: OUT + '/301-yt-video.png' });
 
   // --- 문장 누르면 그 시점 재생, 다음 문장 시작에서 멈춤 ---
@@ -151,33 +151,21 @@ const SENTS = [
   await p.evaluate(() => window.onAppPause()); await p.waitForTimeout(50);
   eq('앱 내려가면 일시정지', (await yt('pause')).length, pauses + 1);
 
-  // --- 영상 자리가 화면 밖일 때 문장 → 왼쪽 아래 작은 창 (v2.3 · 정책: 안 보이는 플레이어로 재생하지 않는다) ---
+  // --- v2.4: 목록을 올리면 문장이 영상 위를 덮는다 (영상은 제자리, 따라다니는 작은 창 없음) ---
   await p.setViewportSize({ width: 390, height: 420 }); await p.waitForTimeout(200);
+  const top0 = await p.evaluate(() => Math.round(document.querySelector('#ytBox').getBoundingClientRect().top));
   await p.evaluate(() => { const l = document.querySelector('#ytList'); l.scrollTop = l.scrollHeight; }); await p.waitForTimeout(300);
-  eq('스크롤하면 영상 자리도 올라가 사라짐', await p.evaluate(() => document.querySelector('#ytSlot').getBoundingClientRect().bottom <= document.querySelector('#ytList').getBoundingClientRect().top + 60), true);
+  eq('스크롤하면 영상은 제자리, 문장 영역이 그 위를 덮음', await p.evaluate(t => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return Math.round(r.top) === t && document.querySelector('#ytBody').contains(hit) && document.querySelector('#ytList').scrollTop > 0; }, top0), true);
   const plays = (await yt('play')).length;
   await p.click('#ys2 .ys-t'); await p.waitForTimeout(300);
-  eq('작은 창(200×200, 화면 안)으로 띄워 재생', await p.evaluate(() => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(); return b.classList.contains('pip') + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) + ' ' + (r.left >= 0 && r.bottom <= innerHeight); }) + ' ' + ((await yt('play')).length - plays), 'true 200x200 true 1');
-  eq('작은 창 위를 덮는 버튼 없음', await p.evaluate(() => { const a = document.querySelector('#ytBox').getBoundingClientRect(); return [...document.querySelectorAll('#ytFab button, .yt-pip-x')].every(e => { const b = e.getBoundingClientRect(); return b.right <= a.left || b.left >= a.right || b.bottom <= a.top || b.top >= a.bottom; }); }), true);
-  eq('스크롤해도 앱 틀은 안 밀림 (숨긴 시트가 올라오지 않게, overflow clip)', await p.evaluate(() => document.querySelector('#app').scrollTop === 0 && document.querySelector('#sheet').getBoundingClientRect().top >= innerHeight), true);
-  await p.screenshot({ path: OUT + '/304-yt-pip.png' });
-  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 0; }); await p.waitForTimeout(300);
-  eq('위로 올리면 제자리로', await p.evaluate(() => document.querySelector('#ytBox').classList.contains('pip')), false);
-  await p.evaluate(() => { const l = document.querySelector('#ytList'); l.scrollTop = l.scrollHeight; }); await p.waitForTimeout(300);
-  const pz0 = (await yt('pause')).length;
-  await p.click('.yt-pip-x'); await p.waitForTimeout(150);
-  eq('✕ = 멈추고 작은 창 닫기', ((await yt('pause')).length - pz0) + ' ' + await p.evaluate(() => document.querySelector('#ytBox').classList.contains('pip')), '1 false');
-  await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);
-  await p.click('[data-action="yt-open"]'); await p.waitForTimeout(400);
-  await p.evaluate(() => { const l = document.querySelector('#ytList'); l.scrollTop = l.scrollHeight; }); await p.waitForTimeout(300);
-  eq('다시 열고 문장을 안 눌렀으면 작은 창 안 뜸', await p.evaluate(() => document.querySelector('#ytBox').classList.contains('pip')), false);
-  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 0; }); await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(200);
-  await p.evaluate(() => { const l = document.querySelector('#ytList'); l.scrollTop = l.scrollHeight; }); await p.waitForTimeout(300);
-  await p.click('#ys2 .ys-t'); await p.waitForTimeout(300);
+  eq('덮인 채로 문장을 눌러도 재생 (작은 창 없음)', ((await yt('play')).length - plays) + ' ' + await p.evaluate(() => document.querySelectorAll('.pip, .yt-pip-x').length), '1 0');
   await p.click('#ys2 .yw[data-t="9"]'); await p.waitForTimeout(400);
-  eq('작은 창이 떠 있어도 단어 카드는 그 위로 보임 (scroll-padding)', await p.evaluate(() => { const c = document.querySelector('.ycard'), r = c.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return document.querySelector('#ytBox').classList.contains('pip') && c.contains(hit); }), true);
+  eq('단어 카드는 오른쪽 아래 버튼에 안 가림 (scroll-padding)', await p.evaluate(() => { const c = document.querySelector('.ycard'), r = c.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return c.contains(hit); }), true);
+  await p.screenshot({ path: OUT + '/304-yt-pinned.png' });
   await p.click('.ycard [data-action="yt-card-close"]'); await p.waitForTimeout(100);
-  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 0; }); await p.waitForTimeout(300);
+  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 0; }); await p.waitForTimeout(200);
+  eq('맨 위로 내리면 영상이 다시 드러남', await p.evaluate(() => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(); return b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }), true);
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(200);
 
   // --- 멈춤 켜고 재생 중에 나갔다 오면 옛 멈춤 지점이 남지 않는다 ---
   await p.click('[data-action="yt-pause-mode"]'); await p.waitForTimeout(100);

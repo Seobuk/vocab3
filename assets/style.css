@@ -554,16 +554,10 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 #view-ytv { display: none; overflow: hidden; overflow: clip; position: relative; }   /* 목록(#ytList)만 스크롤 — 긴 제목 등으로 화면 전체가 옆으로 밀려 플레이어가 가려지지 않게 */
 #ytTitle { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; font-size: 15px; line-height: 1.35; }
 #view-ytv.active { display: flex; flex-direction: column; }
-/* 플레이어: 목록 맨 위에서 함께 스크롤 · 16:9, 최소 200px (YouTube 최소 크기), 위를 덮는 건 아무것도 없게 */
-.yt-slot { position: relative; margin: 0 -10px 8px; aspect-ratio: 16 / 9; min-height: 200px; max-height: 45vh; background: #000; }
-.yt-player { position: absolute; inset: 0; background: #000; }
+/* 플레이어: 목록 맨 위에 sticky 로 제자리 고정 → 목록을 올리면 .yt-body(불투명)가 그 위를 덮는다 · 16:9, 최소 200px */
+.yt-player { position: sticky; top: 0; z-index: 0; margin: 0 -10px; aspect-ratio: 16 / 9; min-height: 200px; max-height: 45vh; background: #000; }   /* max-height: 가로 큰 화면에서 목록 자리를 다 먹지 않게 */
+.yt-body { position: relative; z-index: 1; margin: 0 -10px; padding: 8px 10px 150px; min-height: 100%; background: var(--bg); border-radius: 16px 16px 0 0; box-shadow: 0 -6px 16px rgba(0, 0, 0, .10); }   /* 끝 여백: 마지막 문장이 오른쪽 아래 버튼에 가리지 않게 */
 .yt-player iframe, .yt-player #ytPlayer { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-/* 작은 창: 영상 자리가 화면 밖일 때 왼쪽 아래 200×200 (오른쪽 아래는 버튼 자리) */
-.yt-player.pip { position: fixed; top: auto; right: auto; left: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); width: 200px; height: 200px; z-index: 17; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
-.has-pip .yt-slot { background: var(--surface2); }
-.yt-pip-x { display: none; position: absolute; left: 168px; bottom: calc(222px + env(safe-area-inset-bottom)); width: 44px; height: 44px; border-radius: 50%; background: var(--surface); color: var(--text); box-shadow: var(--shadow); z-index: 18; align-items: center; justify-content: center; }
-.yt-pip-x.show { display: flex; }
-.yt-pip-x svg { width: 18px; height: 18px; }
 /* 오른쪽 아래 버튼 (오른손 엄지) */
 .yt-fab { position: absolute; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 19; }   /* 떠 있는 것들은 어두운 막(20) 아래 — 확인 창이 떠 있을 땐 못 누르게 */
 .yt-fab .guide-pill { margin-left: 0; box-shadow: var(--shadow); }
@@ -574,8 +568,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .yt-again:disabled { opacity: .45; }
 .yt-err { margin: 2px 6px 8px; font-size: 12.5px; color: #B91C1C; line-height: 1.45; }   /* 밝은 테마에서 --danger 는 대비 3.5:1 */
 [data-theme="dark"] .yt-err { color: var(--danger); }
-.yt-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 290px; scroll-padding-bottom: 150px; }   /* 끝 여백: 마지막 문장이 작은 창·✕·버튼에 가리지 않게 (작은 창 유무와 상관없이 같게 — 닫을 때 안 튀게) */
-.has-pip .yt-list { scroll-padding-bottom: 290px; }   /* scrollIntoView(따라가기·단어 카드)가 떠 있는 컨트롤 위에 멈추게 */
+.yt-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px; scroll-padding-bottom: 150px; }   /* scroll-padding: 따라가기·단어 카드가 오른쪽 아래 버튼에 가리지 않게 */
 .yt-hint { padding: 2px 6px 8px; line-height: 1.5; }
 .yt-redo { padding: 14px 8px 4px; text-align: center; line-height: 1.6; }
 .yt-redo b { color: var(--primary); text-decoration: underline; font-weight: 600; display: inline-block; padding: 10px 4px; }
