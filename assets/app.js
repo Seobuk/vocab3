@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.6';
+  var APP_VERSION = '2.7';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -220,7 +220,7 @@
     }
     if (res.status === 400 && /api key/i.test(msg)) return 'API 키가 올바르지 않아요';
     if (res.status === 401 || res.status === 403) return 'API 키가 거부됐어요 (' + res.status + ')';
-    if (res.status === 404) return '모델 "' + AI.model + '"을(를) 찾을 수 없어요. 설정 → 모델 목록에서 골라 주세요';
+    if (res.status === 404) return '모델 "' + (res.model || AI.model) + '"을(를) 찾을 수 없어요. 설정 → 모델 목록에서 골라 주세요';
     if (res.status === 429) return '요청 한도를 넘었어요. 잠시 후 다시 시도하세요';
     if (res.status === 503) return '"' + AI.model + '" 모델이 지금 붐벼요. 잠시 후 다시 하거나 설정에서 다른 모델을 골라 주세요';
     if (res.status >= 500) return 'Gemini 서버 오류 (' + res.status + ')';
@@ -229,9 +229,10 @@
   // Gemini generateContent with the app's standard resilience: one retry on 503, flash-family models get
   // thinking turned off (fast replies; a model that rejects thinkingConfig gets one retry without it), and the
   // last call is recorded (AI.last) so 설정 → AI 예문 shows what happened when something goes wrong on the phone.
-  function aiGenerate(bodyObj, what, timeoutMs) {
-    var url = AI_BASE + '/models/' + encodeURIComponent(AI.model) + ':generateContent';
-    var noThink = !AI.noThink && /flash/i.test(AI.model);
+  function aiGenerate(bodyObj, what, timeoutMs, model) {   // model: 기능별로 고정할 때 (없으면 설정의 모델)
+    model = model || AI.model;
+    var url = AI_BASE + '/models/' + encodeURIComponent(model) + ':generateContent';
+    var noThink = !AI.noThink && /flash/i.test(model);
     if (noThink) { bodyObj.generationConfig = bodyObj.generationConfig || {}; bodyObj.generationConfig.thinkingConfig = { thinkingBudget: 0 }; }
     var t0 = Date.now();
     function call() { return bridge.aiCall(url, AI.key, JSON.stringify(bodyObj), timeoutMs); }
@@ -248,6 +249,7 @@
       }
       return res;
     }).then(function (res) {
+      res.model = model;
       AI.last = { at: Date.now(), ms: Date.now() - t0, status: res.status, what: what || '', err: res.status === 200 ? '' : aiErrorMessage(res) };
       saveAi();
       return res;
@@ -1650,7 +1652,8 @@
     bridge.aiCall('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(watch), '', '', 15000).then(function (res) {
       if (res.status === 404 || res.status === 400) throw { msg: '영상을 찾을 수 없어요 — 비공개·삭제됐거나 링크가 잘못됐어요' };
       try { var o = JSON.parse(res.text); if (o && o.title) { r.title = String(o.title); save(); ytRefresh(r.id); } } catch (e) { }
-      return aiGenerate(ytBody(watch), 'youtube', 300000);
+      // 유튜브 받아쓰기는 설정과 상관없이 Flash-Lite — 3 Flash·Pro 는 시간이 수십 초~수 분씩 밀린다는 보고 (v2.7)
+      return aiGenerate(ytBody(watch), 'youtube', 300000, AI_DEFAULT_MODEL);
     }).then(function (res) {
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = parseAiJson(res.text);
@@ -1674,7 +1677,7 @@
         'Transcribe ALL English speech in the video, in order, exactly as spoken (leave out filler sounds like "um"; do not correct grammar).',
         'One item = one COMPLETE sentence, from its first word to its final punctuation (. ? !). Never split a sentence into two or more items, even if it is long or the speaker pauses in the middle of it.',
         'Ignore on-screen subtitles and caption line breaks: captions often cut one sentence across two lines, so always merge the pieces back into the full spoken sentence. Follow the speech, not the captions.',
-        'For each item: "s" = the moment the first word of the sentence begins and "t" = the moment its last word ends, both as timestamps on the video timeline in MM:SS.d format — minutes:seconds with one decimal, e.g. "01:15.4" and "01:19.8" (use H:MM:SS.d past one hour). Read them straight off the MM:SS timestamps you see for the video; do NOT convert them to total seconds. "t" must not include any of the next sentence or the pause after it. Times increase from item to item. "e" = the English sentence; "k" = a natural Korean translation.',
+        'For each item, in this order: "s" = the moment the first word of the sentence begins, "e" = the English sentence, "t" = the moment its last word ends, "k" = a natural Korean translation. "s" and "t" are timestamps on the video timeline in MM:SS.d format — minutes:seconds with one decimal, e.g. "01:15.4" and "01:19.8" (use H:MM:SS.d past one hour). Read them straight off the MM:SS timestamps you see for the video; do NOT convert them to total seconds. "t" must not include any of the next sentence or the pause after it. Times increase from item to item.',
         '"x" = 0 to 3 words or expressions from that sentence worth learning for an intermediate (B1-B2) learner: idioms, phrasal verbs, collocations, less common words; never basic words. Each: "q" = the exact text as it appears in "e", "w" = its dictionary form, "p" = one of n., v., adj., adv., phr., idiom, "m" = a short Korean meaning in this context.',
         'Skip parts that are not English speech (music, Korean narration). If there is no English speech at all, return [].'
       ].join('\n') }] },
@@ -1685,7 +1688,7 @@
         responseSchema: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
           s: { type: 'STRING' }, t: { type: 'STRING' }, e: { type: 'STRING' }, k: { type: 'STRING' },
           x: { type: 'ARRAY', items: { type: 'OBJECT', properties: { q: { type: 'STRING' }, w: { type: 'STRING' }, p: { type: 'STRING' }, m: { type: 'STRING' } }, required: ['q', 'w', 'p', 'm'] } }
-        }, required: ['s', 't', 'e', 'k', 'x'] } }
+        }, required: ['s', 't', 'e', 'k', 'x'], propertyOrdering: ['s', 'e', 't', 'k', 'x'] } }
       }
     };
   }
@@ -1782,7 +1785,8 @@
     var myV = YTV;
     ytApi(function () {
       if (YTV !== myV || YTP || !$('#ytPlayer') || current().view !== 'ytv') return;
-      var pv = { playsinline: 1, rel: 0, fs: 0 };
+      // controls 0: 문장을 누를 때마다 뜨던 조작 버튼·진행바·"동영상 더보기"를 숨긴다 (문서화된 파라미터라 정책상 허용, v2.7)
+      var pv = { playsinline: 1, rel: 0, fs: 0, controls: 0, iv_load_policy: 3, disablekb: 1 };
       if (location.protocol === 'https:') pv.origin = location.origin;   // 앱: https://kr.hyunuk.vocab3
       YTP = new YT.Player('ytPlayer', {
         videoId: vid, width: '100%', height: '100%', playerVars: pv,
@@ -1800,8 +1804,17 @@
       clearTimeout(myV.readyTimer); myV.readyTimer = setTimeout(function () { if (YTV === myV && !myV.ready && !myV.perr) ytPlayerError('load'); }, 20000);
     });
   }
+  var YT_LEAD = 0;   // ponytail: 폰 소리 출력 지연 보정(초) — 끝이 늦게 끊기면 실기기에서 0.03~0.08 로 올려 본다
+  // 끝나기 직전엔 화면 갱신마다 확인해 정확히 멈춘다 (0.2초 틱만 쓰면 0~0.26초 들쑥날쑥 늦게 멈췄다)
+  function ytFinish() {
+    YTV.raf = 0; if (!YTP || YTV.stopAt == null || YTP.getPlayerState() !== 1) return;   // 버퍼링 등이면 다음 틱이 다시 건다
+    var c = YTP.getCurrentTime();
+    if (c >= YTV.stopAt - YT_LEAD) { if (c - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; }
+    else YTV.raf = requestAnimationFrame(ytFinish);
+  }
   function ytStopPlayer() {
     clearInterval(ytTimer); ytTimer = 0;
+    if (YTV && YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; }
     if (YTP) { try { YTP.destroy(); } catch (e) { } YTP = null; }
     if (YTV) { YTV.ready = false; YTV.stopAt = null; YTV.pending = null; }   // 다시 들어왔을 때 옛 멈춤 지점이 남지 않게
   }
@@ -1816,10 +1829,11 @@
     if (YTV.perr) { bridge.openUrl('https://youtu.be/' + r.vid + '?t=' + Math.floor(x.s)); return; }
     if (!YTP || !YTV.ready) { YTV.pending = i; return; }
     bridge.stop();
+    if (YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; }
     var next = r.sents[i + 1];
     YTV.from = Math.max(0, Math.round((x.s - 0.3) * 10) / 10);   // 타임스탬프가 조금 늦게 찍히곤 해서 살짝 앞에서
     // 다음 문장 시작 시간은 늦게 찍히곤 해서 거기까지 가면 다음 문장 앞부분까지 읽는다 → 문장 끝(t) 바로 뒤에서 멈춘다
-    var end = x.t != null ? x.t + 0.15 : next ? next.s - 0.15 : x.s + 12;
+    var end = x.t != null ? x.t + 0.1 : next ? next.s - 0.15 : x.s + 12;   // 멈춤이 정확해져서 끝 여유 0.15 → 0.1
     if (next && end > next.s) end = next.s;
     YTV.stopAt = S.settings.ytPause ? Math.max(x.s + 0.5, end) : null; YTV.armed = false;
     YTP.seekTo(YTV.from, true);
@@ -1831,9 +1845,10 @@
     try { t = YTP.getCurrentTime(); } catch (e) { return; }
     // 멈춤: seekTo 직후 getCurrentTime 은 옛 위치를 돌려주므로(iframe API 캐시) 새 위치가 보인 뒤에야 판정을 켠다.
     // 끝 지점을 자연스럽게 지날 때만 멈추고, 스크러빙으로 훌쩍 넘어가면 그냥 푼다
-    if (YTV.stopAt != null) {
+    if (YTV.stopAt != null && !YTV.raf) {
       if (!YTV.armed) { if (t >= YTV.from - 0.5 && t < YTV.stopAt) YTV.armed = true; }
       else if (t >= YTV.stopAt) { if (t - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; }
+      else if ((YTV.stopAt - t) / ((YTP.getPlaybackRate && YTP.getPlaybackRate()) || 1) < 0.45) ytFinish();
     }
     var cur = -1; for (var i = 0; i < r.sents.length && r.sents[i].s <= t + 0.3; i++) cur = i;
     if (cur === YTV.cur) return;

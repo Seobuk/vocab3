@@ -43,7 +43,7 @@ const SENTS = [
   }, SENTS);
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-3.8-flash' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
   await p.reload(); await p.waitForTimeout(400);
   const yt = fn => p.evaluate(f => window.__yt.filter(c => c.fn === f), fn);
   const view = () => p.evaluate(() => document.querySelector('.view.active').id);
@@ -75,12 +75,15 @@ const SENTS = [
   eq('프롬프트: 문장을 쪼개지 말 것 · 화면 자막 줄바꿈 무시 (v2.3)', /Never split a sentence/.test(sysT) && /Ignore on-screen subtitles/.test(sysT) && !/at most about 20 words/.test(sysT), true);
   eq('저해상도 (받아쓰기)', gem.body.generationConfig.mediaResolution, 'MEDIA_RESOLUTION_LOW');
   eq('Gemini 키는 헤더로', gem.headers['x-goog-api-key'], 'TEST-KEY');
+  eq('유튜브 정리는 설정 모델(3.8 Flash)과 상관없이 Flash-Lite (v2.7)', /models\/gemini-flash-lite-latest:generateContent/.test(gem.url), true);
+  eq('답 순서 s→e→t→k→x (v2.7)', gem.body.generationConfig.responseSchema.items.propertyOrdering.join(','), 's,e,t,k,x');
   eq('제목', await p.textContent('#ytTitle'), 'Test Talk');
   eq('문장 3개', await p.$$eval('#ytList .ys', x => x.length), 3);
   eq('시간 표시', await p.$$eval('#ytList .ys-t', x => x.map(e => e.textContent).join(' ')), '0:00 0:03 0:07');
   eq('한글은 가려짐', await p.$$eval('#ytList .ko-line.blur', x => x.length), 3);
   eq('익힐 표현 밑줄', await p.$$eval('#ys1 .yw.gx', x => x.map(e => e.textContent).join(' ')), 'dig into');
   eq('플레이어 = 그 영상', await p.evaluate(() => window.__yt[0].videoId), 'H5h_GUaR-bU');
+  eq('조작 버튼 숨김 controls 0 (v2.7)', await p.evaluate(() => window.__yt[0].vars.controls + '/' + window.__yt[0].vars.iv_load_policy), '0/3');
   eq('저장됨', await p.evaluate(() => window.__vocab.state().yt.length + '/' + window.__vocab.state().yt[0].sents.length), '1/3');
   eq('"한 번 더"는 오른쪽 아래(오른손 엄지), "문장마다"는 그 위 (v2.3)', await p.evaluate(() => { const rp = document.querySelector('[data-action="yt-replay"]').getBoundingClientRect(), pm = document.querySelector('[data-action="yt-pause-mode"]').getBoundingClientRect(); return innerWidth - rp.right < 24 && innerHeight - rp.bottom < 30 && rp.width >= 60 && pm.bottom <= rp.top; }), true);
   eq('영상은 맨 위 제자리 고정(sticky), 처음엔 다 보임 (v2.4)', await p.evaluate(() => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(); return getComputedStyle(b).position + ' ' + b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }), 'sticky true');
@@ -105,8 +108,11 @@ const SENTS = [
   await p.evaluate(() => { window.__ytT = 5; }); await p.waitForTimeout(300);
   eq('아직 안 멈춤', (await yt('pause')).length, 0);
   eq('지금 나오는 문장 하이라이트', await p.$$eval('#ytList .ys.cur', x => x.map(e => e.id).join()), 'ys1');
+  await p.evaluate(() => { window.__ytT = 6.7; }); await p.waitForTimeout(260);   // 끝 0.45초 안 → 화면 갱신마다 확인 시작
+  await p.evaluate(() => { window.__ytT = 7.0; }); await p.waitForTimeout(60);
+  eq('문장 끝(t 6.9 + 0.1)에서 바로 멈춤 — 0.2초 틱을 기다리지 않음 (v2.7)', (await yt('pause')).length, 1);
   await p.evaluate(() => { window.__ytT = 7.1; }); await p.waitForTimeout(300);
-  eq('문장 끝(t 6.9) 바로 뒤에서 멈춤 — 다음 문장(7.8)까지 안 읽음', (await yt('pause')).length, 1);
+  eq('다음 문장(7.8)까지 안 읽음 · 한 번만 멈춤', (await yt('pause')).length, 1);
   await p.evaluate(() => { window.__seekDelay = 700; });
   await p.click('[data-action="yt-replay"]'); await p.waitForTimeout(500);
   eq('↻ 한 번 더 = 같은 문장', (await yt('seek')).slice(-1)[0].t, 2.9);
@@ -134,6 +140,7 @@ const SENTS = [
   await p.click('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(300);
   const look = await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)));
   eq('뜻 요청에 문장·단어', look.length + ' ' + /Tapped word: "really"/.test(look[0].body.contents[0].parts[0].text), '1 true');
+  eq('단어 뜻은 설정 모델(3.8 Flash) 그대로', /models\/gemini-3\.8-flash:generateContent/.test(look[0].url), true);
   eq('뜻 카드', await p.textContent('#ys1 .ycard .yc-m'), '정말로');
   await p.click('#ys1 [data-action="yt-add-word"][data-stage="0"]'); await p.waitForTimeout(150);
   eq('대기에 추가', await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'really'); return w && w.stage; }), 0);
