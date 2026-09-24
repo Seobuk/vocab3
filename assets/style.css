@@ -539,3 +539,49 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .imp-prev b { color: var(--text); }
 .imp-prev .ai-mark { color: var(--primary); font-weight: 700; }
 .field textarea:disabled { opacity: .6; }
+
+/* ---------- YouTube 쉐도잉 (v2.2) ---------- */
+.yt-item { display: flex; align-items: center; gap: 2px; background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); padding: 8px; }
+.yt-open { flex: 1; min-width: 0; display: flex; gap: 12px; align-items: center; text-align: left; }
+.yt-open img { width: 112px; height: 63px; object-fit: cover; border-radius: 10px; background: var(--surface2); flex: none; }
+.yi-b { min-width: 0; }
+.yi-t { font-weight: 700; font-size: 14.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.yi-s { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.yi-del { flex: none; width: 44px; height: 44px; color: var(--muted); display: flex; align-items: center; justify-content: center; border-radius: 12px; }
+.yi-del svg { width: 18px; height: 18px; }
+.yt-legal { line-height: 1.55; padding: 4px 2px; }
+.yt-legal b { text-decoration: underline; font-weight: 600; }
+#view-ytv { display: none; overflow: hidden; }   /* 목록(#ytList)만 스크롤 — 긴 제목 등으로 화면 전체가 옆으로 밀려 플레이어가 가려지지 않게 */
+#ytTitle { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; font-size: 15px; line-height: 1.35; }
+#view-ytv.active { display: flex; flex-direction: column; }
+/* 플레이어: 16:9, 최소 200px (YouTube 최소 크기), 위를 덮는 건 아무것도 없게 */
+.yt-player { position: relative; flex: none; width: 100%; aspect-ratio: 16 / 9; min-height: 200px; max-height: 45vh; background: #000; }   /* 가로 큰 화면에서 목록 자리를 다 먹지 않게 (영상은 안에서 레터박스) */
+.yt-player iframe, .yt-player #ytPlayer { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.yt-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px 6px; }
+.yt-bar .guide-pill { margin-left: 0; }
+.yt-bar .guide-pill:disabled { opacity: .45; }
+.yt-err { flex-basis: 100%; font-size: 12.5px; color: #B91C1C; line-height: 1.45; }   /* 밝은 테마에서 --danger 는 대비 3.5:1 */
+[data-theme="dark"] .yt-err { color: var(--danger); }
+.yt-list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 10px 24px; }
+.yt-hint { padding: 2px 6px 8px; line-height: 1.5; }
+.ys { display: flex; gap: 8px; padding: 10px 8px; border-radius: 14px; }
+.ys.cur { box-shadow: inset 3px 0 0 var(--primary); }   /* 지금 나오는 문장 = 왼쪽 막대, 누른 문장 = 배경 (둘이 구분되게) */
+.ys.act { background: var(--primary-soft); }
+.ys-t { flex: none; width: 42px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 4px; }
+.ys-b { flex: 1; min-width: 0; }
+.ys-e { font-size: 16px; line-height: 1.55; }
+.yw.gx { text-decoration: underline dotted var(--primary); text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+.ys.act .yw { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+.ys.act .yw.gx { text-decoration-color: var(--primary); }
+.ys.act .yw.sel { background: var(--primary); color: var(--on-primary); border-radius: 4px; text-decoration: none; }
+.ys .ko-line { margin-left: 0; width: 100%; padding: 4px 0; }   /* 줄 전체가 누르는 곳 — 살짝 빗나가 문장이 다시 재생되지 않게 */
+.ys.act .ys-t, .ys.act .ko-line:not(.blur) { color: var(--text); }
+.ycard { position: relative; margin-top: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 44px 12px 12px; box-shadow: var(--shadow); }
+.yc-h { display: flex; align-items: center; gap: 8px; font-size: 17px; }
+.yc-m { font-size: 15px; font-weight: 600; margin-top: 2px; }
+.yc-a { display: flex; gap: 8px; margin-top: 10px; }
+.yc-a .btn { flex: 1; padding: 10px 8px; font-size: 14px; }
+.yc-ok { color: #15803D; margin-top: 6px; }
+[data-theme="dark"] .yc-ok { color: var(--ok); }
+.yc-x { position: absolute; right: 4px; top: 4px; width: 40px; height: 40px; color: var(--muted); display: flex; align-items: center; justify-content: center; }
+.yc-x svg { width: 16px; height: 16px; }

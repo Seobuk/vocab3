@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.1';
+  var APP_VERSION = '2.2';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -46,6 +46,9 @@
   var ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
   var isAndroid = (typeof window.Android !== 'undefined') && window.Android !== null;
+  // 브리지 토큰 — 안드로이드가 우리 index.html 에만 심는다. 브리지(window.Android)는 유튜브 iframe·광고 프레임에도 주입되므로
+  // 토큰 없는 호출은 무시된다. 토큰과 브리지는 클로저에 잡아 두고 전역에선 지운다 (유튜브 iframe_api 는 영상 화면에서 나중에 불러온다)
+  var BT = window.__bt || '', AND = window.Android; try { delete window.__bt; } catch (e) { window.__bt = ''; }
   var TTS_OK = isAndroid ? false : !!window.speechSynthesis;
 
   /* ---------------- utils ---------------- */
@@ -74,15 +77,15 @@
   /* ---------------- bridge ---------------- */
   var bridge = {
     load: function () {
-      try { return isAndroid ? window.Android.load(KEY) : localStorage.getItem(KEY); } catch (e) { return null; }
+      try { return isAndroid ? AND.load(BT, KEY) : localStorage.getItem(KEY); } catch (e) { return null; }
     },
     save: function (s) {
-      try { if (isAndroid) window.Android.save(KEY, s); else localStorage.setItem(KEY, s); } catch (e) { }
+      try { if (isAndroid) AND.save(BT, KEY, s); else localStorage.setItem(KEY, s); } catch (e) { }
     },
     speak: function (text, lang, rate, flush) {
       if (!text) return;
       try {
-        if (isAndroid) { window.Android.speak(text, lang, rate, flush !== false); return; }
+        if (isAndroid) { AND.speak(BT, text, lang, rate, flush !== false); return; }
         if (window.speechSynthesis) {
           var u = new SpeechSynthesisUtterance(text);
           u.lang = lang === 'ko' ? 'ko-KR' : 'en-US';
@@ -93,27 +96,27 @@
       } catch (e) { }
     },
     stop: function () {
-      try { if (isAndroid) window.Android.stopSpeak(); else if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
+      try { if (isAndroid) AND.stopSpeak(BT); else if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
     },
     vibrate: function (ms) {
-      try { if (isAndroid) window.Android.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { }
+      try { if (isAndroid) AND.vibrate(BT, ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { }
     },
     copy: function (text) {
       try {
-        if (isAndroid) window.Android.copy(text);
+        if (isAndroid) AND.copy(BT, text);
         else if (navigator.clipboard) navigator.clipboard.writeText(text);
       } catch (e) { }
     },
     share: function (title, text) {
       try {
-        if (isAndroid) window.Android.share(title, text);
+        if (isAndroid) AND.share(BT, title, text);
         else if (navigator.share) navigator.share({ title: title, text: text });
         else { bridge.copy(text); toast('클립보드에 복사했어요'); }
       } catch (e) { }
     },
     saveFile: function (name, content) {
       try {
-        if (isAndroid) { window.Android.saveFile(name, content); return; }
+        if (isAndroid) { AND.saveFile(BT, name, content); return; }
         var blob = new Blob([content], { type: 'application/json' });
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob); a.download = name; a.click();
@@ -122,31 +125,31 @@
       } catch (e) { }
     },
     openFile: function () {
-      try { if (isAndroid) window.Android.openFile(); else $('#filePick').click(); } catch (e) { }
+      try { if (isAndroid) AND.openFile(BT); else $('#filePick').click(); } catch (e) { }
     },
-    setBackHandled: function (b) { try { if (isAndroid) window.Android.setBackHandled(!!b); } catch (e) { } },
-    setSystemBars: function (color, light) { try { if (isAndroid) window.Android.setSystemBars(color, !!light); } catch (e) { } },
-    ttsReady: function () { try { return isAndroid ? window.Android.ttsReady() : TTS_OK; } catch (e) { return false; } },
+    setBackHandled: function (b) { try { if (isAndroid) AND.setBackHandled(BT, !!b); } catch (e) { } },
+    setSystemBars: function (color, light) { try { if (isAndroid) AND.setSystemBars(BT, color, !!light); } catch (e) { } },
+    ttsReady: function () { try { return isAndroid ? AND.ttsReady(BT) : TTS_OK; } catch (e) { return false; } },
     audioStart: function (playlistJson, loop) {
-      try { if (isAndroid) window.Android.audioStart(playlistJson, !!loop); else jsAudio.start(JSON.parse(playlistJson), !!loop); } catch (e) { toast('재생을 시작하지 못했어요'); }
+      try { if (isAndroid) AND.audioStart(BT, playlistJson, !!loop); else jsAudio.start(JSON.parse(playlistJson), !!loop); } catch (e) { toast('재생을 시작하지 못했어요'); }
     },
     audioControl: function (cmd) {
-      try { if (isAndroid) window.Android.audioControl(cmd); else jsAudio.control(cmd); } catch (e) { }
+      try { if (isAndroid) AND.audioControl(BT, cmd); else jsAudio.control(cmd); } catch (e) { }
     },
     audioState: function () {
-      try { return isAndroid ? window.Android.audioState() : jsAudio.stateJson(); } catch (e) { return null; }
+      try { return isAndroid ? AND.audioState(BT) : jsAudio.stateJson(); } catch (e) { return null; }
     },
-    exitApp: function () { try { if (isAndroid) window.Android.exitApp(); else window.close(); } catch (e) { } },
-    loadRaw: function (key) { try { return isAndroid ? window.Android.load(key) : localStorage.getItem(key); } catch (e) { return null; } },
-    saveRaw: function (key, val) { try { if (isAndroid) window.Android.save(key, val); else localStorage.setItem(key, val); } catch (e) { } },
-    openUrl: function (url) { try { if (isAndroid) window.Android.openUrl(url); else window.open(url, '_blank'); } catch (e) { } },
+    exitApp: function () { try { if (isAndroid) AND.exitApp(BT); else window.close(); } catch (e) { } },
+    loadRaw: function (key) { try { return isAndroid ? AND.load(BT, key) : localStorage.getItem(key); } catch (e) { return null; } },
+    saveRaw: function (key, val) { try { if (isAndroid) AND.save(BT, key, val); else localStorage.setItem(key, val); } catch (e) { } },
+    openUrl: function (url) { try { if (isAndroid) AND.openUrl(BT, url); else window.open(url, '_blank'); } catch (e) { } },
     // 음성 인식: Android SpeechRecognizer / 브라우저 Web Speech API. 결과는 window.onStt / onSttPartial / onSttError / onSttState 로.
     sttAvailable: function () {
-      try { if (isAndroid) return !!window.Android.sttAvailable(); return !!(window.SpeechRecognition || window.webkitSpeechRecognition); } catch (e) { return false; }
+      try { if (isAndroid) return !!AND.sttAvailable(BT); return !!(window.SpeechRecognition || window.webkitSpeechRecognition); } catch (e) { return false; }
     },
     sttStart: function (lang) {
       try {
-        if (isAndroid) { window.Android.sttStart(lang || 'en-US'); return; }
+        if (isAndroid) { AND.sttStart(BT, lang || 'en-US'); return; }
         var SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { window.onSttError && window.onSttError('unavailable'); return; }
         // 안드로이드와 똑같이: 멈추라고 할 때까지 듣고, 끊긴 구간을 이어 붙여 마지막에 한 번만 넘긴다
         var r = webStt = new SR(); r.lang = lang || 'en-US'; r.interimResults = true; r.maxAlternatives = 1; r.continuous = true;
@@ -166,8 +169,8 @@
         r.start();
       } catch (e) { window.onSttError && window.onSttError('exception'); }
     },
-    sttStop: function () { try { if (isAndroid) window.Android.sttStop(); else if (webStt) webStt.stop(); } catch (e) { } },
-    sttCancel: function () { try { if (isAndroid) window.Android.sttCancel(); else if (webStt) { var w = webStt; webStt = null; w.abort(); } } catch (e) { } },
+    sttStop: function () { try { if (isAndroid) AND.sttStop(BT); else if (webStt) webStt.stop(); } catch (e) { } },
+    sttCancel: function () { try { if (isAndroid) AND.sttCancel(BT); else if (webStt) { var w = webStt; webStt = null; w.abort(); } } catch (e) { } },
     // HTTPS JSON request → Promise<{status, text}> (status 0 = network error). Android does it natively (no CORS), browser uses fetch.
     aiCall: function (url, key, body, timeoutMs) {
       return new Promise(function (resolve) {
@@ -175,10 +178,10 @@
           var id = 'ai' + (++aiSeq);
           aiPending[id] = resolve;
           setTimeout(function () { if (aiPending[id]) { delete aiPending[id]; resolve({ status: 0, text: 'timeout' }); } }, timeoutMs || 45000);
-          try { window.Android.aiCall(id, url, key || '', body || ''); } catch (e) { delete aiPending[id]; resolve({ status: 0, text: String(e) }); }
+          try { AND.aiCall(BT, id, url, key || '', body || ''); } catch (e) { delete aiPending[id]; resolve({ status: 0, text: String(e) }); }
           return;
         }
-        var opt = { method: body ? 'POST' : 'GET', headers: { 'x-goog-api-key': key || '' } };
+        var opt = { method: body ? 'POST' : 'GET', headers: key ? { 'x-goog-api-key': key } : {} };
         if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = body; }
         fetch(url, opt).then(function (r) { return r.text().then(function (t) { resolve({ status: r.status, text: t }); }); })
           .catch(function (e) { resolve({ status: 0, text: String(e) }); });
@@ -252,7 +255,7 @@
   function aiLastLine() {
     var l = AI.last; if (!l || !l.at) return '';
     var d = new Date(l.at), hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
-    var what = { example: '예문', talk: '회화', summary: '회화 정리', test: '연결 테스트', models: '모델 목록' }[l.what] || l.what;
+    var what = { example: '예문', talk: '회화', summary: '회화 정리', test: '연결 테스트', models: '모델 목록', youtube: '유튜브 정리', word: '단어 뜻' }[l.what] || l.what;
     return '마지막 호출 ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh + ' · ' + what + ' · ' + (l.ms / 1000).toFixed(1) + '초 · ' + (l.status === 200 ? '성공 ✓' : '실패 — ' + esc(l.err || ('HTTP ' + l.status)));
   }
   function aiPrompt(w, hint) {
@@ -388,14 +391,14 @@
   var S = null;
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk' };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
   }
   function defaultState() {
     var st = defaultSettings(); st.audio = defaultAudio(); st.talk = defaultTalk();
-    return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now() };
+    return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now(), yt: [] };
   }
   function mkWord(o) {
     var now = Date.now();
@@ -424,6 +427,9 @@
     if (!tk.autoSendV2) { tk.autoSend = false; tk.autoSendV2 = true; }   // v1.19: ■ 뒤에 확인하고 보내는 게 기본
     s.settings.talk = tk;
     if (!Array.isArray(s.talkLog)) s.talkLog = [];
+    // v2.2 유튜브 쉐도잉 — 백업 파일에서 들어올 수 있으니 모양을 검사해 정리한다
+    s.yt = (Array.isArray(s.yt) ? s.yt : []).filter(function (r) { return r && typeof r.id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(r.vid); });
+    s.yt.forEach(function (r) { r.title = String(r.title || ''); r.date = String(r.date || ''); r.addedAt = Number(r.addedAt) || 0; r.sents = Array.isArray(r.sents) ? ytClean(r.sents) : null; });
     // v1.20: 예전 기록에도 id를 붙여 리포트 삭제가 되게
     s.talkLog.forEach(function (r, i) { if (r && !r.id) r.id = 'tk0' + i + '-' + String(r.date || '').replace(/-/g, ''); });
     var da = defaultAudio(), hadAudio = !!s.settings.audio, a = s.settings.audio || {};
@@ -523,6 +529,7 @@
     if (sheetOpen) { closeSheet(); return; }
     var cur = current(), prev = stack[stack.length - 2];
     if (cur && cur.view === 'chat') { talkBack(); return; }
+    if (cur && cur.view === 'ytv') { if (prev && prev.view === 'yt') { stack.pop(); render(); } else go('yt', {}, true); return; }
     if (prev && prev.view === 'study') { stack.pop(); render(); return; } // detour from the card (e.g. settings for the AI key) → back to the card, not home
     if (cur && cur.view !== 'home') { goTab('home'); return; }
     confirm2(AUD.active ? '앱을 종료할까요?\n(듣기 복습은 알림에서 계속 재생돼요)' : '앱을 종료할까요?', '종료').then(function (ok) { if (ok) bridge.exitApp(); });
@@ -530,6 +537,7 @@
   function updateBack() { bridge.setBackHandled(true); }
   function render() {
     var cur = current();
+    if (cur.view !== 'ytv') ytStopPlayer();   // 영상 화면을 떠나면 멈춘다 (유튜브 정책: 안 보이는 곳에서 재생 금지)
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + cur.view); });
     var showTab = ['home', 'list', 'edit', 'import', 'settings', 'stats'].indexOf(cur.view) >= 0;
     $('#tabbar').classList.toggle('show', showTab);
@@ -658,10 +666,10 @@
       '<div class="hh-r"><div class="eyebrow ver">v' + APP_VERSION + '</div><div class="streak">🔥 ' + streak + '일 연속</div></div></div>' +
       '<div class="today"><div class="t-eyebrow">TODAY</div><div class="t-title">오늘의 학습</div><div class="t-sub">' + sub + '</div>' +
       '<div class="t-bar"><div style="width:' + pct + '%"></div></div>' + cta + '</div>' +
-      // 자주 쓰는 세 가지는 한 번에: 회화 · 단어 추가 · 듣기
+      // 자주 쓰는 세 가지는 한 번에: 회화 · 유튜브 · 듣기 (단어 추가는 아래 탭바에)
       '<div class="quick">' +
       '<button class="q" data-action="talk"><span class="q-ic">🗣</span><span class="q-t">회화 연습</span><span class="q-s">AI와 영어로</span></button>' +
-      '<button class="q" data-action="tab" data-tab="edit"><span class="q-ic">＋</span><span class="q-t">단어 추가</span><span class="q-s">붙여넣기 · AI</span></button>' +
+      '<button class="q" data-action="yt"><span class="q-ic">📺</span><span class="q-t">유튜브</span><span class="q-s">쉐도잉 · 표현</span></button>' +
       '<button class="q" data-action="audio"><span class="q-ic">🎧</span><span class="q-t">듣기 복습</span><span class="q-s">' + (AUD.active ? (AUD.playing ? '재생 중' : '일시정지') : '운전 중에') + '</span></button>' +
       '</div>' +
       '<div class="stages">' +
@@ -1558,6 +1566,296 @@
     confirm2('대화를 끝내고 정리할까요?', '끝내기').then(function (ok) { if (ok) { bridge.sttCancel(); sttReset(); talkEnd(); } });
   }
 
+  /* ================= YOUTUBE 쉐도잉 ================= */
+  // 링크 → Gemini 가 영상을 듣고 문장별 [시작 초 · 영어 · 한글 · 익힐 표현] 으로 정리 → 문장을 누르면 앱 안 플레이어가 그 시점부터.
+  // ponytail: 영상 통째로 한 번에 보낸다 — 구간 자르기(videoMetadata)는 유튜브 링크에서 음성이 안 잘리는 회귀가 보고됨(2026-08). 긴 영상은 오래 걸리고 무료 한도를 많이 씀
+  // 유튜브 정책: 플레이어 위를 덮지 않는다(단어 뜻은 문장 아래 카드로), 화면을 떠나거나 앱이 내려가면 멈춘다, 다운로드·음성 분리 안 함
+  var YTJOB = {};            // 정리 중·실패 { id: { busy, err } } — 저장 안 함 (앱이 꺼지면 "정리하기"로 다시)
+  var YTV = null;            // 보고 있는 영상 { id, act: 재생한 문장, cur: 지금 나오는 문장, stopAt, card, ko: {열어 본 한글}, ready, pending, perr }
+  var YTP = null, YTAPI = { state: 0, cbs: [] }, ytTimer = 0;
+
+  function ytId(text) {
+    var m = String(text || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:[^#\s]*&)?v=|shorts\/|live\/|embed\/|v\/))([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : '';
+  }
+  function ytRec(id) { for (var i = 0; i < S.yt.length; i++) if (S.yt[i].id === id) return S.yt[i]; return null; }
+  function ytHave(w) { var l = String(w).toLowerCase(); for (var i = 0; i < S.words.length; i++) if (S.words[i].w.toLowerCase() === l) return S.words[i]; return null; }
+  function fmtSec(s) { s = Math.max(0, Math.floor(s || 0)); var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return (h ? h + ':' + pad(m) : m) + ':' + pad(s % 60); }
+  function ytTokens(e) { return String(e).split(/([A-Za-z0-9\u00C0-\u024F](?:[A-Za-z0-9\u00C0-\u024F'’\-]*[A-Za-z0-9\u00C0-\u024F])?)/); }   // 홀수 칸이 단어 (café·let's 는 한 단어, 끝 따옴표는 뺌)
+  function ytNorm(t) { return t.toLowerCase().replace(/’/g, "'"); }
+  // 익힐 표현(q)이 덮는 단어 칸 → 표현 번호. 문장에서 못 찾으면 밑줄만 안 긋는다
+  function ytGlossMap(x, toks) {
+    var map = {}, low = toks.map(ytNorm);
+    (x.x || []).forEach(function (g, gi) {
+      var qt = ytTokens(g.q).filter(function (t, k) { return k % 2 === 1; }).map(ytNorm);
+      if (!qt.length) return;
+      for (var a = 1; a < low.length; a += 2) {
+        var k = 0, b = a;
+        while (k < qt.length && b < low.length && low[b] === qt[k]) { k++; b += 2; }
+        if (k === qt.length) { for (var c = a; c < b; c += 2) if (!(c in map)) map[c] = gi; return; }
+      }
+    });
+    return map;
+  }
+
+  RENDER.yt = function () {
+    var list = S.yt.slice().sort(function (a, b) { return b.addedAt - a.addedAt; });
+    $('#view-yt').innerHTML =
+      '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title">유튜브 쉐도잉</span><button class="btn" data-action="yt-add" style="flex:none;padding:8px 12px">+ 추가</button></div>' +
+      '<div class="wrap">' +
+      (list.length ? list.map(function (r) {
+        var j = YTJOB[r.id] || {};
+        var sub = j.busy ? '정리 중…' : j.err ? '정리 실패 — 눌러서 다시' : r.sents ? r.sents.length + '문장' : '정리 전';
+        return '<div class="yt-item"><button class="yt-open" data-action="yt-open" data-id="' + esc(r.id) + '"><img src="https://i.ytimg.com/vi/' + esc(r.vid) + '/mqdefault.jpg" alt="" loading="lazy">' +
+          '<div class="yi-b"><div class="yi-t">' + esc(r.title || 'YouTube ' + r.vid) + '</div><div class="yi-s">' + esc(sub + ' · ' + r.date) + '</div></div></button>' +
+          '<button class="yi-del" data-action="yt-del" data-id="' + esc(r.id) + '" aria-label="삭제">' + ICON_X + '</button></div>';
+      }).join('') :
+        '<div class="empty">유튜브 영상 링크를 넣으면 영어 문장을 정리해 드려요.<br>문장을 누르면 그 부분이 재생돼<br>따라 말하기(쉐도잉) 연습을 할 수 있어요.</div><button class="btn primary big" data-action="yt-add">+ 영상 추가</button>') +
+      (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
+      // YouTube API 서비스 이용 조건: 약관·개인정보처리방침 안내
+      '<div class="small muted yt-legal">영상 재생은 YouTube API 서비스를 쓰며 <b data-action="open-url" data-url="https://www.youtube.com/t/terms">YouTube 서비스 약관</b>과 <b data-action="open-url" data-url="https://policies.google.com/privacy">Google 개인정보처리방침</b>이 적용돼요. 문장 정리는 영상 링크를 내 Gemini 키로 Google에 보내서 해요.</div>' +
+      '</div>';
+  };
+  function ytAddSheet() {
+    openSheet('<div class="sh-word"><span>유튜브 영상 추가</span></div>' +
+      '<div class="field" style="margin-top:10px"><input id="ytUrl" type="url" inputmode="url" placeholder="https://youtu.be/…" autocapitalize="off" autocomplete="off" spellcheck="false"></div>' +
+      '<div class="small muted" style="margin-top:8px">공개 영상만 돼요 · 20분 이하를 추천해요 (길수록 오래 걸리고 무료 한도를 많이 써요)</div>' +
+      '<div class="sh-actions"><button class="btn" data-action="close-sheet">취소</button><button class="btn primary" data-action="yt-submit">정리하기</button></div>');
+    var i = $('#ytUrl'); if (i) { i.focus(); i.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); ytSubmit(); } }); }
+  }
+  function ytSubmit() {
+    var inp = $('#ytUrl'), vid = ytId(inp && inp.value);
+    if (!vid) { toast('유튜브 링크를 확인해 주세요'); return; }
+    inp.blur();   // 시트가 닫혀도 입력칸 포커스가 남아 키보드가 영상 화면을 가리던 것
+    closeSheet();
+    if (!AI.key) { confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return; }
+    for (var i = 0; i < S.yt.length; i++) if (S.yt[i].vid === vid) { toast('이미 있는 영상이에요'); go('ytv', { id: S.yt[i].id }); return; }
+    var r = { id: uid(), vid: vid, title: '', date: localDate(), addedAt: Date.now(), sents: null };
+    S.yt.push(r); save();
+    go('ytv', { id: r.id });
+    ytProcess(r);
+  }
+  function ytRefresh(id) {
+    var cur = current();
+    if (cur && cur.view === 'yt') RENDER.yt();
+    else if (cur && cur.view === 'ytv' && YTV && YTV.id === id) ytRenderBody();
+  }
+  function ytProcess(r) {
+    if (YTJOB[r.id] && YTJOB[r.id].busy) return;
+    YTJOB[r.id] = { busy: true, err: '' }; ytRefresh(r.id);
+    var watch = 'https://www.youtube.com/watch?v=' + r.vid;
+    // 제목은 oEmbed 로 (키 없이). 404 = 비공개·삭제 → Gemini 도 못 본다
+    bridge.aiCall('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(watch), '', '', 15000).then(function (res) {
+      if (res.status === 404 || res.status === 400) throw { msg: '영상을 찾을 수 없어요 — 비공개·삭제됐거나 링크가 잘못됐어요' };
+      try { var o = JSON.parse(res.text); if (o && o.title) { r.title = String(o.title); save(); ytRefresh(r.id); } } catch (e) { }
+      return aiGenerate(ytBody(watch), 'youtube', 300000);
+    }).then(function (res) {
+      if (res.status !== 200) throw { msg: aiErrorMessage(res) };
+      var out = parseAiJson(res.text);
+      out = Array.isArray(out) ? out : out && Array.isArray(out.sents) ? out.sents : null;
+      if (!out) throw { msg: '정리 결과를 이해하지 못했어요. 다시 시도해 주세요' };
+      r.sents = ytClean(out); save();
+      YTJOB[r.id] = { busy: false, err: r.sents.length ? '' : '영어 음성을 찾지 못했어요' };
+    }).catch(function (e) {
+      YTJOB[r.id] = { busy: false, err: e && e.msg ? e.msg : '정리하지 못했어요' };
+    }).then(function () { ytRefresh(r.id); });
+  }
+  function ytBody(watch) {
+    return {
+      systemInstruction: { parts: [{ text: [
+        'You transcribe YouTube videos for a Korean adult who studies English by shadowing (repeating each sentence right after hearing it).',
+        'Transcribe ALL English speech in the video, in order, exactly as spoken (leave out filler sounds like "um"; do not correct grammar).',
+        'Split it into short natural sentences: one item per sentence, at most about 20 words; split long run-on speech at natural pauses.',
+        'For each item: "s" = when the sentence starts, in seconds from the very beginning of the video (e.g. 75.5), increasing; "e" = the English sentence; "k" = a natural Korean translation.',
+        '"x" = 0 to 3 words or expressions from that sentence worth learning for an intermediate (B1-B2) learner: idioms, phrasal verbs, collocations, less common words; never basic words. Each: "q" = the exact text as it appears in "e", "w" = its dictionary form, "p" = one of n., v., adj., adv., phr., idiom, "m" = a short Korean meaning in this context.',
+        'Skip parts that are not English speech (music, Korean narration). If there is no English speech at all, return [].'
+      ].join('\n') }] },
+      contents: [{ role: 'user', parts: [{ fileData: { fileUri: watch } }, { text: 'Transcribe this video.' }] }],   // 문서 권장: 영상 먼저, 지시는 뒤
+      generationConfig: {
+        mediaResolution: 'MEDIA_RESOLUTION_LOW',   // 받아쓰기엔 화면이 거의 필요 없다 (2.5 계열에선 토큰 1/4)
+        responseMimeType: 'application/json',
+        responseSchema: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+          s: { type: 'NUMBER' }, e: { type: 'STRING' }, k: { type: 'STRING' },
+          x: { type: 'ARRAY', items: { type: 'OBJECT', properties: { q: { type: 'STRING' }, w: { type: 'STRING' }, p: { type: 'STRING' }, m: { type: 'STRING' } }, required: ['q', 'w', 'p', 'm'] } }
+        }, required: ['s', 'e', 'k', 'x'] } }
+      }
+    };
+  }
+  function ytClean(arr) {
+    var prev = 0;
+    return arr.filter(function (x) { return x && x.e && String(x.e).trim(); }).map(function (x) {
+      var s = Math.max(prev, Number(x.s) || 0); prev = s;   // 시간이 거꾸로 가면 앞 문장에 맞춘다 (유튜브 링크의 타임스탬프는 조금씩 어긋난다)
+      var o = {
+        s: Math.round(s * 10) / 10, e: String(x.e).trim(), k: String(x.k || '').trim(),
+        x: (Array.isArray(x.x) ? x.x : []).filter(function (g) { return g && g.q && g.w; }).slice(0, 3).map(function (g) { return { q: String(g.q), w: String(g.w), p: String(g.p || ''), m: String(g.m || '') }; })
+      };
+      if (x.lk && typeof x.lk === 'object') {   // 눌러 본 단어 뜻 캐시 (복원 데이터면 모양 검사)
+        o.lk = {};
+        for (var key in x.lk) if (Object.prototype.hasOwnProperty.call(x.lk, key) && x.lk[key] && x.lk[key].w) o.lk[key] = { w: String(x.lk[key].w), p: String(x.lk[key].p || ''), m: String(x.lk[key].m || '') };
+      }
+      return o;
+    });
+  }
+
+  RENDER.ytv = function (p) {
+    var r = ytRec(p.id); if (!r) { go('yt', {}, true); return; }
+    ytStopPlayer();
+    if (!YTV || YTV.id !== r.id) YTV = { id: r.id, act: -1, cur: -1, stopAt: null, card: null, ko: {} };
+    YTV.ready = false; YTV.perr = null; YTV.pending = null;
+    $('#view-ytv').innerHTML =
+      '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title" id="ytTitle"></span><span style="width:42px"></span></div>' +
+      '<div class="yt-player"><div id="ytPlayer"></div></div>' +
+      '<div class="yt-bar" id="ytBar"></div><div class="yt-list" id="ytList"></div>';
+    ytRenderBody();
+    ytMakePlayer(r.vid);
+  };
+  function ytRenderBody() {
+    var r = YTV && ytRec(YTV.id), bar = $('#ytBar'), list = $('#ytList'); if (!r || !bar || !list) return;
+    var j = YTJOB[r.id] || {}, has = r.sents && r.sents.length;
+    $('#ytTitle').textContent = r.title || '유튜브';
+    bar.innerHTML = (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요</div>' : '') +
+      (has ? '<button class="guide-pill' + (S.settings.ytPause ? ' on' : '') + '" data-action="yt-pause-mode" aria-pressed="' + !!S.settings.ytPause + '">⏸ 문장마다 멈춤</button>' +
+        '<button class="guide-pill" data-action="yt-replay"' + (YTV.act < 0 ? ' disabled' : '') + '>↻ 한 번 더</button><span class="small muted" style="margin-left:auto">' + esc(r.sents.length) + '문장</span>' : '');
+    list.innerHTML = j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<br><span class="small">영상 길이에 따라 1~3분 걸려요. 그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
+      : j.err ? '<div class="empty">' + esc(j.err) + '<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">다시 시도</button></div>'
+      : !has ? '<div class="empty">아직 정리 전이에요<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">문장 정리하기</button></div>'
+      : '<div class="yt-hint small muted">문장을 누르면 그 부분부터 재생 · 재생한 문장의 단어를 누르면 뜻 · 한글은 눌러서 보기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('');
+  }
+  function ytRowHTML(r, i) {
+    var x = r.sents[i], toks = ytTokens(x.e), gm = ytGlossMap(x, toks), c = YTV.card && YTV.card.i === i ? YTV.card : null;
+    var e = toks.map(function (t, k) {
+      if (k % 2 === 0) return esc(t);
+      return '<span class="yw' + (k in gm ? ' gx' : '') + (c && (c.t === k || (c.g != null && gm[k] === c.g)) ? ' sel' : '') + '" data-action="yt-word" data-i="' + i + '" data-t="' + k + '">' + esc(t) + '</span>';
+    }).join('');
+    return '<div class="ys' + (YTV.act === i ? ' act' : '') + (YTV.cur === i ? ' cur' : '') + '" id="ys' + i + '" data-action="yt-sent" data-i="' + i + '">' +
+      '<span class="ys-t">' + fmtSec(x.s) + '</span><div class="ys-b"><div class="ys-e">' + e + '</div>' +
+      (x.k ? '<button class="ko-line' + (YTV.ko[i] ? '' : ' blur') + '" data-action="yt-ko" data-i="' + i + '">' + esc(x.k) + '</button>' : '') +
+      (c ? ytCardHTML(c) : '') + '</div></div>';
+  }
+  function ytRow(i) { var r = YTV && ytRec(YTV.id), el = $('#ys' + i); if (r && el && r.sents[i]) el.outerHTML = ytRowHTML(r, i); }
+  function ytCardHTML(c) {
+    var have = c.w && !c.added ? ytHave(c.w) : null;
+    return '<div class="ycard" data-action="yt-card">' +
+      (c.loading ? '<div class="small muted">뜻 찾는 중…</div>' : c.err ? '<div class="small muted">' + esc(c.err) + '</div>' :
+        '<div class="yc-h"><b>' + esc(c.w) + '</b>' + (c.p ? '<span class="tag">' + esc(c.p) + '</span>' : '') + '<button class="spk" data-action="speak-text" data-text="' + esc(c.w) + '" aria-label="발음 듣기">' + ICON_SPK + '</button></div>' +
+        '<div class="yc-m">' + esc(c.m) + '</div>' +
+        (c.added ? '<div class="small yc-ok">✓ ' + esc(c.added) + '에 추가했어요</div>'
+          : have ? '<div class="small muted">이미 단어장에 있어요 · ' + STAGE_SHORT[have.stage] + '</div>'
+          : '<div class="yc-a"><button class="btn primary" data-action="yt-add-word" data-stage="1">1단계에 추가</button><button class="btn" data-action="yt-add-word" data-stage="0">대기에 추가</button></div>')) +
+      '<button class="yc-x" data-action="yt-card-close" aria-label="닫기">' + ICON_X + '</button></div>';
+  }
+
+  // --- 플레이어 (YouTube IFrame API — 영상 화면에 들어올 때만 불러온다) ---
+  function ytApi(cb) {
+    if (window.YT && window.YT.Player) { cb(); return; }
+    YTAPI.cbs.push(cb);
+    if (YTAPI.state) return;
+    YTAPI.state = 1;
+    window.onYouTubeIframeAPIReady = function () { YTAPI.state = 2; var c = YTAPI.cbs; YTAPI.cbs = []; c.forEach(function (f) { f(); }); };
+    var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
+    var fail = function () { if (YTAPI.state === 2) return; YTAPI.state = 0; YTAPI.cbs = []; s.remove(); try { delete window.YT; } catch (e) { window.YT = undefined; } ytPlayerError('load'); };
+    s.onerror = fail;
+    setTimeout(fail, 20000);   // 로더는 받았는데 위젯 스크립트가 안 오는 경우 — 영원히 기다리지 않고 "유튜브 앱에서 열기"로
+    document.head.appendChild(s);
+  }
+  function ytMakePlayer(vid) {
+    var myV = YTV;
+    ytApi(function () {
+      if (YTV !== myV || YTP || !$('#ytPlayer') || current().view !== 'ytv') return;
+      var pv = { playsinline: 1, rel: 0, fs: 0 };
+      if (location.protocol === 'https:') pv.origin = location.origin;   // 앱: https://kr.hyunuk.vocab3
+      YTP = new YT.Player('ytPlayer', {
+        videoId: vid, width: '100%', height: '100%', playerVars: pv,
+        events: {
+          onReady: function () {
+            if (YTV !== myV) return; YTV.ready = true; clearTimeout(YTV.readyTimer);
+            var p = YTV.pending; YTV.pending = null;
+            if (p != null && !document.hidden) ytPlaySent(p);   // 앱이 내려간 사이 준비됐으면 재생하지 않는다 (백그라운드 재생 금지)
+          },
+          onError: function (e) { if (YTV === myV) ytPlayerError(e && e.data); },
+          onAutoplayBlocked: function () { toast('재생이 막혔어요 — 영상의 ▶를 한 번 눌러 주세요'); }
+        }
+      });
+      ytTimer = setInterval(ytTick, 200);
+      clearTimeout(myV.readyTimer); myV.readyTimer = setTimeout(function () { if (YTV === myV && !myV.ready && !myV.perr) ytPlayerError('load'); }, 20000);
+    });
+  }
+  function ytStopPlayer() {
+    clearInterval(ytTimer); ytTimer = 0;
+    if (YTP) { try { YTP.destroy(); } catch (e) { } YTP = null; }
+    if (YTV) { YTV.ready = false; YTV.stopAt = null; YTV.pending = null; }   // 다시 들어왔을 때 옛 멈춤 지점이 남지 않게
+  }
+  function ytPlayerError(code) { if (!YTV) return; YTV.perr = code || 'load'; YTV.pending = null; ytRenderBody(); }
+  function ytPlaySent(i) {
+    var r = YTV && ytRec(YTV.id), x = r && r.sents && r.sents[i]; if (!x) return;
+    var prev = YTV.act; YTV.act = i;
+    if (YTV.card && YTV.card.i !== i) { var ci = YTV.card.i; YTV.card = null; ytRow(ci); }
+    if (prev >= 0 && prev !== i) ytRow(prev);
+    ytRow(i);
+    var rb = $('[data-action="yt-replay"]'); if (rb) rb.disabled = false;
+    if (YTV.perr) { bridge.openUrl('https://youtu.be/' + r.vid + '?t=' + Math.floor(x.s)); return; }
+    if (!YTP || !YTV.ready) { YTV.pending = i; return; }
+    bridge.stop();
+    var next = r.sents[i + 1];
+    YTV.from = Math.max(0, Math.round((x.s - 0.3) * 10) / 10);   // 타임스탬프가 조금 늦게 찍히곤 해서 살짝 앞에서
+    YTV.stopAt = S.settings.ytPause ? (next ? Math.max(x.s + 0.5, next.s - 0.15) : x.s + 12) : null; YTV.armed = false;
+    YTP.seekTo(YTV.from, true);
+    YTP.playVideo();
+  }
+  function ytTick() {
+    if (!YTP || !YTV || !YTV.ready) return;
+    var r = ytRec(YTV.id), t; if (!r || !r.sents) return;
+    try { t = YTP.getCurrentTime(); } catch (e) { return; }
+    // 멈춤: seekTo 직후 getCurrentTime 은 옛 위치를 돌려주므로(iframe API 캐시) 새 위치가 보인 뒤에야 판정을 켠다.
+    // 끝 지점을 자연스럽게 지날 때만 멈추고, 스크러빙으로 훌쩍 넘어가면 그냥 푼다
+    if (YTV.stopAt != null) {
+      if (!YTV.armed) { if (t >= YTV.from - 0.5 && t < YTV.stopAt) YTV.armed = true; }
+      else if (t >= YTV.stopAt) { if (t - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; }
+    }
+    var cur = -1; for (var i = 0; i < r.sents.length && r.sents[i].s <= t + 0.3; i++) cur = i;
+    if (cur === YTV.cur) return;
+    var old = $('#ys' + YTV.cur); if (old) old.classList.remove('cur');
+    YTV.cur = cur;
+    var el = $('#ys' + cur); if (el) el.classList.add('cur');
+    if (el && !S.settings.ytPause && YTP.getPlayerState() === 1) el.scrollIntoView({ block: 'nearest' });   // 이어 듣기 중엔 따라 내려간다
+  }
+
+  // --- 단어 뜻: 익힐 표현이면 바로, 아니면 그 문장 맥락으로 Gemini 에 묻고 문장에 저장 ---
+  function ytWord(i, k) {
+    var r = ytRec(YTV.id), x = r && r.sents[i], toks = x ? ytTokens(x.e) : [], tok = toks[k]; if (!tok) return;
+    var key = ytNorm(tok), gm = ytGlossMap(x, toks), prevI = YTV.card ? YTV.card.i : -1, lk = x.lk && Object.prototype.hasOwnProperty.call(x.lk, key) ? x.lk[key] : null;
+    if (k in gm) { var g = x.x[gm[k]]; YTV.card = { i: i, t: k, g: gm[k], w: g.w, p: g.p, m: g.m }; }   // g: 표현 전체를 칠한다
+    else if (lk) YTV.card = { i: i, t: k, w: lk.w, p: lk.p, m: lk.m };
+    else if (!AI.key) YTV.card = { i: i, t: k, err: '뜻을 찾으려면 Gemini API 키가 필요해요 (설정)' };
+    else { YTV.card = { i: i, t: k, loading: true }; ytLookup(x, i, k, tok); }
+    if (prevI >= 0 && prevI !== i) ytRow(prevI);
+    ytRow(i); ytShowCard(i);
+  }
+  function ytShowCard(i) { var cd = $('#ys' + i + ' .ycard'); if (cd && cd.scrollIntoView) cd.scrollIntoView({ block: 'nearest' }); }
+  function ytLookup(x, i, k, tok) {
+    var myCard = YTV.card;
+    aiGenerate({
+      systemInstruction: { parts: [{ text: 'A Korean learner tapped a word in an English sentence from a video. Give what they should learn: if the word is part of a phrasal verb, idiom or fixed expression in this sentence, give that whole expression in dictionary form; otherwise the word\'s dictionary form. "p" = one of n., v., adj., adv., phr., idiom, prep., conj. "m" = a short natural Korean meaning in this context (under 20 characters).' }] },
+      contents: [{ role: 'user', parts: [{ text: 'Sentence: "' + x.e + '"\nTapped word: "' + tok + '"' }] }],
+      generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { w: { type: 'STRING' }, p: { type: 'STRING' }, m: { type: 'STRING' } }, required: ['w', 'p', 'm'] } }
+    }, 'word', 30000).then(function (res) {
+      var o = res.status === 200 ? parseAiJson(res.text) : null;
+      if (!o || !o.w) throw { msg: res.status === 200 ? '뜻을 찾지 못했어요' : aiErrorMessage(res) };
+      var v = { w: String(o.w), p: String(o.p || ''), m: String(o.m || '') };
+      x.lk = x.lk || {}; x.lk[ytNorm(tok)] = v; save();
+      if (YTV && YTV.card === myCard) { YTV.card = { i: i, t: k, w: v.w, p: v.p, m: v.m }; ytRow(i); ytShowCard(i); }
+    }).catch(function (e) {
+      if (YTV && YTV.card === myCard) { YTV.card = { i: i, t: k, err: (e && e.msg) || '뜻을 찾지 못했어요' }; ytRow(i); ytShowCard(i); }
+    });
+  }
+  function ytAddWord(stage) {
+    var c = YTV && YTV.card, r = YTV && ytRec(YTV.id); if (!c || !c.w || !r || ytHave(c.w)) return;
+    var x = r.sents[c.i], nw = mkWord({ w: c.w, p: POS_LIST.indexOf(c.p) > 0 ? c.p : '', m: c.m || '', e: x.e, k: x.k, t: '유튜브' });   // 품사는 편집 화면 목록에 있는 것만
+    if (stage === 1) { nw.stage = 1; nw.dailyDate = localDate(); }   // 추가 탭의 "지금 1단계로"와 같게
+    S.words.push(nw); save();
+    c.added = stage === 1 ? '1단계' : '대기 단어장'; ytRow(c.i);
+  }
+
   RENDER.list = function (p) {
     if (p && p.stage !== undefined) listState.stage = p.stage;
     var c = counts(), total = S.words.length;
@@ -2178,6 +2476,25 @@
     'open-url': function (el) { bridge.openUrl(el.getAttribute('data-url')); },
     /* --- 회화 연습 --- */
     'talk': function () { go('talk'); },
+    'yt': function () { go('yt'); },
+    'yt-add': function () { ytAddSheet(); },
+    'yt-submit': function () { ytSubmit(); },
+    'yt-open': function (el) { var r = ytRec(el.getAttribute('data-id')); if (r) go('ytv', { id: r.id }); },
+    'yt-del': function (el) {
+      var id = el.getAttribute('data-id');
+      confirm2('이 영상을 목록에서 지울까요?\n(단어장에 추가한 단어는 그대로 있어요)', '삭제', true).then(function (ok) {
+        if (!ok) return; S.yt = S.yt.filter(function (r) { return r.id !== id; }); delete YTJOB[id]; if (YTV && YTV.id === id) YTV = null; save(); RENDER.yt();
+      });
+    },
+    'yt-retry': function () { var r = YTV && ytRec(YTV.id); if (r) ytProcess(r); },
+    'yt-sent': function (el) { ytPlaySent(+el.getAttribute('data-i')); },
+    'yt-word': function (el) { var i = +el.getAttribute('data-i'); if (YTV.act !== i) ytPlaySent(i); else ytWord(i, +el.getAttribute('data-t')); },   // 처음 누르면 재생, 재생한 문장에서 누르면 뜻
+    'yt-ko': function (el) { var i = +el.getAttribute('data-i'); YTV.ko[i] = !YTV.ko[i]; el.classList.toggle('blur', !YTV.ko[i]); },
+    'yt-card': function () { },   // 카드 빈 곳을 눌러도 문장이 다시 재생되지 않게
+    'yt-card-close': function () { var i = YTV.card ? YTV.card.i : -1; YTV.card = null; if (i >= 0) ytRow(i); },
+    'yt-add-word': function (el) { ytAddWord(+el.getAttribute('data-stage')); },
+    'yt-pause-mode': function (el) { var on = S.settings.ytPause = !S.settings.ytPause; save(); el.classList.toggle('on', on); el.setAttribute('aria-pressed', String(on)); if (!on && YTV) YTV.stopAt = null; },
+    'yt-replay': function () { if (YTV && YTV.act >= 0) ytPlaySent(YTV.act); },
     'go-settings-ai': function () { go('settings', { scroll: 'ai' }); },
     'talk-scenario': function (el) { S.settings.talk.scenario = el.getAttribute('data-id'); save(); RENDER.talk(); },
     'talk-mission-n': function (el) { S.settings.talk.missionN = Number(el.getAttribute('data-n')); talkSetup.words = pickMissionWords(S.settings.talk.missionN); save(); RENDER.talk(); },
@@ -2279,7 +2596,7 @@
   /* ---------------- lifecycle ---------------- */
   window.onTtsReady = function (ok) { TTS_OK = !!ok; if (!ok) toast('영어 TTS 음성을 찾지 못했어요. 기기 TTS 설정을 확인해 주세요'); };
   window.onAppResume = function () { if (current() && current().view === 'home') RENDER.home(); };
-  window.onAppPause = function () { saveNow(); };
+  window.onAppPause = function () { saveNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
   document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); else window.onAppResume(); });
   window.addEventListener('pagehide', saveNow);
 

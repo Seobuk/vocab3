@@ -41,7 +41,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.reload(); await p.waitForTimeout(400);
 
   // --- 홈: 빠른 실행 3개 ---
-  eq('홈 빠른 실행 타일', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent).join('/')), '회화 연습/단어 추가/듣기 복습');
+  eq('홈 빠른 실행 타일', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent).join('/')), '회화 연습/유튜브/듣기 복습');
   // v2.1: 홈 오른쪽 위 버전 = manifest versionName (APP_VERSION 과 어긋나면 여기서 걸린다)
   const verName = require('fs').readFileSync(path.resolve(__dirname, '..', 'AndroidManifest.xml'), 'utf8').match(/versionName="([^"]+)"/)[1];
   eq('홈 오른쪽 위 버전', await p.textContent('.home-head .hh-r .ver'), 'v' + verName);

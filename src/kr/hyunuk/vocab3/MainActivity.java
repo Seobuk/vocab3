@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -25,6 +26,8 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -34,12 +37,18 @@ import android.window.OnBackInvokedDispatcher;
 import android.widget.Toast;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.HashMap;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -85,12 +94,33 @@ public class MainActivity extends Activity {
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
-        s.setAllowFileAccess(true);
         s.setTextZoom(100);
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
         s.setMediaPlaybackRequiresUserGesture(false);
-        web.setWebViewClient(new WebViewClient());
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
+                Uri u = req.getUrl();
+                return ("https".equals(u.getScheme()) && getPackageName().equals(u.getHost())) ? asset(u, req.isForMainFrame()) : null;
+            }
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
+                Uri u = req.getUrl();
+                if (!req.isForMainFrame() || getPackageName().equals(u.getHost())) return false;
+                // 유튜브 플레이어의 로고·제목 링크가 앱 화면을 덮어쓰지 않게 밖(유튜브 앱·브라우저)에서 연다 — 웹 링크만
+                String sc = u.getScheme();
+                if ("https".equals(sc) || "http".equals(sc)) {
+                    try { startActivity(new Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE)); } catch (Exception ignored) { }
+                }
+                return true;
+            }
+            @Override
+            public void onPageStarted(WebView v, String url, Bitmap favicon) {
+                // 우리 페이지가 아닌 게 최상위에 뜨면(예: 프레임의 POST 이동) 뒤로가기를 그 페이지에 맡기지 않는다 → 앱 종료로 빠져나옴
+                if (url == null || !url.startsWith("https://" + getPackageName() + "/")) backHandled = false;
+            }
+        });
         web.setWebChromeClient(new WebChromeClient());
         web.addJavascriptInterface(new Bridge(), "Android");
         if (Build.VERSION.SDK_INT >= 35) {
@@ -107,7 +137,10 @@ public class MainActivity extends Activity {
         }
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
-        web.loadUrl("file:///android_asset/index.html");
+        // file:// 은 Referer 를 안 보내 유튜브 임베드가 오류 153 → 앱 자산을 https://<앱 ID>/ 로 서빙 (YouTube RMF 의 Referer 형식)
+        // 호스트를 appassets.androidplatform.net 이 아니라 앱 ID 로 쓰는 건 일부러 — YouTube 가 Referer 도메인으로 앱 ID 를 요구한다.
+        // 이 호스트 요청은 전부 asset() 이 가로채므로(없는 경로도 404) 네트워크·DNS 로 나가지 않는다.
+        web.loadUrl("https://" + getPackageName() + "/index.html");
         audioListener = new ReviewService.Listener() {
             @Override
             public void onState(String json) {
@@ -136,6 +169,46 @@ public class MainActivity extends Activity {
                 runJs("window.onTtsReady && window.onTtsReady(" + ttsReady + ")");
             }
         });
+    }
+
+    // 브리지는 유튜브 iframe(과 그 안의 광고 프레임)에도 주입된다 → 우리 index.html 에만 심은 토큰이 있어야 동작
+    private final String bt = new BigInteger(130, new SecureRandom()).toString(32);
+    private boolean ok(String t) { return bt.equals(t); }
+
+    private WebResourceResponse asset(Uri u, boolean mainFrame) {
+        String p = u.getPath();
+        if (p == null || p.length() < 2) p = "/index.html";
+        try {
+            // 우리 앱은 자기 자신을 프레임에 넣지 않는다 → 프레임·fetch 로 온 index.html 은 404 (광고 프레임이 토큰 든 복사본을 띄우지 못하게)
+            if (p.equals("/index.html") && !mainFrame) throw new IOException("not main frame");
+            InputStream is = getAssets().open(p.substring(1));
+            if (p.equals("/index.html")) {
+                // 토큰 스크립트는 실행되자마자 스스로 지운다 (나중에 뜨는 스크립트가 DOM 에서 읽지 못하게)
+                String html = readAll(is).replace("<head>", "<head><script>window.__bt=\"" + bt + "\";document.currentScript.remove()</script>");
+                is = new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8));
+            }
+            return new WebResourceResponse(mime(p), "UTF-8", is);
+        } catch (IOException e) {
+            return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", new HashMap<String, String>(), new ByteArrayInputStream(new byte[0]));
+        }
+    }
+
+    private static String mime(String p) {
+        if (p.endsWith(".html")) return "text/html";
+        if (p.endsWith(".js")) return "application/javascript";
+        if (p.endsWith(".css")) return "text/css";
+        String m = URLConnection.guessContentTypeFromName(p);
+        return m != null ? m : "application/octet-stream";
+    }
+
+    private static String readAll(InputStream is) throws IOException {
+        BufferedReader r = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        char[] buf = new char[8192];
+        int n;
+        while ((n = r.read(buf)) > 0) sb.append(buf, 0, n);
+        r.close();
+        return sb.toString();
     }
 
     private void runJs(final String js) {
@@ -398,27 +471,32 @@ public class MainActivity extends Activity {
     private class Bridge {
 
         @JavascriptInterface
-        public String load(String key) {
+        public String load(String t, String key) {
+            if (!ok(t)) return null;   // 토큰 없는 호출(유튜브 iframe·광고 프레임)은 무시
             return prefs.getString(key, null);
         }
 
         @JavascriptInterface
-        public void save(String key, String value) {
+        public void save(String t, String key, String value) {
+            if (!ok(t)) return;
             prefs.edit().putString(key, value).apply();
         }
 
         @JavascriptInterface
-        public void remove(String key) {
+        public void remove(String t, String key) {
+            if (!ok(t)) return;
             prefs.edit().remove(key).apply();
         }
 
         @JavascriptInterface
-        public boolean ttsReady() {
+        public boolean ttsReady(String t) {
+            if (!ok(t)) return false;
             return ttsReady;
         }
 
         @JavascriptInterface
-        public void speak(final String text, final String lang, final float rate, final boolean flush) {
+        public void speak(String t, final String text, final String lang, final float rate, final boolean flush) {
+            if (!ok(t)) return;
             if (tts == null || !ttsReady) return;
             runOnUiThread(new Runnable() {
                 @Override
@@ -437,12 +515,14 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void stopSpeak() {
+        public void stopSpeak(String t) {
+            if (!ok(t)) return;
             if (tts != null) tts.stop();
         }
 
         @JavascriptInterface
-        public void vibrate(final int ms) {
+        public void vibrate(String t, final int ms) {
+            if (!ok(t)) return;
             try {
                 Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                 if (v == null || !v.hasVibrator()) return;
@@ -456,7 +536,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void toast(final String msg) {
+        public void toast(String t, final String msg) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -466,7 +547,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void copy(final String text) {
+        public void copy(String t, final String text) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -477,7 +559,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void share(final String title, final String text) {
+        public void share(String t, final String title, final String text) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -494,7 +577,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void saveFile(final String name, final String content) {
+        public void saveFile(String t, final String name, final String content) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -514,7 +598,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void openFile() {
+        public void openFile(String t) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -531,12 +616,14 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void setBackHandled(boolean b) {
+        public void setBackHandled(String t, boolean b) {
+            if (!ok(t)) return;
             backHandled = b;
         }
 
         @JavascriptInterface
-        public void setSystemBars(final String color, final boolean light) {
+        public void setSystemBars(String t, final String color, final boolean light) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -570,7 +657,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void audioStart(final String playlistJson, final boolean loop) {
+        public void audioStart(String t, final String playlistJson, final boolean loop) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -591,7 +679,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void audioControl(final String cmd) {
+        public void audioControl(String t, final String cmd) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -608,12 +697,14 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String audioState() {
+        public String audioState(String t) {
+            if (!ok(t)) return null;
             return ReviewService.lastState();
         }
 
         @JavascriptInterface
-        public void exitApp() {
+        public void exitApp(String t) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -623,19 +714,22 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() {
+        public String version(String t) {
+            if (!ok(t)) return null;
             return "1.0";
         }
 
         @JavascriptInterface
-        public boolean sttAvailable() {
+        public boolean sttAvailable(String t) {
+            if (!ok(t)) return false;
             try { return SpeechRecognizer.isRecognitionAvailable(MainActivity.this); } catch (Exception e) { return false; }
         }
 
         /** Starts listening (lang e.g. "en-US") and keeps listening across pauses until sttStop();
          *  the joined sentence arrives once via window.onStt (live text via onSttPartial, problems via onSttError). */
         @JavascriptInterface
-        public void sttStart(final String lang) {
+        public void sttStart(String t, final String lang) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -651,7 +745,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void sttStop() {
+        public void sttStop(String t) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -672,7 +767,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void sttCancel() {
+        public void sttCancel(String t) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() { cancelStt(); }
@@ -681,7 +777,8 @@ public class MainActivity extends Activity {
 
         /** Opens a URL in the external browser (used for the API-key help link). */
         @JavascriptInterface
-        public void openUrl(final String url) {
+        public void openUrl(String t, final String url) {
+            if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -700,7 +797,8 @@ public class MainActivity extends Activity {
          * The API key travels in the x-goog-api-key header so it never appears in a URL/log line.
          */
         @JavascriptInterface
-        public void aiCall(final String id, final String url, final String key, final String body) {
+        public void aiCall(String t, final String id, final String url, final String key, final String body) {
+            if (!ok(t)) return;
             new Thread(new Runnable() {
                 @Override
                 public void run() {
@@ -710,7 +808,7 @@ public class MainActivity extends Activity {
                     try {
                         c = (HttpURLConnection) new URL(url).openConnection();
                         c.setConnectTimeout(15000);
-                        c.setReadTimeout(60000);   // JSON-schema replies can take a while under load; the JS side keeps its own backstop
+                        c.setReadTimeout(300000);   // 유튜브 영상 받아쓰기는 몇 분 걸린다; 기능마다 JS 쪽이 자기 제한 시간을 따로 건다
                         c.setRequestProperty("Accept", "application/json");
                         if (key != null && key.length() > 0) c.setRequestProperty("x-goog-api-key", key);
                         if (body != null && body.length() > 0) {

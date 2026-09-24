@@ -14,7 +14,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   await page.addInitScript(() => {
     const store = {}; window.__calls = [];
-    window.Android = {
+    const impl = {
       load: k => (k in store ? store[k] : null), save: (k, v) => { store[k] = v; }, remove: k => { delete store[k]; },
       speak: () => {}, stopSpeak: () => {}, vibrate: () => {}, toast: () => {}, copy: () => {}, share: () => {}, saveFile: () => {}, openFile: () => {},
       setBackHandled: () => {}, setSystemBars: () => {}, ttsReady: () => true, version: () => '1.4',
@@ -22,6 +22,8 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
       audioControl: (cmd) => { window.__calls.push({ fn: 'audioControl', cmd }); },
       audioState: () => JSON.stringify({ active: false, playing: false, finished: false, index: 0, total: 0 })
     };
+    window.__bt = 'TKN';   // 실제 앱처럼: 브리지는 첫 인자로 토큰을 받고, 틀리면 무시 (v2.2)
+    window.Android = {}; for (const k in impl) window.Android[k] = (t, ...a) => { if (t !== 'TKN') { window.__badToken = (window.__badToken || 0) + 1; return undefined; } return impl[k](...a); };
   });
   await page.goto(URL); await page.waitForTimeout(300);
   await page.screenshot({ path: OUT + '/30-home-audio-btn.png' });

@@ -9,6 +9,9 @@
 - `src/kr/hyunuk/vocab3/MainActivity.java` — WebView 래퍼 + JS 브릿지(`window.Android`): 저장(SharedPreferences)·TTS·공유·파일·뒤로가기·시스템바·
   Gemini HTTP(`aiCall` → `window.onAiResult`)·음성인식(`sttStart/sttStop/sttCancel` → `onStt/onSttPartial/onSttError/onSttState`).
   **Java 1.8 문법만** (람다·스트림·var 금지 — dx 호환 유지). 새 브릿지 메서드는 `@JavascriptInterface`, JS 로 돌려줄 땐 `runJs()` + `jsString()`.
+  - 앱 화면은 `https://kr.hyunuk.vocab3/` 로 서빙된다 (`shouldInterceptRequest` → assets). file:// 은 Referer 가 없어 유튜브 임베드가 오류 153.
+  - **브릿지 토큰**: 브릿지는 유튜브 iframe·광고 프레임에도 주입되므로 모든 `@JavascriptInterface` 메서드는 첫 인자 `String t` + `if (!ok(t)) return …;`.
+    토큰은 Java 가 index.html 에만 심고(`window.__bt`), app.js 는 시작할 때 `BT`·`AND` 로 잡아 두고 `AND.x(BT, …)` 로만 부른다. 테스트 스텁도 같은 계약(`'TKN'`).
 - `src/kr/hyunuk/vocab3/ReviewService.java` — 듣기 복습 포그라운드 서비스(알림 제어).
 - `assets/index.html · style.css · app.js` — UI/로직 전부. `app.js` 는 **ES5 IIFE** (프레임워크 없음, 화살표함수·let/const·템플릿문자열 안 씀).
   - 화면: `RENDER.<view>` 함수 + `go(view, params)` / `goTab()` / `back()` 스택. 클릭은 `data-action="…"` → `ACTIONS` 맵 하나로 처리.
@@ -17,6 +20,8 @@
   - AI: `aiGenerate(bodyObj, what, timeoutMs)` 공용 헬퍼(503 재시도, flash 계열 thinking 끔, `AI.last` 기록). 키·모델은 별도 키 `vocab3.ai.v1` — **코드·저장소·백업에 절대 안 들어감.**
   - 회화: `TALK`(진행 중 대화), `talkTurn()`(JSON 스키마 reply/ko/fix/note/used/say), `renderChat()`, STT(`sttStart('en'|'ko')`, 한국어는 `koTranslate()` 로 번역), 리포트 `S.talkLog`.
   - 학습 완료 연출 `celebrate()`(컨페티 canvas·카운트업·WebAudio 효과음), 단어 추가 `aiFillWords()`(8개 배치).
+  - 유튜브 쉐도잉 `S.yt`(v2.2): 링크 → oEmbed(제목) + Gemini `fileData.fileUri`(영상 통째, 구간 자르기 안 씀) → 문장 `{s,e,k,x:[익힐 표현]}`.
+    `yt` 목록 · `ytv` 영상 화면(YouTube IFrame API 는 이 화면에서만 로드). 유튜브 정책: 플레이어 위를 덮지 않음(단어 뜻은 문장 아래 카드), 떠나거나 앱이 내려가면 멈춤, 다운로드 금지.
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
 - `tools/test_*.js`, `tools/shots.js` — Playwright UI 테스트 (Gemini·음성인식은 stub). 스크린샷 `build/shots/`.
 - `store/` — Play 등록 문구·개인정보처리방침(권한·외부 전송이 바뀌면 같이 갱신). `docs/screenshots/` README 용.
