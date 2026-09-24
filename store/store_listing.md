@@ -67,7 +67,7 @@
 ### 데이터 보안(Data safety) 세부
 - "앱에서 필수 사용자 데이터 유형을 수집하거나 공유하나요?" → **아니요**
 - 이유: 앱에 자체 서버가 없고 학습 데이터는 기기 내부 저장소(SharedPreferences)에만 저장됩니다. 백업 파일은 사용자가 직접 선택한 위치에만 저장됩니다. 선택 기능인 AI 예문 생성은 사용자가 입력한 본인 Gemini API 키로 Google API를 직접 호출하며(개발자 서버 경유 없음), 개발자는 어떤 데이터도 받지 않습니다. → Data safety에서 "앱 기능" 목적의 "기타 데이터(단어·예문 텍스트)" 공유가 사용자 선택으로 발생한다고 적는 것이 안전합니다.
-- 사용 권한: INTERNET(AI 예문 생성·회화 연습·유튜브 쉐도잉 시 Gemini API 호출, 유튜브 임베드 플레이어 재생 전용), RECORD_AUDIO(회화 연습 말하기 입력, 기기 음성 인식 전용 · 유튜브 쉐도잉 "소리로 문장 끝 맞추기(실험)"를 켰을 때 재생 음량 측정 · 오디오 미저장·미전송), MODIFY_AUDIO_SETTINGS(재생 음량 측정 Visualizer API용 일반 권한), VIBRATE(햅틱), 듣기 복습용 포그라운드 서비스(FOREGROUND_SERVICE_MEDIA_PLAYBACK)·알림(POST_NOTIFICATIONS)·WAKE_LOCK.
+- 사용 권한: INTERNET(AI 예문 생성·회화 연습·유튜브 쉐도잉 시 Gemini API 호출, 유튜브 임베드 플레이어 재생 전용), RECORD_AUDIO(회화 연습 말하기 입력, 기기 음성 인식 전용·오디오 미저장), VIBRATE(햅틱), 듣기 복습용 포그라운드 서비스(FOREGROUND_SERVICE_MEDIA_PLAYBACK)·알림(POST_NOTIFICATIONS)·WAKE_LOCK.
 
 ## 그래픽 자료 (kit 폴더)
 - 앱 아이콘 512×512: `graphics/icon_512.png`

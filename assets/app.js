@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.8';
+  var APP_VERSION = '2.9';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -129,10 +129,6 @@
     },
     setBackHandled: function (b) { try { if (isAndroid) AND.setBackHandled(BT, !!b); } catch (e) { } },
     setRotate: function (b) { try { if (isAndroid && AND.setRotate) AND.setRotate(BT, !!b); } catch (e) { } },
-    // 소리로 문장 경계 맞추기(실험): 안드로이드가 재생 소리 크기를 window.ytVad(rms) 로 보내 준다. 브라우저에선 없음
-    vadStart: function () { try { if (isAndroid && AND.vadStart) { AND.vadStart(BT); return true; } } catch (e) { } return false; },
-    vadStop: function () { try { if (isAndroid && AND.vadStop) AND.vadStop(BT); } catch (e) { } },
-    vadActive: function (b) { try { if (isAndroid && AND.vadActive) AND.vadActive(BT, !!b); } catch (e) { } },
     setSystemBars: function (color, light) { try { if (isAndroid) AND.setSystemBars(BT, color, !!light); } catch (e) { } },
     ttsReady: function () { try { return isAndroid ? AND.ttsReady(BT) : TTS_OK; } catch (e) { return false; } },
     audioStart: function (playlistJson, loop) {
@@ -224,9 +220,10 @@
     }
     if (res.status === 400 && /api key/i.test(msg)) return 'API 키가 올바르지 않아요';
     if (res.status === 401 || res.status === 403) return 'API 키가 거부됐어요 (' + res.status + ')';
-    if (res.status === 404) return '모델 "' + (res.model || AI.model) + '"을(를) 찾을 수 없어요. 설정 → 모델 목록에서 골라 주세요';
+    var m = res.model || AI.model, mine = m === AI.model;   // 유튜브는 설정과 상관없이 Flash-Lite — 그땐 "설정에서 고르라"고 하지 않는다
+    if (res.status === 404) return '모델 "' + m + '"을(를) 찾을 수 없어요' + (mine ? '. 설정 → 모델 목록에서 골라 주세요' : '');
     if (res.status === 429) return '요청 한도를 넘었어요. 잠시 후 다시 시도하세요';
-    if (res.status === 503) return '"' + AI.model + '" 모델이 지금 붐벼요. 잠시 후 다시 하거나 설정에서 다른 모델을 골라 주세요';
+    if (res.status === 503) return '"' + m + '" 모델이 지금 붐벼요. 잠시 후 다시 ' + (mine ? '하거나 설정에서 다른 모델을 골라 주세요' : '시도해 주세요');
     if (res.status >= 500) return 'Gemini 서버 오류 (' + res.status + ')';
     return '오류 ' + res.status + (msg ? ': ' + msg.slice(0, 90) : '');
   }
@@ -236,7 +233,8 @@
   function aiGenerate(bodyObj, what, timeoutMs, model) {   // model: 기능별로 고정할 때 (없으면 설정의 모델)
     model = model || AI.model;
     var url = AI_BASE + '/models/' + encodeURIComponent(model) + ':generateContent';
-    var noThink = !AI.noThink && /flash/i.test(model);
+    var own = !!(bodyObj.generationConfig && bodyObj.generationConfig.thinkingConfig);   // 부르는 쪽이 생각 설정을 정했다 (유튜브: 생각 켜기, v2.9)
+    var noThink = !own && !AI.noThink && /flash/i.test(model);
     if (noThink) { bodyObj.generationConfig = bodyObj.generationConfig || {}; bodyObj.generationConfig.thinkingConfig = { thinkingBudget: 0 }; }
     var t0 = Date.now();
     function call() { return bridge.aiCall(url, AI.key, JSON.stringify(bodyObj), timeoutMs); }
@@ -251,6 +249,7 @@
         if (/think/i.test(res.text)) { AI.noThink = true; saveAi(); }
         return call();
       }
+      if (res.status === 400 && own && /think/i.test(res.text)) { delete bodyObj.generationConfig.thinkingConfig; own = false; return call(); }   // 생각 설정을 안 받는 모델 → 빼고 한 번 더
       return res;
     }).then(function (res) {
       res.model = model;
@@ -398,7 +397,7 @@
   var S = null;
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytVad: false };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
@@ -429,6 +428,7 @@
     var d = defaultSettings();
     s.settings = s.settings || {};
     for (var k in d) if (!(k in s.settings)) s.settings[k] = d[k];
+    delete s.settings.ytVad;   // v2.9: v2.8 '소리로 문장 끝 맞추기' 실험을 뺐다 (문장의 as/asg/ae 는 아래 ytClean 이 버린다)
     var dt = defaultTalk(), tk = s.settings.talk || {};
     for (var tkk in dt) if (!(tkk in tk)) tk[tkk] = dt[tkk];
     if (!tk.autoSendV2) { tk.autoSend = false; tk.autoSendV2 = true; }   // v1.19: ■ 뒤에 확인하고 보내는 게 기본
@@ -436,7 +436,7 @@
     if (!Array.isArray(s.talkLog)) s.talkLog = [];
     // v2.2 유튜브 쉐도잉 — 백업 파일에서 들어올 수 있으니 모양을 검사해 정리한다
     s.yt = (Array.isArray(s.yt) ? s.yt : []).filter(function (r) { return r && typeof r.id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(r.vid); });
-    s.yt.forEach(function (r) { r.title = String(r.title || ''); r.date = String(r.date || ''); r.addedAt = Number(r.addedAt) || 0; r.sents = Array.isArray(r.sents) ? ytClean(r.sents) : null; if (r.tv !== 2) delete r.tv; });
+    s.yt.forEach(function (r) { r.title = String(r.title || ''); r.date = String(r.date || ''); r.addedAt = Number(r.addedAt) || 0; r.sents = Array.isArray(r.sents) ? ytClean(r.sents) : null; if (r.tv !== 2 && r.tv !== 3) delete r.tv; });
     // v1.20: 예전 기록에도 id를 붙여 리포트 삭제가 되게
     s.talkLog.forEach(function (r, i) { if (r && !r.id) r.id = 'tk0' + i + '-' + String(r.date || '').replace(/-/g, ''); });
     var da = defaultAudio(), hadAudio = !!s.settings.audio, a = s.settings.audio || {};
@@ -546,7 +546,6 @@
     var cur = current();
     if (cur.view !== 'ytv') ytStopPlayer();   // 영상 화면을 떠나면 멈춘다 (유튜브 정책: 안 보이는 곳에서 재생 금지)
     bridge.setRotate(cur.view === 'ytv');   // 가로 회전은 영상 화면에서만 (왼쪽 영상 · 오른쪽 스크립트)
-    if (cur.view !== 'ytv' && VAD.st !== 'off') ytVadOff();
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + cur.view); });
     var showTab = ['home', 'list', 'edit', 'import', 'settings', 'stats'].indexOf(cur.view) >= 0;
     $('#tabbar').classList.toggle('show', showTab);
@@ -681,9 +680,6 @@
       '<button class="q" data-action="yt"><span class="q-ic">📺</span><span class="q-t">유튜브</span><span class="q-s">쉐도잉 · 표현</span></button>' +
       '<button class="q" data-action="audio"><span class="q-ic">🎧</span><span class="q-t">듣기 복습</span><span class="q-s">' + (AUD.active ? (AUD.playing ? '재생 중' : '일시정지') : '운전 중에') + '</span></button>' +
       '</div>' +
-      '<div class="stages">' +
-      stageTile(1, c[1]) + stageTile(2, c[2]) + stageTile(3, c[3]) +
-      '</div>' +
       '<button class="review-btn" style="--c:var(--s2)" data-action="start" data-stage="2"' + (c[2] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">2단계 복습</div><div class="rb-s">주기적으로 복습 → 확실하면 3단계로</div></div><span class="rb-n">' + c[2] + '</span><span class="chev">›</span></button>' +
       '<button class="review-btn" style="--c:var(--s3)" data-action="start" data-stage="3"' + (c[3] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">3단계 최종 점검</div><div class="rb-s">최종 확인 → 통과하면 졸업</div></div><span class="rb-n">' + c[3] + '</span><span class="chev">›</span></button>' +
       '<div class="row"><button class="btn" data-action="list" data-stage="0">대기 ' + c[0] + '개</button><button class="btn" data-action="list-starred">★ 중요 ' + starCount() + '개</button><button class="btn" data-action="list" data-stage="4">졸업 ' + c[4] + '개</button></div>' +
@@ -693,11 +689,6 @@
       '</div>';
     $('#view-home').innerHTML = html;
   };
-  function stageTile(st, n) {
-    return '<button class="stage-tile" style="--c:' + STAGE_COLOR[st] + '" data-action="list" data-stage="' + st + '">' +
-      '<div class="st-num">' + STAGE_SHORT[st] + '</div><div class="st-name">' + STAGE_NAME[st] + '</div>' +
-      '<div class="st-count">' + n + '<small>개</small></div></button>';
-  }
 
   /* ================= STUDY ================= */
   var SES = null;
@@ -1577,7 +1568,7 @@
 
   /* ================= YOUTUBE 쉐도잉 ================= */
   // 링크 → Gemini 가 영상을 듣고 문장별 [시작 초 · 영어 · 한글 · 익힐 표현] 으로 정리 → 문장을 누르면 앱 안 플레이어가 그 시점부터.
-  // ponytail: 영상 통째로 한 번에 보낸다 — 구간 자르기(videoMetadata)는 유튜브 링크에서 음성이 안 잘리는 회귀가 보고됨(2026-08). 긴 영상은 오래 걸리고 무료 한도를 많이 씀
+  // ponytail: 영상 통째로 한 번에 보낸다 — 구간 자르기(videoMetadata start/endOffset)는 유튜브 링크에서 음성이 안 잘리는 회귀가 보고됨(2026-08). 긴 영상은 오래 걸리고 무료 한도를 많이 씀
   // 유튜브 정책: 플레이어 위를 덮지 않는다(단어 뜻은 문장 아래 카드로), 화면을 떠나거나 앱이 내려가면 멈춘다, 다운로드·음성 분리 안 함
   var YTJOB = {};            // 정리 중·실패 { id: { busy, err } } — 저장 안 함 (앱이 꺼지면 "정리하기"로 다시)
   var YTV = null;            // 보고 있는 영상 { id, act: 재생한 문장, cur: 지금 나오는 문장, stopAt, card, ko: {열어 본 한글}, ready, pending, perr }
@@ -1658,7 +1649,11 @@
       if (res.status === 404 || res.status === 400) throw { msg: '영상을 찾을 수 없어요 — 비공개·삭제됐거나 링크가 잘못됐어요' };
       try { var o = JSON.parse(res.text); if (o && o.title) { r.title = String(o.title); save(); ytRefresh(r.id); } } catch (e) { }
       // 유튜브 받아쓰기는 설정과 상관없이 Flash-Lite — 3 Flash·Pro 는 시간이 수십 초~수 분씩 밀린다는 보고 (v2.7)
-      return aiGenerate(ytBody(watch), 'youtube', 300000, AI_DEFAULT_MODEL);
+      // v2.9: 생각(low) + 1초에 2장으로 시간 정밀도를 올린다. 1초 2장은 입력 토큰이 약 1.7배 → 긴 영상이 한도(429)·크기(400)에 걸리면 1초 1장으로 한 번 더
+      return aiGenerate(ytBody(watch, 2), 'youtube', YT_AI_MS, AI_DEFAULT_MODEL).then(function (res) {
+        if (res.status === 429 || (res.status === 400 && !/api key/i.test(res.text))) return aiGenerate(ytBody(watch, 0), 'youtube', YT_AI_MS, AI_DEFAULT_MODEL);   // 400 은 이유를 가리기 어려워 키 오류만 빼고 한 번 더
+        return res;
+      });
     }).then(function (res) {
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = parseAiJson(res.text);
@@ -1666,7 +1661,7 @@
       if (!out) throw { msg: '정리 결과를 이해하지 못했어요. 다시 시도해 주세요' };
       var ns = ytMergeShort(ytClean(out));
       if (!ns.length && r.sents && r.sents.length) throw { msg: '영어 문장을 찾지 못했어요' };   // 다시 정리가 빈손이면 있던 문장·단어 뜻 캐시를 지우지 않는다
-      r.sents = ns; r.tv = 2; save();   // tv 2: 시간을 MM:SS 로 받아 앱이 환산한 정리 (v2.5)
+      r.sents = ns; r.tv = 3; save();   // tv 2: 시간을 MM:SS 로 받아 앱이 환산 (v2.5) · tv 3: v2.9 정리 (생각 low · 1초 2장, 거절되면 1장)
       YTJOB[r.id] = { busy: false, err: r.sents.length ? '' : '영어 음성을 찾지 못했어요' };
       if (YTV && YTV.id === r.id) { YTV.act = -1; YTV.cur = -1; YTV.card = null; YTV.ko = {}; YTV.stopAt = null; }   // 문장 번호가 바뀌었다
     }).catch(function (e) {
@@ -1675,7 +1670,10 @@
       else YTJOB[r.id] = { busy: false, err: msg };
     }).then(function () { ytRefresh(r.id); });
   }
-  function ytBody(watch) {
+  var YT_AI_MS = 600000;   // 생각을 켜면 몇십 초 더 걸린다 — 긴 영상도 끊기지 않게 10분 (Java 읽기 제한도 같이)
+  function ytBody(watch, fps) {
+    var vid = { fileData: { fileUri: watch } };
+    if (fps) vid.videoMetadata = { fps: fps };   // 1초에 2장 → 모델이 보는 시간 표시가 0.5초 간격
     return {
       systemInstruction: { parts: [{ text: [
         'You transcribe YouTube videos for a Korean adult who studies English by shadowing (repeating each sentence right after hearing it).',
@@ -1687,8 +1685,9 @@
         'Do not make very short interjections (1-3 words such as "Yes.", "Right.", "Okay.", "Thank you.") separate items: join them to the neighbouring sentence of the same speaker.',
         'Skip parts that are not English speech (music, Korean narration). If there is no English speech at all, return [].'
       ].join('\n') }] },
-      contents: [{ role: 'user', parts: [{ fileData: { fileUri: watch } }, { text: 'Transcribe this video.' }] }],   // 문서 권장: 영상 먼저, 지시는 뒤
+      contents: [{ role: 'user', parts: [vid, { text: 'Transcribe this video.' }] }],   // 문서 권장: 영상 먼저, 지시는 뒤
       generationConfig: {
+        thinkingConfig: { thinkingLevel: 'low' },   // 생각을 조금 켜면 시간 오차가 줄었다는 벤치마크 (3.1 Flash-Lite 평균 2.09 → 1.25초). 안 받는 모델이면 aiGenerate 가 빼고 다시
         mediaResolution: 'MEDIA_RESOLUTION_LOW',   // 받아쓰기엔 화면이 거의 필요 없다 (2.5 계열에선 토큰 1/4)
         responseMimeType: 'application/json',
         responseSchema: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
@@ -1714,8 +1713,6 @@
         x: (Array.isArray(x.x) ? x.x : []).filter(function (g) { return g && g.q && g.w; }).slice(0, 3).map(function (g) { return { q: String(g.q), w: String(g.w), p: String(g.p || ''), m: String(g.m || '') }; })
       };
       var t = ytSec(x.t); if (t > o.s) o.t = Math.round(t * 10) / 10;   // 문장 끝 (v2.3 — 예전 데이터엔 없음)
-      if (typeof x.as === 'number' && isFinite(x.as) && x.as >= 0) { o.as = Math.round(x.as * 100) / 100; if (x.asg) o.asg = 1; }   // 소리로 배운 실제 시작 (asg: 추정)
-      if (typeof x.ae === 'number' && isFinite(x.ae) && x.ae > o.s) o.ae = Math.round(x.ae * 100) / 100;   // 소리로 배운 실제 끝
       if (x.lk && typeof x.lk === 'object') {   // 눌러 본 단어 뜻 캐시 (복원 데이터면 모양 검사)
         o.lk = {};
         for (var key in x.lk) if (Object.prototype.hasOwnProperty.call(x.lk, key) && x.lk[key] && x.lk[key].w) o.lk[key] = { w: String(x.lk[key].w), p: String(x.lk[key].p || ''), m: String(x.lk[key].m || '') };
@@ -1737,7 +1734,6 @@
       '<div class="yt-fab" id="ytFab"></div>';
     ytRenderBody();
     ytMakePlayer(r.vid);
-    ytVadSync();
   };
   function ytRenderBody() {
     var r = YTV && ytRec(YTV.id), body = $('#ytBody'), fab = $('#ytFab'); if (!r || !body || !fab) return;
@@ -1746,11 +1742,10 @@
     // 오른쪽 아래: "한 번 더"는 오른손 엄지로 계속 누르게 된다 — 크게
     fab.innerHTML = has ? '<button class="guide-pill yt-pm' + (S.settings.ytPause ? ' on' : '') + '" data-action="yt-pause-mode" aria-pressed="' + !!S.settings.ytPause + '" aria-label="문장마다 멈춤">⏸ 문장마다</button>' +
       '<button class="yt-again" data-action="yt-replay" aria-label="한 번 더"' + (YTV.act < 0 ? ' disabled' : '') + '><span>↻</span><small>한 번 더</small></button>' : '';
-    body.innerHTML = (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요</div>' : '') + (j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<br><span class="small">영상 길이에 따라 1~3분 걸려요. 그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
+    body.innerHTML = (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요</div>' : '') + (j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<br><span class="small">영상 길이에 따라 1~5분 걸려요. 그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
       : j.err ? '<div class="empty">' + esc(j.err) + '<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">다시 시도</button></div>'
       : !has ? '<div class="empty">아직 정리 전이에요<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">문장 정리하기</button></div>'
-      : (r.tv === 2 ? '' : '<div class="yt-old">1분 넘는 곳부터 문장 시간이 어긋나던 문제를 고쳤어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
-        '<div class="yt-vad" id="ytVadLine">' + ytVadText() + '</div>' +
+      : (r.tv === 3 ? '' : '<div class="yt-old">문장 시간을 더 정확하게 맞추도록 바꿨어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
         '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 재생한 문장의 단어를 누르면 뜻 · 한글은 눌러서 보기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
         '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b></div>');
   }
@@ -1807,7 +1802,6 @@
             if (p != null && !document.hidden) ytPlaySent(p);   // 앱이 내려간 사이 준비됐으면 재생하지 않는다 (백그라운드 재생 금지)
           },
           onError: function (e) { if (YTV === myV) ytPlayerError(e && e.data); },
-          onStateChange: function (e) { if (YTV === myV && VAD.st === 'on') bridge.vadActive(e && e.data === 1); },   // 소리는 재생 중에만 잰다
           onAutoplayBlocked: function () { toast('재생이 막혔어요 — 영상의 ▶를 한 번 눌러 주세요'); }
         }
       });
@@ -1820,7 +1814,7 @@
   function ytFinish() {
     YTV.raf = 0; if (!YTP || YTV.stopAt == null || YTP.getPlayerState() !== 1) return;   // 버퍼링 등이면 다음 틱이 다시 건다
     var c = YTP.getCurrentTime();
-    if (c >= YTV.stopAt - YT_LEAD) { if (c - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; ytVadCap(); }
+    if (c >= YTV.stopAt - YT_LEAD) { if (c - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; }
     else YTV.raf = requestAnimationFrame(ytFinish);
   }
   function ytStopPlayer() {
@@ -1830,98 +1824,6 @@
     if (YTV) { YTV.ready = false; YTV.stopAt = null; YTV.pending = null; }   // 다시 들어왔을 때 옛 멈춤 지점이 남지 않게
   }
   function ytPlayerError(code) { if (!YTV) return; YTV.perr = code || 'load'; YTV.pending = null; ytRenderBody(); }
-  /* --- 소리로 문장 경계 맞추기 (실험, v2.8) ---
-     폰이 재생 중인 소리의 크기(RMS 0~128)를 30ms 마다 받아, 최근 4초 분포로 무음 문턱을 잡는다.
-     끝: AI 끝 근처에서 무음이 이어지면(끝 전 0.28초·끝 뒤 0.15초 — 쉼표 쉼에서 안 멈추게) 거기서 멈추고 실제 끝(ae)을 저장.
-     시작: 재생 직후 [무음 → 말] 전환을 찾아 실제 시작(as)을 저장 — 다음 "한 번 더"부터 정확. 음악 등으로 판정이 안 되면 AI 시간 그대로 */
-  var VAD = { st: 'off', msg: '', buf: [], last: '', quiet: 0 };
-  window.onVad = function (st, msg) {
-    if (st === 'on' && !(S.settings.ytVad && current() && current().view === 'ytv')) { ytVadOff(); return; }   // 준비되는 사이 화면을 떠났거나 껐다
-    VAD.st = st; VAD.msg = msg || '';
-    if (st === 'on') { var pl = false; try { pl = !!YTP && YTP.getPlayerState() === 1; } catch (e) { } bridge.vadActive(pl); }
-    else ytVadClear();
-    ytVadLine();
-  };
-  function ytVadClear() {   // 소리 맞춤이 꺼지면 진행 중인 판정을 치우고 멈춤은 AI 끝으로 되돌린다 (상한 +0.5초에서 늦게 멈추지 않게)
-    if (!YTV) return;
-    if (YTV.vadEnd && YTV.stopAt != null) YTV.stopAt = YTV.vadEnd.E;
-    YTV.vadEnd = null; YTV.vadOn = null;
-  }
-  function ytVadOff() { bridge.vadStop(); VAD.st = 'off'; ytVadClear(); }
-  function ytVadSync() {
-    var want = S.settings.ytVad && current() && current().view === 'ytv';
-    // 저절로 켜는 건 꺼진 상태('off')에서만 — 권한 거부·실패 뒤 화면 복귀마다 다시 물으면 거부 → 복귀 → 요청이 끝없이 돈다
-    if (want && VAD.st === 'off') { VAD.st = 'starting'; if (!bridge.vadStart()) VAD.st = 'none'; ytVadLine(); }
-    else if (!want && VAD.st !== 'off') { ytVadOff(); ytVadLine(); }
-  }
-  function ytVadText() {
-    var tg = function (label, v) { return ' · <b data-action="yt-vad" data-v="' + v + '">' + label + '</b>'; };
-    if (!S.settings.ytVad) return '🎚 소리로 문장 끝 맞추기 (실험)' + tg('켜기', 1);
-    if (VAD.st === 'on') return '🎚 소리로 맞추는 중' + (VAD.last ? ' · ' + esc(VAD.last) : ' · 문장을 누르면 실제로 말이 끝나는 곳에서 멈춰요') + tg('끄기', 0);
-    if (VAD.st === 'permission') return '🎚 재생 소리 크기를 재려면 마이크 권한이 필요해요 (녹음·저장 안 함)' + tg('다시 켜기', 1) + tg('끄기', 0);
-    if (VAD.st === 'fail') return '🎚 이 폰에선 재생 소리를 잴 수 없어요' + (VAD.msg ? ' (' + esc(VAD.msg.slice(0, 60)) + ')' : '') + tg('끄기', 0);
-    if (VAD.st === 'none') return '🎚 소리로 맞추기는 안드로이드 앱에서만 돼요' + tg('끄기', 0);
-    return '🎚 소리 측정 준비 중…' + tg('끄기', 0);
-  }
-  function ytVadCap() {   // 소리 맞춤 중인데 무음을 못 찾고 상한(AI 끝 +0.5초)에서 멈췄을 때
-    if (!YTV.vadEnd) return;
-    YTV.vadEnd = null; VAD.last = '무음을 못 찾아 AI 끝 +0.5초에서 멈춤'; ytVadLine();
-  }
-  function ytVadLine() { var el = $('#ytVadLine'); if (el) el.innerHTML = ytVadText(); }
-  function ytVadThr() {   // 무음 문턱(dB). 소리 차이가 작으면(음악·볼륨 너무 작음) 판정 불가 → null
-    if (VAD.buf.length < 20) return null;
-    var d = VAD.buf.map(function (b) { return b.db; }).sort(function (a, b) { return a - b; });
-    var lo = d[Math.floor(d.length * 0.1)], hi = d[Math.floor(d.length * 0.9)];
-    if (hi < -42 || hi - lo < 12) return null;
-    return hi - 16;
-  }
-  function ytVadStop(x, endT, how) {
-    if (YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; }
-    try { YTP.pauseVideo(); } catch (e) { }
-    var E = YTV.vadEnd && YTV.vadEnd.E; YTV.stopAt = null; YTV.vadEnd = null;
-    if (how === 'vad') {
-      x.ae = Math.round(endT * 100) / 100; save();
-      var d = E - endT;
-      VAD.last = Math.abs(d) < 0.05 ? 'AI 시간 그대로 실제 무음에서 멈춤' : (d > 0 ? d.toFixed(1) + '초 앞당겨' : (-d).toFixed(1) + '초 늦춰') + ' 실제 무음에서 멈춤';
-    } else VAD.last = '무음을 못 찾아 AI 끝' + (endT - E > 0.05 ? ' +' + (endT - E).toFixed(1) + '초' : '') + '에서 멈춤';   // 음악 등으로 판정 불가
-    ytVadLine();
-  }
-  window.ytVad = function (rms) {
-    if (!YTP || !YTV || !YTV.ready || VAD.st !== 'on') return;
-    var st, t; try { st = YTP.getPlayerState(); t = YTP.getCurrentTime(); } catch (e) { return; }
-    if (st !== 1) return;
-    if (!YTV.vArmed) { if (t >= YTV.from - 0.1 && t < YTV.from + 0.8) YTV.vArmed = true; else return; }   // seekTo 직후 getCurrentTime 은 옛 위치 — 옛 소리로 판정하지 않는다
-    var db = rms > 0.5 ? 20 * Math.log(rms / 128) / Math.LN10 : -60;
-    VAD.buf.push({ t: t, db: db }); if (VAD.buf.length > 130) VAD.buf.shift();   // 최근 약 4초
-    VAD.quiet = db < -50 ? VAD.quiet + 1 : 0;
-    if (VAD.quiet === 100) { VAD.last = '재생 소리가 안 잡혀요 — 볼륨을 올려 보세요 (이 폰에선 안 될 수도 있어요)'; ytVadLine(); }
-    var r = ytRec(YTV.id), thr = ytVadThr();
-    // 실제 시작 배우기
-    var o = YTV.vadOn, xo = o && r && r.sents[o.i];
-    var pv = o && r && r.sents[o.i - 1], floor = pv && pv.ae != null ? pv.ae : -1;   // 앞 문장의 실제 끝보다 앞은 시작일 수 없다
-    if (o && xo && o.t0 == null) o.t0 = t;
-    if (o && xo && (thr == null || o.t0 - YTV.from > 0.15)) YTV.vadOn = null;   // 문턱이 없거나 재생 시작부터 못 들었으면 이번엔 안 배운다 (모른 채 추정하면 틀린다)
-    else if (o && xo) {
-      var loud = db >= thr;
-      if (o.phase === 0) {   // 먼저 무음(문장 사이 틈)을 찾는다
-        if (!loud) { if (o.run0 == null) o.run0 = t; if (t - o.run0 >= 0.09) o.phase = 1; }
-        else { o.run0 = null; if (t - YTV.from > 1.2) {   // 처음부터 계속 말소리 = 문장 중간에서 시작 → 다음엔 0.6초 앞에서 (추정은 한 번만 — 계속 밀면 앞 문장 속으로 들어간다)
-          var g = Math.max(0, floor, YTV.from - 0.6);
-          if (!xo.asg && g < YTV.from - 0.05) { xo.as = Math.round(g * 100) / 100; xo.asg = 1; save(); }
-          YTV.vadOn = null; } }
-      } else if (loud) {   // 무음 뒤 첫 말소리 = 실제 시작
-        var on = t - 0.03;
-        if (on - YTV.from < 0.9 && on > xo.s - 1.5 && on < xo.s + 1.2 && on > floor) { xo.as = Math.max(0, Math.round((on - 0.12) * 100) / 100); delete xo.asg; save(); }   // 재생 시작 0.9초 안의 말소리만 (더 뒤면 문장 중간 틈)
-        YTV.vadOn = null;
-      } else if (t - YTV.from > 2.5) YTV.vadOn = null;
-    }
-    // 실제 끝에서 멈추기
-    var c = YTV.vadEnd, xe = c && r && r.sents[c.i];
-    if (!c || !xe || YTV.stopAt == null || t < c.lo) return;
-    if (thr == null) { if (t >= c.E) ytVadStop(xe, t, 'ai'); return; }
-    if (db < thr) { if (c.run0 == null) c.run0 = t; if (t - c.run0 >= (c.run0 < c.E ? 0.28 : 0.15)) ytVadStop(xe, c.run0, 'vad'); }
-    else c.run0 = null;
-  };
   // 새로 정리한 문장 중 너무 짧은 것(3단어 이하: "Yes." "Right.")은 시간 간격이 더 가까운 앞이나 뒤 문장과 합친다
   function ytWords(e) { return ytTokens(e).filter(function (t, k) { return k % 2 === 1; }).length; }
   function ytMergeShort(a) {
@@ -1950,20 +1852,11 @@
     bridge.stop();
     if (YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; }
     var next = r.sents[i + 1];
-    var prevX = r.sents[i - 1], vad = VAD.st === 'on' && S.settings.ytPause;
     YTV.from = Math.max(0, Math.round((x.s - 0.3) * 10) / 10);   // 타임스탬프가 조금 늦게 찍히곤 해서 살짝 앞에서
-    var useL = S.settings.ytVad;   // 배운 값은 켜 있을 때만 — 끄면 AI 시간 그대로 (잘못 배운 값에서 빠져나오는 길)
-    if (useL && x.as != null) YTV.from = x.as;   // 소리로 배운 실제 시작
-    else if (useL && prevX && prevX.ae != null && prevX.ae + 0.1 > YTV.from && prevX.ae + 0.1 < x.s + 0.5) YTV.from = Math.round((prevX.ae + 0.1) * 100) / 100;   // 앞 문장의 실제 끝 뒤부터 (앞 꼬리 안 들리게)
     // 다음 문장 시작 시간은 늦게 찍히곤 해서 거기까지 가면 다음 문장 앞부분까지 읽는다 → 문장 끝(t) 바로 뒤에서 멈춘다
     var end = x.t != null ? x.t + 0.1 : next ? next.s - 0.15 : x.s + 12;   // 멈춤이 정확해져서 끝 여유 0.15 → 0.1
     if (next && end > next.s) end = next.s;
-    if (useL && x.ae != null) end = x.ae + 0.12;   // 소리로 배운 실제 끝이 있으면 그걸로 (다음 문장 시작 추정보다 믿을 만하다)
-    // 소리 맞춤: AI 끝 −0.6~+0.5초 사이의 실제 무음에서 멈춘다 — 못 찾으면 AI 끝(판정 불가) 또는 +0.5초(상한)
-    YTV.vadEnd = vad && x.ae == null ? { i: i, E: end, lo: Math.max(end - 0.6, YTV.from + 0.3), run0: null } : null;
-    YTV.vadOn = vad && (x.as == null || x.asg) ? { i: i, phase: 0, run0: null } : null;
-    if (vad && x.ae != null) { VAD.last = '이 문장은 전에 잰 실제 끝에서 멈춰요'; ytVadLine(); }   // 실제 시작 배우기 — 확정된 시작은 다시 안 배운다 (단어 사이 틈을 시작으로 착각해 뒤로 밀리던 것)
-    YTV.stopAt = S.settings.ytPause ? Math.max(x.s + 0.5, YTV.vadEnd ? end + 0.5 : end) : null; YTV.armed = false; YTV.vArmed = false;
+    YTV.stopAt = S.settings.ytPause ? Math.max(x.s + 0.5, end) : null; YTV.armed = false;
     YTP.seekTo(YTV.from, true);
     YTP.playVideo();
   }
@@ -1975,7 +1868,7 @@
     // 끝 지점을 자연스럽게 지날 때만 멈추고, 스크러빙으로 훌쩍 넘어가면 그냥 푼다
     if (YTV.stopAt != null && !YTV.raf) {
       if (!YTV.armed) { if (t >= YTV.from - 0.5 && t < YTV.stopAt) YTV.armed = true; }
-      else if (t >= YTV.stopAt) { if (t - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; ytVadCap(); }
+      else if (t >= YTV.stopAt) { if (t - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; }
       else if ((YTV.stopAt - t) / ((YTP.getPlaybackRate && YTP.getPlaybackRate()) || 1) < 0.45) ytFinish();
     }
     var cur = -1; for (var i = 0; i < r.sents.length && r.sents[i].s <= t + 0.3; i++) cur = i;
@@ -2666,11 +2559,6 @@
     'yt-add-word': function (el) { ytAddWord(+el.getAttribute('data-stage')); },
     'yt-pause-mode': function (el) { var on = S.settings.ytPause = !S.settings.ytPause; save(); el.classList.toggle('on', on); el.setAttribute('aria-pressed', String(on)); if (!on && YTV) YTV.stopAt = null; },
     'yt-replay': function () { if (YTV && YTV.act >= 0) ytPlaySent(YTV.act); },
-    'yt-vad': function (el) {
-      S.settings.ytVad = el.getAttribute('data-v') === '1'; save(); VAD.last = '';
-      if (S.settings.ytVad && VAD.st !== 'on') VAD.st = 'off';   // "다시 켜기"는 권한을 다시 묻는다 (자동으로는 안 묻는다)
-      ytVadSync(); ytVadLine();
-    },
     'go-settings-ai': function () { go('settings', { scroll: 'ai' }); },
     'talk-scenario': function (el) { S.settings.talk.scenario = el.getAttribute('data-id'); save(); RENDER.talk(); },
     'talk-mission-n': function (el) { S.settings.talk.missionN = Number(el.getAttribute('data-n')); talkSetup.words = pickMissionWords(S.settings.talk.missionN); save(); RENDER.talk(); },
@@ -2771,7 +2659,7 @@
 
   /* ---------------- lifecycle ---------------- */
   window.onTtsReady = function (ok) { TTS_OK = !!ok; if (!ok) toast('영어 TTS 음성을 찾지 못했어요. 기기 TTS 설정을 확인해 주세요'); };
-  window.onAppResume = function () { if (current() && current().view === 'home') RENDER.home(); else if (current() && current().view === 'ytv') ytVadSync(); };
+  window.onAppResume = function () { if (current() && current().view === 'home') RENDER.home(); };
   window.onAppPause = function () { saveNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
   document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); else window.onAppResume(); });
   window.addEventListener('pagehide', saveNow);

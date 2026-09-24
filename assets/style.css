@@ -110,13 +110,6 @@ h1, h2, h3, p { margin: 0; }
 .today .btn { background: #fff; color: var(--primary-deep); border: 1px solid rgba(0, 0, 0, .06); }
 .today .btn.secondary { background: rgba(255, 255, 255, .22); color: var(--on-primary); margin-top: 8px; }
 
-.stages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.stage-tile { background: var(--surface); border-radius: 18px; padding: 14px 12px; text-align: left; box-shadow: var(--shadow); position: relative; overflow: hidden; }
-.stage-tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--c); }
-.stage-tile .st-num { font-size: 12px; font-weight: 700; color: var(--c); }
-.stage-tile .st-name { font-size: 13px; color: var(--muted); margin-top: 2px; }
-.stage-tile .st-count { font-size: 28px; font-weight: 800; margin-top: 6px; letter-spacing: -.5px; }
-.stage-tile .st-count small { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 2px; }
 
 .review-btn { background: var(--surface); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; align-items: center; gap: 12px; text-align: left; }
 .review-btn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
@@ -577,8 +570,6 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
   #view-ytv .yt-body { border-radius: 0; box-shadow: none; min-height: 0; }
 }
 .yt-hint { padding: 2px 6px 8px; line-height: 1.5; }
-.yt-vad { padding: 2px 6px 6px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
-.yt-vad b { color: var(--primary); text-decoration: underline; font-weight: 600; display: inline-block; padding: 6px 2px; }
 .yt-old { margin: 2px 4px 10px; padding: 10px 12px; border-radius: 12px; background: var(--primary-soft); font-size: 13px; line-height: 1.55; }
 .yt-old b { color: var(--primary); text-decoration: underline; display: inline-block; padding: 4px 0; }
 .yt-redo { padding: 14px 8px 4px; text-align: center; line-height: 1.6; }

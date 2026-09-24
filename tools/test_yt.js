@@ -23,6 +23,7 @@ const SENTS = [
       const sys = body.systemInstruction.parts[0].text;
       if (/tapped a word/.test(sys)) return ok({ w: 'really', p: 'adv.', m: '정말로' });
       if (window.__gemEmpty) return ok([]);
+      if (window.__gemFail && window.__gemFail.length) { const f = window.__gemFail.shift(); return Promise.resolve({ status: f[0], text: () => Promise.resolve(JSON.stringify({ error: { message: f[1] } })) }); }
       return ok(sents);
     };
     // YouTube IFrame API 흉내: 호출만 기록하고, 시간은 테스트가 window.__ytT 로 정한다
@@ -68,7 +69,8 @@ const SENTS = [
   const gem = await p.evaluate(() => window.__calls.find(c => c.body));
   eq('oEmbed 로 제목 (키 헤더 없이)', await p.evaluate(() => /oembed\?format=json&url=https%3A%2F%2Fwww\.youtube\.com%2Fwatch%3Fv%3DH5h_GUaR-bU/.test(window.__calls[0].url)), true);
   eq('Gemini 에 유튜브 링크 (영상 먼저, 지시는 뒤)', gem.body.contents[0].parts[0].fileData.fileUri + ' | ' + ('text' in gem.body.contents[0].parts[1]), 'https://www.youtube.com/watch?v=H5h_GUaR-bU | true');
-  eq('구간 자르기 안 함', 'videoMetadata' in gem.body.contents[0].parts[0], false);
+  eq('1초에 2장 · 구간 자르기는 안 함 (v2.9)', JSON.stringify(gem.body.contents[0].parts[0].videoMetadata), '{"fps":2}');
+  eq('생각 켜기 low — 끄기(thinkingBudget 0)로 덮어쓰지 않음 (v2.9)', JSON.stringify(gem.body.generationConfig.thinkingConfig), '{"thinkingLevel":"low"}');
   eq('스키마: 문장 배열 s/t/e/k/x (끝 시간 t, v2.3)', gem.body.generationConfig.responseSchema.type + ' ' + gem.body.generationConfig.responseSchema.items.required.join(','), 'ARRAY s,t,e,k,x');
   const sysT = gem.body.systemInstruction.parts[0].text;
   eq('시간은 영상 표기 MM:SS.d 로 받고 초 환산은 앱이 (v2.5)', /MM:SS\.d/.test(sysT) && /do NOT convert them to total seconds/.test(sysT) && gem.body.generationConfig.responseSchema.items.properties.s.type, 'STRING');
@@ -94,6 +96,7 @@ const SENTS = [
   const land = () => p.evaluate(() => { const v = document.querySelector('#ytBox').getBoundingClientRect(), l = document.querySelector('#ytList').getBoundingClientRect(), f = document.querySelector('[data-action="yt-replay"]').getBoundingClientRect(); return { vl: Math.round(v.left), vr: Math.round(v.right), vt: Math.round(v.top), vh: Math.round(v.height), vb: Math.round(v.bottom), ll: Math.round(l.left), fl: Math.round(f.left), fr: Math.round(f.right), iw: innerWidth, ih: innerHeight }; });
   const L0 = await land();
   eq('가로: 영상 왼쪽 · 스크립트 오른쪽 · 안 겹침 · 영상 200px 이상', L0.vl === 0 && L0.vr <= L0.ll && L0.vh >= 200 && L0.vb <= L0.ih && L0.fl >= L0.ll && L0.fr <= L0.iw, true);
+  await p.evaluate(() => document.getElementById('toast').classList.remove('show')); await p.waitForTimeout(300);   // 앞에서 띄운 "링크를 확인해 주세요" 안내가 README 사진에 안 찍히게
   await p.screenshot({ path: OUT + '/305-yt-landscape.png' });
   await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 200; }); await p.waitForTimeout(150);
   eq('가로: 스크립트를 스크롤해도 영상은 제자리·안 가려짐', await p.evaluate(t => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(); return Math.round(r.top) === t && b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }, L0.vt), true);
@@ -211,7 +214,20 @@ const SENTS = [
   await p.click('#modal .btn.primary'); await p.waitForTimeout(500);
   eq('다시 정리 = Gemini 한 번 더', await p.evaluate(() => window.__calls.filter(c => c.body && c.body.contents[0].parts[0].fileData).length) - g0, 1);
   eq('문장 다시 표시', await p.$$eval('#ytList .ys', x => x.length), 3);
-  eq('새로 정리한 영상엔 다시 정리 안내 없음', await p.$$eval('.yt-old', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').tv), '0 2');
+  eq('새로 정리한 영상엔 다시 정리 안내 없음 (tv 3)', await p.$$eval('.yt-old', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').tv), '0 3');
+  // --- 거절되면 한 번 더 (v2.9): 생각 설정 거부(400) → 생각 빼고, 한도(429) → 1초 1장으로 ---
+  const c0 = await p.evaluate(() => window.__calls.length);
+  await p.evaluate(() => { window.__gemFail = [[400, 'Thinking level is not supported for this model.'], [429, 'Resource has been exhausted (e.g. check quota).']]; });
+  await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(600);
+  eq('거절 두 번 뒤 세 번째에 성공: [생각·2장] → [생각 빼고·2장] → [생각·1장]', JSON.stringify(await p.evaluate(c0 => window.__calls.slice(c0).filter(c => c.body).map(c => [!!c.body.generationConfig.thinkingConfig, c.body.contents[0].parts[0].videoMetadata ? c.body.contents[0].parts[0].videoMetadata.fps : 1]), c0)), '[[true,2],[false,2],[true,1]]');
+  eq('성공하면 문장 그대로 · 실패 안내 없음', await p.$$eval('#ytList .ys', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').tv), '3 3');
+  const c1 = await p.evaluate(() => window.__calls.length);
+  await p.evaluate(() => { window.__gemFail = [[400, 'API key not valid. Please pass a valid API key.']]; });
+  await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(500);
+  eq('키 오류(400)는 다시 안 보내고 안내', (await p.evaluate(c1 => window.__calls.slice(c1).filter(c => c.body).length, c1)) + ' ' + await p.textContent('#toast').then(t => /API 키가 올바르지 않아요/.test(t)), '1 true');
+  await p.evaluate(() => { window.__gemFail = [[503, 'The model is overloaded.'], [503, 'The model is overloaded.']]; });
+  await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(2000);
+  eq('붐빔(503) 안내는 실제로 부른 Flash-Lite 이름 · 설정 바꾸라는 말 없음', await p.textContent('#toast'), '다시 정리 실패 — "gemini-flash-lite-latest" 모델이 지금 붐벼요. 잠시 후 다시 시도해 주세요');
   await p.evaluate(() => { window.__gemEmpty = true; });
   await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(500);
   eq('다시 정리가 빈 결과면 있던 문장 유지 + 안내', await p.$$eval('#ytList .ys', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').sents.length) + ' ' + await p.textContent('#toast').then(t => /다시 정리 실패/.test(t)), '3 3 true');
