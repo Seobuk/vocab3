@@ -86,6 +86,17 @@ const SENTS = [
   eq('영상은 맨 위 제자리 고정(sticky), 처음엔 다 보임 (v2.4)', await p.evaluate(() => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(); return getComputedStyle(b).position + ' ' + b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }), 'sticky true');
   await p.screenshot({ path: OUT + '/301-yt-video.png' });
 
+  // --- v2.6 가로 화면: 왼쪽 영상 · 오른쪽 스크립트 ---
+  await p.setViewportSize({ width: 844, height: 390 }); await p.waitForTimeout(250);
+  const land = () => p.evaluate(() => { const v = document.querySelector('#ytBox').getBoundingClientRect(), l = document.querySelector('#ytList').getBoundingClientRect(), f = document.querySelector('[data-action="yt-replay"]').getBoundingClientRect(); return { vl: Math.round(v.left), vr: Math.round(v.right), vt: Math.round(v.top), vh: Math.round(v.height), vb: Math.round(v.bottom), ll: Math.round(l.left), fl: Math.round(f.left), fr: Math.round(f.right), iw: innerWidth, ih: innerHeight }; });
+  const L0 = await land();
+  eq('가로: 영상 왼쪽 · 스크립트 오른쪽 · 안 겹침 · 영상 200px 이상', L0.vl === 0 && L0.vr <= L0.ll && L0.vh >= 200 && L0.vb <= L0.ih && L0.fl >= L0.ll && L0.fr <= L0.iw, true);
+  await p.screenshot({ path: OUT + '/305-yt-landscape.png' });
+  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 200; }); await p.waitForTimeout(150);
+  eq('가로: 스크립트를 스크롤해도 영상은 제자리·안 가려짐', await p.evaluate(t => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(); return Math.round(r.top) === t && b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }, L0.vt), true);
+  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 0; }); await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
+  eq('세로로 돌아오면 다시 위·아래 배치', await p.evaluate(() => getComputedStyle(document.querySelector('#ytBox')).position), 'sticky');
+
   // --- 문장 누르면 그 시점 재생, 다음 문장 시작에서 멈춤 ---
   await p.click('#ys1 .ys-t'); await p.waitForTimeout(150);
   eq('살짝 앞에서 재생', JSON.stringify((await yt('seek')).slice(-1)[0]), JSON.stringify({ fn: 'seek', t: 2.9 }));

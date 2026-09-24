@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.5';
+  var APP_VERSION = '2.6';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -128,6 +128,7 @@
       try { if (isAndroid) AND.openFile(BT); else $('#filePick').click(); } catch (e) { }
     },
     setBackHandled: function (b) { try { if (isAndroid) AND.setBackHandled(BT, !!b); } catch (e) { } },
+    setRotate: function (b) { try { if (isAndroid && AND.setRotate) AND.setRotate(BT, !!b); } catch (e) { } },
     setSystemBars: function (color, light) { try { if (isAndroid) AND.setSystemBars(BT, color, !!light); } catch (e) { } },
     ttsReady: function () { try { return isAndroid ? AND.ttsReady(BT) : TTS_OK; } catch (e) { return false; } },
     audioStart: function (playlistJson, loop) {
@@ -538,6 +539,7 @@
   function render() {
     var cur = current();
     if (cur.view !== 'ytv') ytStopPlayer();   // 영상 화면을 떠나면 멈춘다 (유튜브 정책: 안 보이는 곳에서 재생 금지)
+    bridge.setRotate(cur.view === 'ytv');   // 가로 회전은 영상 화면에서만 (왼쪽 영상 · 오른쪽 스크립트)
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + cur.view); });
     var showTab = ['home', 'list', 'edit', 'import', 'settings', 'stats'].indexOf(cur.view) >= 0;
     $('#tabbar').classList.toggle('show', showTab);

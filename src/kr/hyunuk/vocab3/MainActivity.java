@@ -6,6 +6,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -619,6 +620,19 @@ public class MainActivity extends Activity {
         public void setBackHandled(String t, boolean b) {
             if (!ok(t)) return;
             backHandled = b;
+        }
+
+        /** 유튜브 영상 화면에서만 가로 회전 허용 (시스템 자동 회전 설정을 따른다), 나머지는 세로. */
+        @JavascriptInterface
+        public void setRotate(String t, final boolean allow) {
+            if (!ok(t)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    int o = allow ? ActivityInfo.SCREEN_ORIENTATION_USER : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+                    if (getRequestedOrientation() != o) setRequestedOrientation(o);
+                }
+            });
         }
 
         @JavascriptInterface
