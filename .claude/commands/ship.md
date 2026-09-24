@@ -9,7 +9,7 @@ allowed-tools: Bash(*), Read, Edit, Write
 1. **버전** — `AndroidManifest.xml` 의 versionCode 를 +1, versionName 을 X.Y 로; `assets/app.js` 의 `APP_VERSION` 을 'X.Y' 로. (이미 그 값이면 건너뜀)
 2. **테스트** — `npm test` (Playwright). 처음이면 `npm install && npx playwright install chromium` 먼저. 실패한 항목(FAIL/ERRORS)이 있으면 멈춘다.
 3. **빌드** — `bash build.sh` → `build/vocab3.apk`. 출력의 `versionName` 이 X.Y 인지, `apksigner verify` 가 통과했는지 확인.
-   keystore/vocab3.jks 가 없어서 디버그 키가 생성됐다는 메시지가 보이면 **멈춘다** (그 APK 는 기존 설치 위에 안 올라감).
+   출력에 `⚠⚠ DEBUG 키` 경고가 보이면 **멈춘다** (그 APK 는 기존 설치 위에 안 올라감).
 4. **릴리스 파일** — `cp build/vocab3.apk release/Vocab3_vX.Y.apk`, `release/notes-vX.Y.md` 작성:
    첫 줄 `3단계 단어장 vX.Y — 요약`, 빈 줄, 변경점 불릿(사용자 관점, 한국어), 마지막 줄 `설치: Vocab3_vX.Y.apk (덮어 설치, 데이터 유지)`.
 5. **문서** — 권한·데이터 전송이 바뀌었으면 `store/privacy_policy.html`, 기능이 늘었으면 `README.md` 기능 목록도 갱신.

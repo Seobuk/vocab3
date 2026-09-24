@@ -27,7 +27,7 @@ powershell -ExecutionPolicy Bypass -File tools/setup-sdk.ps1   # JDK 17 · Andro
 npm install && npx playwright install chromium                 # 테스트
 ```
 - `keystore/vocab3.jks` (릴리스 서명 키, alias `vocab3`) 와 `keystore/PASSWORD.txt` (비밀번호 한 줄) 를 넣어 둘 것 — 둘 다 git 제외.
-  **업데이트는 반드시 이 키로 서명**해야 기존 설치 위에 올라간다. 키가 없으면 build.sh 가 디버그 키를 만들어 버리니 배포 전 꼭 확인.
+  **업데이트는 반드시 이 키로 서명**해야 기존 설치 위에 올라간다. 키가 없으면 build.sh 가 `build/debug.jks` 디버그 키로 서명하고 `⚠⚠ DEBUG 키` 경고를 찍는다 — 그 APK 는 배포 금지.
 - `gh auth status` 로 GitHub CLI 로그인 확인 (릴리스에 사용).
 - 빌드가 윈도우 네이티브로 안 되면 WSL Ubuntu 에서 같은 `build.sh` 가 돈다: `sudo apt install aapt dalvik-exchange zipalign apksigner default-jdk-headless && ./tools/setup-sdk.sh`.
 

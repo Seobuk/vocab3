@@ -1,10 +1,11 @@
-# 윈도우용 빌드 환경 준비 (관리자 권한 불필요). PowerShell 에서:  powershell -ExecutionPolicy Bypass -File tools/setup-sdk.ps1
+﻿# 윈도우용 빌드 환경 준비 (관리자 권한 불필요). PowerShell 에서:  powershell -ExecutionPolicy Bypass -File tools/setup-sdk.ps1
 #  1) JDK 17 (없으면 winget 으로 Microsoft OpenJDK 17 설치)
 #  2) Android SDK cmdline-tools → sdkmanager 로 build-tools;35.0.0, platforms;android-36, platforms;android-34, platform-tools
 #  3) bundletool.jar → ./sdk  (AAB 생성용, 없어도 APK 는 만들어짐)
 #  4) ANDROID_HOME 사용자 환경변수 설정
 # 그 다음 Git Bash(Claude Code Bash 도구)에서:  bash build.sh
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'   # PowerShell 5.1 의 Invoke-WebRequest 는 진행 표시 때문에 수십 배 느려진다
 Set-Location (Join-Path $PSScriptRoot '..')
 
 $Sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
@@ -37,8 +38,10 @@ if (-not (Test-Path $sdkmanager)) {
 
 # --- 라이선스 동의 + 패키지 설치 ---
 Write-Host "SDK 라이선스 동의 + 패키지 설치 (몇 분 걸려요)"
-$yes = (1..20 | ForEach-Object { 'y' }) -join "`n"
-$yes | & $sdkmanager --sdk_root="$Sdk" --licenses | Out-Null
+# PowerShell 5.1 에서 .bat 로 파이프한 입력은 sdkmanager 에 안 닿는다 → cmd 파일 리다이렉트로
+$yes = Join-Path $env:TEMP 'sdk-yes.txt'
+Set-Content $yes ((1..20 | ForEach-Object { 'y' }) -join "`r`n") -Encoding ASCII
+cmd /c "`"$sdkmanager`" --sdk_root=`"$Sdk`" --licenses < `"$yes`"" | Out-Null
 & $sdkmanager --sdk_root="$Sdk" 'platform-tools' 'build-tools;35.0.0' 'platforms;android-36' 'platforms;android-34'
 if ($LASTEXITCODE -ne 0) { throw "sdkmanager 실패 (exit $LASTEXITCODE)" }
 

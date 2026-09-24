@@ -7,9 +7,9 @@
 #   · 리눅스/WSL:  sudo apt install aapt dalvik-exchange zipalign apksigner default-jdk-headless  +  ./tools/setup-sdk.sh
 #   Android SDK(ANDROID_HOME · %LOCALAPPDATA%\Android\Sdk · ~/Android/Sdk)가 보이면 그 build-tools 를 쓰고, 없으면 apt 도구를 쓴다.
 #
-# 환경변수:  KS        keystore 경로 (기본 keystore/vocab3.jks — 없으면 디버그용 키를 자동 생성: 배포 금지)
+# 환경변수:  KS        keystore 경로 (기본 keystore/vocab3.jks — 없으면 build/debug.jks 디버그 키로 서명 + 매번 경고: 배포 금지)
 #           KS_ALIAS  키 별칭 (기본 vocab3)
-#           KS_PASS   비밀번호 (기본: keystore/PASSWORD.txt 내용, 그것도 없으면 android)
+#           KS_PASS   비밀번호 (기본: keystore/PASSWORD.txt 내용 — 키는 있는데 이 파일이 없으면 멈춤)
 #           SDK_JAR / RES_JAR   javac용 / aapt2 링크용 android.jar 를 직접 지정하고 싶을 때
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -37,9 +37,15 @@ BUNDLETOOL="${BUNDLETOOL:-$SDK_DIR/bundletool.jar}"
 COMPILE_SDK_FLAGS="--compile-sdk-version-code 36 --compile-sdk-version-name 16"
 KS="${KS:-keystore/vocab3.jks}"
 KS_ALIAS="${KS_ALIAS:-vocab3}"
-if [ -z "${KS_PASS:-}" ]; then
-  if [ -f keystore/PASSWORD.txt ]; then KS_PASS="$(tr -d '\r\n' < keystore/PASSWORD.txt)"; else KS_PASS="android"; fi
+DEBUG_KEY=0
+if [ ! -f "$KS" ]; then   # 릴리스 키가 없으면 build/debug.jks 로 — keystore/ 에는 절대 만들지 않는다 (진짜 키로 착각하게 됨)
+  [ "$KS" = keystore/vocab3.jks ] || { echo "keystore not found: $KS"; exit 1; }
+  DEBUG_KEY=1; KS=build/debug.jks; KS_ALIAS=vocab3; KS_PASS=android
+elif [ -z "${KS_PASS:-}" ]; then
+  [ -f keystore/PASSWORD.txt ] || { echo "keystore/PASSWORD.txt 가 없어요 (비밀번호 한 줄, 또는 KS_PASS 환경변수)"; exit 1; }
+  KS_PASS="$(tr -d '\r\n' < keystore/PASSWORD.txt)"
 fi
+debug_warn() { [ "$DEBUG_KEY" = 1 ] && echo "⚠⚠ DEBUG 키(build/debug.jks)로 서명 — keystore/vocab3.jks 가 없음. 이 APK/AAB 는 배포 금지 (기존 설치 위에 안 올라감) ⚠⚠" || true; }
 OUT="build/vocab3.apk"
 AAB="build/vocab3.aab"
 
@@ -64,12 +70,11 @@ fi
 for f in "$SDK_JAR" "$RES_JAR"; do [ -f "$f" ] || { echo "missing $f — tools/setup-sdk.ps1 (윈도우) 또는 ./tools/setup-sdk.sh (리눅스) 를 먼저 실행하세요"; exit 1; }; done
 for t in javac keytool jarsigner; do command -v "$t" >/dev/null || { echo "missing tool: $t (JDK 17 필요)"; exit 1; }; done
 
-rm -rf build/gen build/classes build/dex build/aab build/res.zip build/base.apk build/base_proto.apk build/unaligned.apk build/aligned.apk
+rm -rf "$OUT" "$AAB" build/gen build/classes build/dex build/aab build/res.zip build/base.apk build/base_proto.apk build/unaligned.apk build/aligned.apk
 mkdir -p build/gen build/classes build/dex
 
-if [ ! -f "$KS" ]; then
-  echo "keystore not found → generating a DEBUG keystore at $KS (이 키로 서명한 APK 는 배포하지 말 것 — 기존 설치 위에 안 올라감)"
-  mkdir -p "$(dirname "$KS")"
+debug_warn
+if [ "$DEBUG_KEY" = 1 ] && [ ! -f "$KS" ]; then
   keytool -genkeypair -keystore "$KS" -alias "$KS_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
     -storepass "$KS_PASS" -keypass "$KS_PASS" -dname "CN=Vocab3 Debug, O=Vocab3, C=KR" 2>/dev/null
 fi
@@ -137,3 +142,4 @@ EOF
 else
   echo "(bundletool.jar not found — AAB skipped; tools/setup-sdk.ps1 또는 setup-sdk.sh 가 받아 줍니다)"
 fi
+debug_warn
