@@ -22,7 +22,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
     // no real speech in headless — pretend unavailable so the mic path shows the toast
     delete window.webkitSpeechRecognition; delete window.SpeechRecognition;
   });
-  await p.goto('file://' + path.resolve(__dirname, '..', 'assets', 'index.html')); await p.waitForTimeout(300);
+  await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
   await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); }); await p.reload(); await p.waitForTimeout(400);
   await p.click('[data-action="talk"]'); await p.waitForTimeout(250);

@@ -1,7 +1,7 @@
 // Reveal-cycle + auto-speak test using a fake Android bridge (exercises the isAndroid code path)
 const { chromium } = require('playwright');
 const path = require('path');
-const URL = 'file://' + path.resolve(__dirname, '..', 'assets', 'index.html');
+const URL = require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href;
 const OUT = path.resolve(__dirname, '..', 'build', 'shots');
 
 (async () => {

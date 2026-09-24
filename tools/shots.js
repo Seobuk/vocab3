@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 
-const URL = 'file://' + path.resolve(__dirname, '..', 'assets', 'index.html');
+const URL = require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href;
 const OUT = path.resolve(__dirname, '..', 'build', 'shots');
 fs.mkdirSync(OUT, { recursive: true });
 

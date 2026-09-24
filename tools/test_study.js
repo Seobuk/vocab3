@@ -4,7 +4,7 @@ const path = require('path');
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 800 }, deviceScaleFactor: 2 });
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('file://' + path.resolve(__dirname, '..', 'assets', 'index.html')); await p.waitForTimeout(300);
+  await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   await p.evaluate(() => { const s = window.__vocab.state(); s.settings.shuffle = false; window.__vocab.save(); });
   const cnt = () => p.evaluate(() => { const s = window.__vocab.state(); const c = {}; s.words.forEach(w => c[w.stage] = (c[w.stage] || 0) + 1); return JSON.stringify(c) + ' day=' + JSON.stringify(s.studyDays); });

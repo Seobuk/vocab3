@@ -35,7 +35,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
     window.SpeechRecognition = FakeSR; delete window.webkitSpeechRecognition;
     window.__say = function (t, fin) { const r = window.__sr; const item = [{ transcript: t }]; item.isFinal = !!fin; const idx = r._res.length; r._res.push(item); r.onresult({ resultIndex: idx, results: r._res }); };
   });
-  await p.goto('file://' + path.resolve(__dirname, '..', 'assets', 'index.html')); await p.waitForTimeout(300);
+  await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
   await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; s.settings.dailyGoal = 10; window.__vocab.save(); });
   await p.reload(); await p.waitForTimeout(400);

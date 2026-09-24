@@ -5,7 +5,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 800 }, deviceScaleFactor: 2 });
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('file://' + path.resolve(__dirname, '..', 'assets', 'index.html')); await p.waitForTimeout(300);
+  await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700);
   const cur = () => p.evaluate(() => ({ id: window.__vocab.state().settings.colorTheme, rand: window.__vocab.state().settings.themeRandom, primary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(), bg: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(), attr: document.documentElement.getAttribute('data-color') }));
   console.log('first launch:', JSON.stringify(await cur()), '| toast:', await p.textContent('#toast'));

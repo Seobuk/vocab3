@@ -1,7 +1,7 @@
 // Audio review tests: (1) fake Android bridge — verify playlist/steps payload + UI; (2) browser sequencer end-to-end
 const { chromium } = require('playwright');
 const path = require('path');
-const URL = 'file://' + path.resolve(__dirname, '..', 'assets', 'index.html');
+const URL = require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href;
 const OUT = path.resolve(__dirname, '..', 'build', 'shots');
 
 (async () => {

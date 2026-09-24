@@ -23,7 +23,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
     // 시간을 빨리 돌리기: Date.now 를 밀어 두는 오프셋
     window.__skew = 0; const realNow = Date.now; Date.now = () => realNow() + window.__skew;
   });
-  await p.goto('file://' + path.resolve(__dirname, '..', 'assets', 'index.html')); await p.waitForTimeout(300);
+  await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   eq('안드로이드 브리지 모드', await p.evaluate(() => typeof window.Android.aiCall), 'function');
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   await p.evaluate(() => { window.Android.save('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });

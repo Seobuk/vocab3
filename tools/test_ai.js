@@ -28,7 +28,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
       return Promise.resolve({ status: 404, text: () => Promise.resolve(JSON.stringify({ error: { message: 'model not found' } })) });
     };
   });
-  await p.goto('file://' + path.resolve(__dirname, '..', 'assets', 'index.html')); await p.waitForTimeout(300);
+  await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   await p.evaluate(() => { const s = window.__vocab.state(); s.settings.shuffle = false; window.__vocab.save(); });
   await p.click('[data-action="start"][data-stage="1"]'); await p.waitForTimeout(250);
