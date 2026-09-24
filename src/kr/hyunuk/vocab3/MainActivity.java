@@ -10,9 +10,12 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.media.audiofx.Visualizer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.speech.RecognitionListener;
@@ -69,6 +72,13 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTI = 201;
     private Intent pendingAudioStart = null;
     private static final int REQ_MIC = 301;
+    private static final int REQ_VAD = 302;
+    // 소리로 문장 경계 맞추기(실험, v2.8): 출력 믹스(세션 0)에서 지금 재생되는 소리의 크기(RMS)만 잰다 — 녹음·저장·전송 없음
+    private Visualizer vz;
+    private HandlerThread vzThread;
+    private Handler vzHandler;
+    private volatile boolean vzOn = false;
+    private byte[] vzBuf;
     private SpeechRecognizer stt;
     private boolean sttPendingStart = false;
     private String sttLang = "en-US";
@@ -265,6 +275,7 @@ public class MainActivity extends Activity {
         if (tts != null) tts.stop();
         // 이제 듣기가 저절로 끝나지 않으므로, 앱이 내려가면 마이크를 반드시 놓아 준다
         if (sttListening || sttActive) { cancelStt(); runJs("window.onSttState && window.onSttState('cancel')"); }
+        if (vz != null) { stopVad(); runJs("window.onVad && window.onVad('off')"); }   // 앱이 내려가면 소리 측정도 끈다 (돌아오면 JS 가 다시 켠다)
         runJs("window.onAppPause && window.onAppPause()");
     }
 
@@ -278,6 +289,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         try { if (stt != null) { stt.destroy(); stt = null; } } catch (Exception ignored) { }
+        stopVad();
+        if (vzThread != null) { vzThread.quitSafely(); vzThread = null; }
         if (tts != null) {
             tts.stop();
             tts.shutdown();
@@ -292,11 +305,63 @@ public class MainActivity extends Activity {
             Intent i = pendingAudioStart; pendingAudioStart = null;
             launchService(i);
         }
+        if (requestCode == REQ_VAD) {
+            boolean ok = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (ok) startVad(); else runJs("window.onVad && window.onVad('permission')");
+        }
         if (requestCode == REQ_MIC) {
             boolean ok = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
             if (ok && sttPendingStart) { sttPendingStart = false; startStt(); }
             else { sttPendingStart = false; runJs("window.onSttError && window.onSttError('permission')"); }
         }
+    }
+
+    /* ---------------- 소리로 문장 경계 맞추기 (유튜브 쉐도잉, 실험) ---------------- */
+    // UI 스레드에서 켜고 끈다. 측정은 전용 스레드가 30ms 마다 getWaveForm → RMS(0~128) 를 window.ytVad 로 보낸다.
+    private void startVad() {
+        try {
+            if (vz == null) {
+                vz = new Visualizer(0);   // 세션 0 = 출력 믹스 (WebView 의 오디오 세션 ID 는 공개 API 로 알 수 없다)
+                int[] r = Visualizer.getCaptureSizeRange();
+                int n = Math.max(r[0], Math.min(1024, r[1]));   // 1024 샘플 ≈ 48kHz 에서 21ms
+                vz.setCaptureSize(n);
+                vz.setScalingMode(Visualizer.SCALING_MODE_AS_PLAYED);   // 정규화하면 버퍼마다 최대값으로 늘려서 무음이 안 보인다
+                vzBuf = new byte[n];
+            }
+            vz.setEnabled(true);
+            if (vzThread == null) { vzThread = new HandlerThread("vocab3-vad"); vzThread.start(); vzHandler = new Handler(vzThread.getLooper()); }
+            // 재는 건 영상이 재생 중일 때만 — JS 가 vadActive 로 켜고 끈다 (멈춰 있을 때 초당 33번 깨우지 않게)
+            runJs("window.onVad && window.onVad('on')");
+        } catch (Throwable e) {
+            stopVad();
+            runJs("window.onVad && window.onVad('fail'," + jsString(e.getClass().getSimpleName() + ": " + e.getMessage()) + ")");
+        }
+    }
+
+    private final Runnable vzTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!vzOn) return;
+            Visualizer v = vz;
+            byte[] b = vzBuf;
+            if (v != null && b != null) {
+                try {
+                    if (v.getWaveForm(b) == Visualizer.SUCCESS) {
+                        double sum = 0;
+                        for (int i = 0; i < b.length; i++) { int d = (b[i] & 0xff) - 128; sum += d * d; }
+                        runJs("window.ytVad && window.ytVad(" + String.format(Locale.US, "%.2f", Math.sqrt(sum / b.length)) + ")");
+                    }
+                } catch (Throwable ignored) { }   // release 와 겹치면 IllegalStateException — 다음 틱에서 멈춘다
+            }
+            if (vzOn && vzHandler != null) vzHandler.postDelayed(this, 30);
+        }
+    };
+
+    private void stopVad() {
+        vzOn = false;
+        if (vzHandler != null) vzHandler.removeCallbacks(vzTick);
+        try { if (vz != null) { vz.setEnabled(false); vz.release(); } } catch (Throwable ignored) { }
+        vz = null;
     }
 
     /* ---------------- speech recognition (회화 연습) ---------------- */
@@ -620,6 +685,43 @@ public class MainActivity extends Activity {
         public void setBackHandled(String t, boolean b) {
             if (!ok(t)) return;
             backHandled = b;
+        }
+
+        /** 소리로 문장 경계 맞추기(실험) 켜기 — 마이크 권한이 없으면 먼저 묻는다. 상태는 window.onVad(st, msg). */
+        @JavascriptInterface
+        public void vadStart(String t) {
+            if (!ok(t)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (!hasMic()) { requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, REQ_VAD); return; }
+                    startVad();
+                }
+            });
+        }
+
+        /** 영상이 재생 중일 때만 30ms 측정을 돌린다 (Visualizer 는 켜 둔 채). */
+        @JavascriptInterface
+        public void vadActive(String t, final boolean on) {
+            if (!ok(t)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (vzHandler == null) return;
+                    vzHandler.removeCallbacks(vzTick);
+                    vzOn = on && vz != null;
+                    if (vzOn) vzHandler.post(vzTick);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void vadStop(String t) {
+            if (!ok(t)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() { stopVad(); }
+            });
         }
 
         /** 유튜브 영상 화면에서만 가로 회전 허용 (시스템 자동 회전 설정을 따른다), 나머지는 세로. */

@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.7';
+  var APP_VERSION = '2.8';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -129,6 +129,10 @@
     },
     setBackHandled: function (b) { try { if (isAndroid) AND.setBackHandled(BT, !!b); } catch (e) { } },
     setRotate: function (b) { try { if (isAndroid && AND.setRotate) AND.setRotate(BT, !!b); } catch (e) { } },
+    // 소리로 문장 경계 맞추기(실험): 안드로이드가 재생 소리 크기를 window.ytVad(rms) 로 보내 준다. 브라우저에선 없음
+    vadStart: function () { try { if (isAndroid && AND.vadStart) { AND.vadStart(BT); return true; } } catch (e) { } return false; },
+    vadStop: function () { try { if (isAndroid && AND.vadStop) AND.vadStop(BT); } catch (e) { } },
+    vadActive: function (b) { try { if (isAndroid && AND.vadActive) AND.vadActive(BT, !!b); } catch (e) { } },
     setSystemBars: function (color, light) { try { if (isAndroid) AND.setSystemBars(BT, color, !!light); } catch (e) { } },
     ttsReady: function () { try { return isAndroid ? AND.ttsReady(BT) : TTS_OK; } catch (e) { return false; } },
     audioStart: function (playlistJson, loop) {
@@ -394,7 +398,7 @@
   var S = null;
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytVad: false };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
@@ -542,6 +546,7 @@
     var cur = current();
     if (cur.view !== 'ytv') ytStopPlayer();   // 영상 화면을 떠나면 멈춘다 (유튜브 정책: 안 보이는 곳에서 재생 금지)
     bridge.setRotate(cur.view === 'ytv');   // 가로 회전은 영상 화면에서만 (왼쪽 영상 · 오른쪽 스크립트)
+    if (cur.view !== 'ytv' && VAD.st !== 'off') ytVadOff();
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + cur.view); });
     var showTab = ['home', 'list', 'edit', 'import', 'settings', 'stats'].indexOf(cur.view) >= 0;
     $('#tabbar').classList.toggle('show', showTab);
@@ -1659,7 +1664,7 @@
       var out = parseAiJson(res.text);
       out = Array.isArray(out) ? out : out && Array.isArray(out.sents) ? out.sents : null;
       if (!out) throw { msg: '정리 결과를 이해하지 못했어요. 다시 시도해 주세요' };
-      var ns = ytClean(out);
+      var ns = ytMergeShort(ytClean(out));
       if (!ns.length && r.sents && r.sents.length) throw { msg: '영어 문장을 찾지 못했어요' };   // 다시 정리가 빈손이면 있던 문장·단어 뜻 캐시를 지우지 않는다
       r.sents = ns; r.tv = 2; save();   // tv 2: 시간을 MM:SS 로 받아 앱이 환산한 정리 (v2.5)
       YTJOB[r.id] = { busy: false, err: r.sents.length ? '' : '영어 음성을 찾지 못했어요' };
@@ -1679,6 +1684,7 @@
         'Ignore on-screen subtitles and caption line breaks: captions often cut one sentence across two lines, so always merge the pieces back into the full spoken sentence. Follow the speech, not the captions.',
         'For each item, in this order: "s" = the moment the first word of the sentence begins, "e" = the English sentence, "t" = the moment its last word ends, "k" = a natural Korean translation. "s" and "t" are timestamps on the video timeline in MM:SS.d format — minutes:seconds with one decimal, e.g. "01:15.4" and "01:19.8" (use H:MM:SS.d past one hour). Read them straight off the MM:SS timestamps you see for the video; do NOT convert them to total seconds. "t" must not include any of the next sentence or the pause after it. Times increase from item to item.',
         '"x" = 0 to 3 words or expressions from that sentence worth learning for an intermediate (B1-B2) learner: idioms, phrasal verbs, collocations, less common words; never basic words. Each: "q" = the exact text as it appears in "e", "w" = its dictionary form, "p" = one of n., v., adj., adv., phr., idiom, "m" = a short Korean meaning in this context.',
+        'Do not make very short interjections (1-3 words such as "Yes.", "Right.", "Okay.", "Thank you.") separate items: join them to the neighbouring sentence of the same speaker.',
         'Skip parts that are not English speech (music, Korean narration). If there is no English speech at all, return [].'
       ].join('\n') }] },
       contents: [{ role: 'user', parts: [{ fileData: { fileUri: watch } }, { text: 'Transcribe this video.' }] }],   // 문서 권장: 영상 먼저, 지시는 뒤
@@ -1708,6 +1714,8 @@
         x: (Array.isArray(x.x) ? x.x : []).filter(function (g) { return g && g.q && g.w; }).slice(0, 3).map(function (g) { return { q: String(g.q), w: String(g.w), p: String(g.p || ''), m: String(g.m || '') }; })
       };
       var t = ytSec(x.t); if (t > o.s) o.t = Math.round(t * 10) / 10;   // 문장 끝 (v2.3 — 예전 데이터엔 없음)
+      if (typeof x.as === 'number' && isFinite(x.as) && x.as >= 0) { o.as = Math.round(x.as * 100) / 100; if (x.asg) o.asg = 1; }   // 소리로 배운 실제 시작 (asg: 추정)
+      if (typeof x.ae === 'number' && isFinite(x.ae) && x.ae > o.s) o.ae = Math.round(x.ae * 100) / 100;   // 소리로 배운 실제 끝
       if (x.lk && typeof x.lk === 'object') {   // 눌러 본 단어 뜻 캐시 (복원 데이터면 모양 검사)
         o.lk = {};
         for (var key in x.lk) if (Object.prototype.hasOwnProperty.call(x.lk, key) && x.lk[key] && x.lk[key].w) o.lk[key] = { w: String(x.lk[key].w), p: String(x.lk[key].p || ''), m: String(x.lk[key].m || '') };
@@ -1729,6 +1737,7 @@
       '<div class="yt-fab" id="ytFab"></div>';
     ytRenderBody();
     ytMakePlayer(r.vid);
+    ytVadSync();
   };
   function ytRenderBody() {
     var r = YTV && ytRec(YTV.id), body = $('#ytBody'), fab = $('#ytFab'); if (!r || !body || !fab) return;
@@ -1741,6 +1750,7 @@
       : j.err ? '<div class="empty">' + esc(j.err) + '<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">다시 시도</button></div>'
       : !has ? '<div class="empty">아직 정리 전이에요<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">문장 정리하기</button></div>'
       : (r.tv === 2 ? '' : '<div class="yt-old">1분 넘는 곳부터 문장 시간이 어긋나던 문제를 고쳤어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
+        '<div class="yt-vad" id="ytVadLine">' + ytVadText() + '</div>' +
         '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 재생한 문장의 단어를 누르면 뜻 · 한글은 눌러서 보기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
         '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b></div>');
   }
@@ -1797,6 +1807,7 @@
             if (p != null && !document.hidden) ytPlaySent(p);   // 앱이 내려간 사이 준비됐으면 재생하지 않는다 (백그라운드 재생 금지)
           },
           onError: function (e) { if (YTV === myV) ytPlayerError(e && e.data); },
+          onStateChange: function (e) { if (YTV === myV && VAD.st === 'on') bridge.vadActive(e && e.data === 1); },   // 소리는 재생 중에만 잰다
           onAutoplayBlocked: function () { toast('재생이 막혔어요 — 영상의 ▶를 한 번 눌러 주세요'); }
         }
       });
@@ -1809,7 +1820,7 @@
   function ytFinish() {
     YTV.raf = 0; if (!YTP || YTV.stopAt == null || YTP.getPlayerState() !== 1) return;   // 버퍼링 등이면 다음 틱이 다시 건다
     var c = YTP.getCurrentTime();
-    if (c >= YTV.stopAt - YT_LEAD) { if (c - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; }
+    if (c >= YTV.stopAt - YT_LEAD) { if (c - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; ytVadCap(); }
     else YTV.raf = requestAnimationFrame(ytFinish);
   }
   function ytStopPlayer() {
@@ -1819,6 +1830,114 @@
     if (YTV) { YTV.ready = false; YTV.stopAt = null; YTV.pending = null; }   // 다시 들어왔을 때 옛 멈춤 지점이 남지 않게
   }
   function ytPlayerError(code) { if (!YTV) return; YTV.perr = code || 'load'; YTV.pending = null; ytRenderBody(); }
+  /* --- 소리로 문장 경계 맞추기 (실험, v2.8) ---
+     폰이 재생 중인 소리의 크기(RMS 0~128)를 30ms 마다 받아, 최근 4초 분포로 무음 문턱을 잡는다.
+     끝: AI 끝 근처에서 무음이 이어지면(끝 전 0.28초·끝 뒤 0.15초 — 쉼표 쉼에서 안 멈추게) 거기서 멈추고 실제 끝(ae)을 저장.
+     시작: 재생 직후 [무음 → 말] 전환을 찾아 실제 시작(as)을 저장 — 다음 "한 번 더"부터 정확. 음악 등으로 판정이 안 되면 AI 시간 그대로 */
+  var VAD = { st: 'off', msg: '', buf: [], last: '', quiet: 0 };
+  window.onVad = function (st, msg) {
+    if (st === 'on' && !(S.settings.ytVad && current() && current().view === 'ytv')) { ytVadOff(); return; }   // 준비되는 사이 화면을 떠났거나 껐다
+    VAD.st = st; VAD.msg = msg || '';
+    if (st === 'on') { var pl = false; try { pl = !!YTP && YTP.getPlayerState() === 1; } catch (e) { } bridge.vadActive(pl); }
+    else ytVadClear();
+    ytVadLine();
+  };
+  function ytVadClear() {   // 소리 맞춤이 꺼지면 진행 중인 판정을 치우고 멈춤은 AI 끝으로 되돌린다 (상한 +0.5초에서 늦게 멈추지 않게)
+    if (!YTV) return;
+    if (YTV.vadEnd && YTV.stopAt != null) YTV.stopAt = YTV.vadEnd.E;
+    YTV.vadEnd = null; YTV.vadOn = null;
+  }
+  function ytVadOff() { bridge.vadStop(); VAD.st = 'off'; ytVadClear(); }
+  function ytVadSync() {
+    var want = S.settings.ytVad && current() && current().view === 'ytv';
+    // 저절로 켜는 건 꺼진 상태('off')에서만 — 권한 거부·실패 뒤 화면 복귀마다 다시 물으면 거부 → 복귀 → 요청이 끝없이 돈다
+    if (want && VAD.st === 'off') { VAD.st = 'starting'; if (!bridge.vadStart()) VAD.st = 'none'; ytVadLine(); }
+    else if (!want && VAD.st !== 'off') { ytVadOff(); ytVadLine(); }
+  }
+  function ytVadText() {
+    var tg = function (label, v) { return ' · <b data-action="yt-vad" data-v="' + v + '">' + label + '</b>'; };
+    if (!S.settings.ytVad) return '🎚 소리로 문장 끝 맞추기 (실험)' + tg('켜기', 1);
+    if (VAD.st === 'on') return '🎚 소리로 맞추는 중' + (VAD.last ? ' · ' + esc(VAD.last) : ' · 문장을 누르면 실제로 말이 끝나는 곳에서 멈춰요') + tg('끄기', 0);
+    if (VAD.st === 'permission') return '🎚 재생 소리 크기를 재려면 마이크 권한이 필요해요 (녹음·저장 안 함)' + tg('다시 켜기', 1) + tg('끄기', 0);
+    if (VAD.st === 'fail') return '🎚 이 폰에선 재생 소리를 잴 수 없어요' + (VAD.msg ? ' (' + esc(VAD.msg.slice(0, 60)) + ')' : '') + tg('끄기', 0);
+    if (VAD.st === 'none') return '🎚 소리로 맞추기는 안드로이드 앱에서만 돼요' + tg('끄기', 0);
+    return '🎚 소리 측정 준비 중…' + tg('끄기', 0);
+  }
+  function ytVadCap() {   // 소리 맞춤 중인데 무음을 못 찾고 상한(AI 끝 +0.5초)에서 멈췄을 때
+    if (!YTV.vadEnd) return;
+    YTV.vadEnd = null; VAD.last = '무음을 못 찾아 AI 끝 +0.5초에서 멈춤'; ytVadLine();
+  }
+  function ytVadLine() { var el = $('#ytVadLine'); if (el) el.innerHTML = ytVadText(); }
+  function ytVadThr() {   // 무음 문턱(dB). 소리 차이가 작으면(음악·볼륨 너무 작음) 판정 불가 → null
+    if (VAD.buf.length < 20) return null;
+    var d = VAD.buf.map(function (b) { return b.db; }).sort(function (a, b) { return a - b; });
+    var lo = d[Math.floor(d.length * 0.1)], hi = d[Math.floor(d.length * 0.9)];
+    if (hi < -42 || hi - lo < 12) return null;
+    return hi - 16;
+  }
+  function ytVadStop(x, endT, how) {
+    if (YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; }
+    try { YTP.pauseVideo(); } catch (e) { }
+    var E = YTV.vadEnd && YTV.vadEnd.E; YTV.stopAt = null; YTV.vadEnd = null;
+    if (how === 'vad') {
+      x.ae = Math.round(endT * 100) / 100; save();
+      var d = E - endT;
+      VAD.last = Math.abs(d) < 0.05 ? 'AI 시간 그대로 실제 무음에서 멈춤' : (d > 0 ? d.toFixed(1) + '초 앞당겨' : (-d).toFixed(1) + '초 늦춰') + ' 실제 무음에서 멈춤';
+    } else VAD.last = '무음을 못 찾아 AI 끝' + (endT - E > 0.05 ? ' +' + (endT - E).toFixed(1) + '초' : '') + '에서 멈춤';   // 음악 등으로 판정 불가
+    ytVadLine();
+  }
+  window.ytVad = function (rms) {
+    if (!YTP || !YTV || !YTV.ready || VAD.st !== 'on') return;
+    var st, t; try { st = YTP.getPlayerState(); t = YTP.getCurrentTime(); } catch (e) { return; }
+    if (st !== 1) return;
+    if (!YTV.vArmed) { if (t >= YTV.from - 0.1 && t < YTV.from + 0.8) YTV.vArmed = true; else return; }   // seekTo 직후 getCurrentTime 은 옛 위치 — 옛 소리로 판정하지 않는다
+    var db = rms > 0.5 ? 20 * Math.log(rms / 128) / Math.LN10 : -60;
+    VAD.buf.push({ t: t, db: db }); if (VAD.buf.length > 130) VAD.buf.shift();   // 최근 약 4초
+    VAD.quiet = db < -50 ? VAD.quiet + 1 : 0;
+    if (VAD.quiet === 100) { VAD.last = '재생 소리가 안 잡혀요 — 볼륨을 올려 보세요 (이 폰에선 안 될 수도 있어요)'; ytVadLine(); }
+    var r = ytRec(YTV.id), thr = ytVadThr();
+    // 실제 시작 배우기
+    var o = YTV.vadOn, xo = o && r && r.sents[o.i];
+    var pv = o && r && r.sents[o.i - 1], floor = pv && pv.ae != null ? pv.ae : -1;   // 앞 문장의 실제 끝보다 앞은 시작일 수 없다
+    if (o && xo && o.t0 == null) o.t0 = t;
+    if (o && xo && (thr == null || o.t0 - YTV.from > 0.15)) YTV.vadOn = null;   // 문턱이 없거나 재생 시작부터 못 들었으면 이번엔 안 배운다 (모른 채 추정하면 틀린다)
+    else if (o && xo) {
+      var loud = db >= thr;
+      if (o.phase === 0) {   // 먼저 무음(문장 사이 틈)을 찾는다
+        if (!loud) { if (o.run0 == null) o.run0 = t; if (t - o.run0 >= 0.09) o.phase = 1; }
+        else { o.run0 = null; if (t - YTV.from > 1.2) {   // 처음부터 계속 말소리 = 문장 중간에서 시작 → 다음엔 0.6초 앞에서 (추정은 한 번만 — 계속 밀면 앞 문장 속으로 들어간다)
+          var g = Math.max(0, floor, YTV.from - 0.6);
+          if (!xo.asg && g < YTV.from - 0.05) { xo.as = Math.round(g * 100) / 100; xo.asg = 1; save(); }
+          YTV.vadOn = null; } }
+      } else if (loud) {   // 무음 뒤 첫 말소리 = 실제 시작
+        var on = t - 0.03;
+        if (on - YTV.from < 0.9 && on > xo.s - 1.5 && on < xo.s + 1.2 && on > floor) { xo.as = Math.max(0, Math.round((on - 0.12) * 100) / 100); delete xo.asg; save(); }   // 재생 시작 0.9초 안의 말소리만 (더 뒤면 문장 중간 틈)
+        YTV.vadOn = null;
+      } else if (t - YTV.from > 2.5) YTV.vadOn = null;
+    }
+    // 실제 끝에서 멈추기
+    var c = YTV.vadEnd, xe = c && r && r.sents[c.i];
+    if (!c || !xe || YTV.stopAt == null || t < c.lo) return;
+    if (thr == null) { if (t >= c.E) ytVadStop(xe, t, 'ai'); return; }
+    if (db < thr) { if (c.run0 == null) c.run0 = t; if (t - c.run0 >= (c.run0 < c.E ? 0.28 : 0.15)) ytVadStop(xe, c.run0, 'vad'); }
+    else c.run0 = null;
+  };
+  // 새로 정리한 문장 중 너무 짧은 것(3단어 이하: "Yes." "Right.")은 시간 간격이 더 가까운 앞이나 뒤 문장과 합친다
+  function ytWords(e) { return ytTokens(e).filter(function (t, k) { return k % 2 === 1; }).length; }
+  function ytMergeShort(a) {
+    a = a.slice();
+    var endOf = function (x) { return x.t != null ? x.t : x.s; };
+    for (var i = 0; i < a.length && a.length > 1;) {
+      var x = a[i], p = a[i - 1], n = a[i + 1];
+      var gp = p ? x.s - endOf(p) : Infinity, gn = n ? n.s - endOf(x) : Infinity;
+      if (ytWords(x.e) > 3 || Math.min(gp, gn) > 2) { i++; continue; }   // 2초 넘게 떨어진 짧은 말은 그대로 (합치면 긴 공백까지 한 문장)
+      var at = gp <= gn ? i - 1 : i, a1 = a[at], a2 = a[at + 1];
+      var m = { s: a1.s, e: a1.e + ' ' + a2.e, k: (a1.k + ' ' + a2.k).replace(/^\s+|\s+$/g, ''), x: a1.x.concat(a2.x).slice(0, 3) };
+      if (a2.t != null) m.t = a2.t;   // 뒤 끝을 모르면 비워 둔다 (앞 끝을 쓰면 뒤 말이 잘린다)
+      a.splice(at, 2, m); i = at;   // 합친 것도 다시 본다
+    }
+    return a;
+  }
   function ytPlaySent(i) {
     var r = YTV && ytRec(YTV.id), x = r && r.sents && r.sents[i]; if (!x) return;
     var prev = YTV.act; YTV.act = i;
@@ -1831,11 +1950,20 @@
     bridge.stop();
     if (YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; }
     var next = r.sents[i + 1];
+    var prevX = r.sents[i - 1], vad = VAD.st === 'on' && S.settings.ytPause;
     YTV.from = Math.max(0, Math.round((x.s - 0.3) * 10) / 10);   // 타임스탬프가 조금 늦게 찍히곤 해서 살짝 앞에서
+    var useL = S.settings.ytVad;   // 배운 값은 켜 있을 때만 — 끄면 AI 시간 그대로 (잘못 배운 값에서 빠져나오는 길)
+    if (useL && x.as != null) YTV.from = x.as;   // 소리로 배운 실제 시작
+    else if (useL && prevX && prevX.ae != null && prevX.ae + 0.1 > YTV.from && prevX.ae + 0.1 < x.s + 0.5) YTV.from = Math.round((prevX.ae + 0.1) * 100) / 100;   // 앞 문장의 실제 끝 뒤부터 (앞 꼬리 안 들리게)
     // 다음 문장 시작 시간은 늦게 찍히곤 해서 거기까지 가면 다음 문장 앞부분까지 읽는다 → 문장 끝(t) 바로 뒤에서 멈춘다
     var end = x.t != null ? x.t + 0.1 : next ? next.s - 0.15 : x.s + 12;   // 멈춤이 정확해져서 끝 여유 0.15 → 0.1
     if (next && end > next.s) end = next.s;
-    YTV.stopAt = S.settings.ytPause ? Math.max(x.s + 0.5, end) : null; YTV.armed = false;
+    if (useL && x.ae != null) end = x.ae + 0.12;   // 소리로 배운 실제 끝이 있으면 그걸로 (다음 문장 시작 추정보다 믿을 만하다)
+    // 소리 맞춤: AI 끝 −0.6~+0.5초 사이의 실제 무음에서 멈춘다 — 못 찾으면 AI 끝(판정 불가) 또는 +0.5초(상한)
+    YTV.vadEnd = vad && x.ae == null ? { i: i, E: end, lo: Math.max(end - 0.6, YTV.from + 0.3), run0: null } : null;
+    YTV.vadOn = vad && (x.as == null || x.asg) ? { i: i, phase: 0, run0: null } : null;
+    if (vad && x.ae != null) { VAD.last = '이 문장은 전에 잰 실제 끝에서 멈춰요'; ytVadLine(); }   // 실제 시작 배우기 — 확정된 시작은 다시 안 배운다 (단어 사이 틈을 시작으로 착각해 뒤로 밀리던 것)
+    YTV.stopAt = S.settings.ytPause ? Math.max(x.s + 0.5, YTV.vadEnd ? end + 0.5 : end) : null; YTV.armed = false; YTV.vArmed = false;
     YTP.seekTo(YTV.from, true);
     YTP.playVideo();
   }
@@ -1847,7 +1975,7 @@
     // 끝 지점을 자연스럽게 지날 때만 멈추고, 스크러빙으로 훌쩍 넘어가면 그냥 푼다
     if (YTV.stopAt != null && !YTV.raf) {
       if (!YTV.armed) { if (t >= YTV.from - 0.5 && t < YTV.stopAt) YTV.armed = true; }
-      else if (t >= YTV.stopAt) { if (t - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; }
+      else if (t >= YTV.stopAt) { if (t - YTV.stopAt < 1.5) YTP.pauseVideo(); YTV.stopAt = null; ytVadCap(); }
       else if ((YTV.stopAt - t) / ((YTP.getPlaybackRate && YTP.getPlaybackRate()) || 1) < 0.45) ytFinish();
     }
     var cur = -1; for (var i = 0; i < r.sents.length && r.sents[i].s <= t + 0.3; i++) cur = i;
@@ -2538,6 +2666,11 @@
     'yt-add-word': function (el) { ytAddWord(+el.getAttribute('data-stage')); },
     'yt-pause-mode': function (el) { var on = S.settings.ytPause = !S.settings.ytPause; save(); el.classList.toggle('on', on); el.setAttribute('aria-pressed', String(on)); if (!on && YTV) YTV.stopAt = null; },
     'yt-replay': function () { if (YTV && YTV.act >= 0) ytPlaySent(YTV.act); },
+    'yt-vad': function (el) {
+      S.settings.ytVad = el.getAttribute('data-v') === '1'; save(); VAD.last = '';
+      if (S.settings.ytVad && VAD.st !== 'on') VAD.st = 'off';   // "다시 켜기"는 권한을 다시 묻는다 (자동으로는 안 묻는다)
+      ytVadSync(); ytVadLine();
+    },
     'go-settings-ai': function () { go('settings', { scroll: 'ai' }); },
     'talk-scenario': function (el) { S.settings.talk.scenario = el.getAttribute('data-id'); save(); RENDER.talk(); },
     'talk-mission-n': function (el) { S.settings.talk.missionN = Number(el.getAttribute('data-n')); talkSetup.words = pickMissionWords(S.settings.talk.missionN); save(); RENDER.talk(); },
@@ -2638,7 +2771,7 @@
 
   /* ---------------- lifecycle ---------------- */
   window.onTtsReady = function (ok) { TTS_OK = !!ok; if (!ok) toast('영어 TTS 음성을 찾지 못했어요. 기기 TTS 설정을 확인해 주세요'); };
-  window.onAppResume = function () { if (current() && current().view === 'home') RENDER.home(); };
+  window.onAppResume = function () { if (current() && current().view === 'home') RENDER.home(); else if (current() && current().view === 'ytv') ytVadSync(); };
   window.onAppPause = function () { saveNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
   document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); else window.onAppResume(); });
   window.addEventListener('pagehide', saveNow);

@@ -27,6 +27,10 @@
     유튜브 정책과의 관계: 덮인 채 문장을 누르면 가려진 플레이어로 재생된다(정책상 금지 항목) — 사용자가 알고 고른 방식. 떠나거나 앱이 내려가면 멈춤·다운로드 금지는 지킨다.
   - 재생 정밀도(v2.7): 끝나기 0.45초 전부터 requestAnimationFrame 로 확인해 멈춤(실측 오차 13~24ms, `YT_LEAD` 보정 손잡이), 끝 여유 +0.1초.
     유튜브 받아쓰기는 항상 `AI_DEFAULT_MODEL`(Flash-Lite — 다른 모델은 시간이 크게 밀림), 스키마 propertyOrdering s,e,t,k,x. 플레이어 controls 0.
+    AI 시간 오차(평균 1~2초)는 앱이 못 고친다 → v2.8 "소리로 문장 끝 맞추기(실험, `S.settings.ytVad`, 기본 꺼짐)": Java `Visualizer(0)`(출력 믹스, AS_PLAYED)를
+    30ms 마다 RMS → `window.ytVad(rms)`. JS 는 최근 ~4초 분위수로 문턱을 잡고 AI 끝 −0.6~+0.5초 안의 무음에서 멈춰 `x.ae`, 재생 시작 0.9초 안 말소리로 `x.as` 를 배운다
+    (확정된 as 는 다시 안 배움 — 단어 틈에 밀림). RECORD_AUDIO 필요, 볼륨이 작으면 못 잼(상태줄 안내). 소리 분리가 아니라 음량 숫자만 — 녹음·저장·전송 없음.
+    새 결과는 `ytMergeShort` 로 3단어 이하 문장을 시간 간격이 짧은 이웃에 합친다. 테스트 `tools/test_yt_vad.js`(`window.__feed` 로 RMS 흉내).
     남은 오차는 Gemini 시간 자체(1초 간격 표시라 평균 1~2초 틀릴 수 있음) — 확실히 잡으려면 문장별 손 보정이 필요(미구현).
   - 가로 화면(v2.6): 영상 화면에서만 회전 허용(`bridge.setRotate` → `setRequestedOrientation(USER|PORTRAIT)`, render() 에서 전환), 가로면 CSS 로 왼쪽 영상·오른쪽 스크립트.
   - `#app`·`#view-ytv` 는 `overflow: clip` — hidden 이면 scrollIntoView 가 틀을 밀어 숨긴 시트가 올라온다.
