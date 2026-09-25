@@ -70,6 +70,10 @@ else
 fi
 for f in "$SDK_JAR" "$RES_JAR"; do [ -f "$f" ] || { echo "missing $f — tools/setup-sdk.ps1 (윈도우) 또는 ./tools/setup-sdk.sh (리눅스) 를 먼저 실행하세요"; exit 1; }; done
 for t in javac keytool jarsigner; do command -v "$t" >/dev/null || { echo "missing tool: $t (JDK 17 필요)"; exit 1; }; done
+# v2.14 오프라인 영상: NewPipeExtractor + 의존성 jar (setup 스크립트가 버전 고정 + SHA-256 검증해서 sdk/libs 에 받는다)
+LIBS=("$SDK_DIR"/libs/*.jar)
+[ -f "${LIBS[0]}" ] || { echo "missing $SDK_DIR/libs/*.jar (NewPipeExtractor 등) — tools/setup-sdk.ps1 (윈도우) 또는 ./tools/setup-sdk.sh (리눅스) 를 먼저 실행하세요"; exit 1; }
+[ "$DEXER" = d8 ] || { echo "sdk/libs 의 jar 는 Java 11 바이트코드라 dx(dalvik-exchange)로는 못 바꿔요 — Android SDK build-tools(d8)가 필요합니다 (윈도우 tools/setup-sdk.ps1, 리눅스는 ~/Android/Sdk 에 build-tools)"; exit 1; }
 
 rm -rf "$OUT" "$AAB" build/gen build/classes build/dex build/aab build/res.zip build/base.apk build/base_proto.apk build/unaligned.apk build/aligned.apk
 mkdir -p build/gen build/classes build/dex
@@ -89,25 +93,37 @@ echo "[2/8] aapt2 link"
 
 echo "[3/8] javac"
 find src build/gen -name "*.java" > build/sources.txt
-javac -source 1.8 -target 1.8 -bootclasspath "$SDK_JAR" -encoding UTF-8 -nowarn -d build/classes @build/sources.txt 2>&1 | grep -v "^warning: \[options\]" || true
+javac -source 1.8 -target 1.8 -bootclasspath "$SDK_JAR" -cp "$SDK_DIR/libs/*" -encoding UTF-8 -nowarn -d build/classes @build/sources.txt 2>&1 | grep -v "^warning: \[options\]" || true
 test -f build/classes/kr/hyunuk/vocab3/MainActivity.class
 
-if [ "$DEXER" = d8 ]; then
-  echo "[4/8] d8"
-  find build/classes -name "*.class" > build/classes.txt
-  "${D8[@]}" --release --min-api 24 --output build/dex $(cat build/classes.txt) 2>&1 | grep -v JAVA_TOOL_OPTIONS || true
-else
-  echo "[4/8] dx"
-  dalvik-exchange --dex --min-sdk-version=24 --output=build/dex/classes.dex build/classes 2>&1 | grep -v JAVA_TOOL_OPTIONS || true
-fi
+echo "[4/8] d8 (앱 + sdk/libs — 메서드가 64K 를 넘으면 classes2.dex… 로 나뉜다)"
+find build/classes -name "*.class" > build/classes.txt
+"${D8[@]}" --release --min-api 24 --lib "$SDK_JAR" --output build/dex $(cat build/classes.txt) "${LIBS[@]}" 2>&1 | grep -v JAVA_TOOL_OPTIONS || true
 test -f build/dex/classes.dex
 
+# APK·AAB 공통: dex 전부 + 라이브러리의 자바 리소스(예: rhino 오류 문구 Messages.properties — Gradle 처럼 APK 루트에, META-INF 는 뺀다)
+cat > build/pack.py <<'EOF'
+import glob, os, zipfile
+def dex():
+    return sorted(glob.glob('build/dex/classes*.dex'))
+def libres(libdir):
+    seen = set()
+    for j in sorted(glob.glob(os.path.join(libdir, '*.jar'))):
+        with zipfile.ZipFile(j) as lz:
+            for n in lz.namelist():
+                if n.endswith('/') or n.endswith('.class') or n.upper().startswith('META-INF/') or n in seen: continue
+                seen.add(n); yield n, lz.read(n)
+EOF
+
 echo "[5/8] package + zipalign"
-pyrun <<'EOF'
-import shutil, zipfile
+pyrun "$SDK_DIR/libs" <<'EOF'
+import os, shutil, sys, zipfile
+sys.path.insert(0, 'build'); from pack import dex, libres
 shutil.copy('build/base.apk', 'build/unaligned.apk')
 with zipfile.ZipFile('build/unaligned.apk', 'a', zipfile.ZIP_DEFLATED) as z:
-    z.write('build/dex/classes.dex', 'classes.dex')
+    for d in dex(): z.write(d, os.path.basename(d))
+    for n, b in libres(sys.argv[1]): z.writestr(n, b)
+print('dex: ' + ', '.join('%s %.1fMB' % (os.path.basename(d), os.path.getsize(d) / 1048576.0) for d in dex()))
 EOF
 "$ZIPALIGN" -f 4 build/unaligned.apk build/aligned.apk
 
@@ -124,14 +140,16 @@ if [ -f "$BUNDLETOOL" ]; then
   "$AAPT2" link --proto-format -o build/base_proto.apk -I "$RES_JAR" $COMPILE_SDK_FLAGS --manifest AndroidManifest.xml -A assets \
     --auto-add-overlay build/res.zip
   mkdir -p build/aab
-  pyrun <<'EOF'
-import zipfile
+  pyrun "$SDK_DIR/libs" <<'EOF'
+import os, sys, zipfile
+sys.path.insert(0, 'build'); from pack import dex, libres
 src = zipfile.ZipFile('build/base_proto.apk')
 with zipfile.ZipFile('build/aab/base.zip', 'w', zipfile.ZIP_DEFLATED) as out:
     for n in src.namelist():
         if n == 'AndroidManifest.xml': out.writestr('manifest/AndroidManifest.xml', src.read(n))
         elif n == 'resources.pb' or n.startswith('res/') or n.startswith('assets/'): out.writestr(n, src.read(n))
-    out.write('build/dex/classes.dex', 'dex/classes.dex')
+    for d in dex(): out.write(d, 'dex/' + os.path.basename(d))
+    for n, b in libres(sys.argv[1]): out.writestr('root/' + n, b)
 EOF
   java -jar "$BUNDLETOOL" build-bundle --modules=build/aab/base.zip --output="$AAB" --overwrite 2>&1 | grep -v JAVA_TOOL_OPTIONS || true
 
