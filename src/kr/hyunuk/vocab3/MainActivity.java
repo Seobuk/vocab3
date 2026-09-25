@@ -78,6 +78,7 @@ public class MainActivity extends Activity {
     private int sttSilent = 0;              // 연속으로 아무 말 없던 구간 수
     private String sttSegPartial = "";     // 지금 듣는 구간의 마지막 부분 인식 결과 (확정 결과가 꼬리를 잘라 먹으면 이걸로 보충)
     private int sttSeq = 0;                 // 지연 stopListening 이 옛 구간에 적용되지 않게
+    private Offline off;                    // v2.14 오프라인 영상 (받기·파형·/media/ 서빙)
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -103,7 +104,10 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
                 Uri u = req.getUrl();
-                return ("https".equals(u.getScheme()) && getPackageName().equals(u.getHost())) ? asset(u, req.isForMainFrame()) : null;
+                if (!"https".equals(u.getScheme()) || !getPackageName().equals(u.getHost())) return null;
+                String p = u.getPath();
+                if (p != null && p.startsWith("/media/")) return off.serve(p.substring(7), req.getRequestHeaders());
+                return asset(u, req.isForMainFrame());
             }
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
@@ -141,6 +145,7 @@ public class MainActivity extends Activity {
         // file:// 은 Referer 를 안 보내 유튜브 임베드가 오류 153 → 앱 자산을 https://<앱 ID>/ 로 서빙 (YouTube RMF 의 Referer 형식)
         // 호스트를 appassets.androidplatform.net 이 아니라 앱 ID 로 쓰는 건 일부러 — YouTube 가 Referer 도메인으로 앱 ID 를 요구한다.
         // 이 호스트 요청은 전부 asset() 이 가로채므로(없는 경로도 404) 네트워크·DNS 로 나가지 않는다.
+        off = new Offline(this);
         web.loadUrl("https://" + getPackageName() + "/index.html");
         audioListener = new ReviewService.Listener() {
             @Override
@@ -212,7 +217,7 @@ public class MainActivity extends Activity {
         return sb.toString();
     }
 
-    private void runJs(final String js) {
+    void runJs(final String js) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -221,7 +226,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private static String jsString(String s) {
+    static String jsString(String s) {
         if (s == null) return "null";
         StringBuilder b = new StringBuilder("\"");
         for (int i = 0; i < s.length(); i++) {
@@ -277,6 +282,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (off != null) off.close();   // 받던 것 멈추고 .part 지움, 파형 작업도 멈춤
         try { if (stt != null) { stt.destroy(); stt = null; } } catch (Exception ignored) { }
         if (tts != null) {
             tts.stop();
@@ -855,6 +861,41 @@ public class MainActivity extends Activity {
                     runJs("window.onAiResult && window.onAiResult(" + jsString(id) + "," + status + "," + jsString(text) + ")");
                 }
             }, "vocab3-ai").start();
+        }
+
+        /* ---- v2.14 오프라인 영상 (Offline.java). 결과: window.onYtDl(vid, st, a, b) · window.onMediaEnv(vid) ---- */
+
+        /** 360p 한 파일 받기 시작 — 안드로이드 13 미만이면 곧바로 fail('sdk'), 다른 게 받는 중이면 fail('busy'). */
+        @JavascriptInterface
+        public void ytDownload(String t, String vid, String title) {
+            if (!ok(t)) return;
+            off.download(vid);
+        }
+
+        @JavascriptInterface
+        public void ytDownloadCancel(String t, String vid) {
+            if (!ok(t)) return;
+            off.cancel(vid);
+        }
+
+        /** {"<vid>":{"kind":"mp4"|"m4a","size":N,"env":true|false}} — 다 받은 것만. */
+        @JavascriptInterface
+        public String mediaList(String t) {
+            if (!ok(t)) return null;
+            return off.list();
+        }
+
+        @JavascriptInterface
+        public void mediaDelete(String t, String vid) {
+            if (!ok(t)) return;
+            off.delete(vid);
+        }
+
+        /** 파형(20ms 마다 0~100 한 바이트)의 base64, 없으면 "". */
+        @JavascriptInterface
+        public String mediaEnv(String t, String vid) {
+            if (!ok(t)) return null;
+            return off.env(vid);
         }
     }
 }

@@ -562,6 +562,17 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 /* v2.11 (사용자 요청): 멈출 때 뜨는 제목줄·공유·"동영상 더보기"를 칸 밖으로 — 플레이어를 위아래 64px 씩 크게 두면 16:9 영상은 그 안 가운데(칸에 딱 맞게),
    유튜브 안내는 위아래 검은 띠에 떠서 잘린다. ※ 플레이어 일부를 가리는 것 = 유튜브 정책 위반 — 사용자가 알고 고른 방식 (스토어에 올릴 땐 --ytcut: 0) */
 .yt-player iframe, .yt-player #ytPlayer { position: absolute; left: 0; top: calc(-1 * var(--ytcut)); width: 100%; height: calc(100% + 2 * var(--ytcut)); border: 0; }
+/* 받은 영상 (v2.14): 앱 <video> — 잘라내기 없이 칸에 딱 맞게. 소리만 받은 영상은 제목 카드 */
+.yt-player.local { --ytcut: 0px; }
+.yt-player video { object-fit: contain; background: #000; }
+.yt-acard { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px 24px; text-align: center; color: #fff; background: linear-gradient(135deg, var(--primary), #111); pointer-events: none; }
+.yt-acard b { font-size: 34px; line-height: 1; }
+.yt-acard span { font-weight: 700; font-size: 15px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.yt-dl { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 2px 4px 8px; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.yt-dl:empty { display: none; }
+.yd-b { flex: none; padding: 7px 12px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-weight: 700; font-size: 13px; }
+.yd-err { color: #B91C1C; }
+[data-theme="dark"] .yd-err { color: var(--danger); }
 /* 오른쪽 아래 버튼 (오른손 엄지) */
 .yt-fab { position: absolute; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 19; }   /* 떠 있는 것들은 어두운 막(20) 아래 — 확인 창이 떠 있을 땐 못 누르게 */
 .yt-fab .guide-pill { margin-left: 0; box-shadow: var(--shadow); }
