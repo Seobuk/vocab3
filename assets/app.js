@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.12';
+  var APP_VERSION = '2.13';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -404,7 +404,7 @@
   }
   function defaultState() {
     var st = defaultSettings(); st.audio = defaultAudio(); st.talk = defaultTalk();
-    return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now(), yt: [] };
+    return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now(), yt: [], usage: {} };
   }
   function mkWord(o) {
     var now = Date.now();
@@ -449,6 +449,8 @@
     s.settings.audio = a;
     s.words = Array.isArray(s.words) ? s.words : [];
     s.studyDays = s.studyDays || {};
+    if (!s.usage || typeof s.usage !== 'object' || Array.isArray(s.usage)) s.usage = {};   // v2.13 사용 기록 (백업에서 올 수 있어 모양 검사)
+    for (var uk in s.usage) { var ue = s.usage[uk]; if (!ue || typeof ue !== 'object' || !/^\d{4}-\d\d-\d\d$/.test(uk)) { delete s.usage[uk]; continue; } ue.t = Number(ue.t) || 0; if (!ue.f || typeof ue.f !== 'object') ue.f = {}; if (!ue.c || typeof ue.c !== 'object') ue.c = {}; }
     s.words.forEach(function (w) { if (typeof w.stage !== 'number') w.stage = 0; if (typeof w.star !== 'boolean') w.star = false; });
     // v2.0: 연속 학습일 신기록 연출 — 기존 사용자는 지금까지의 최고 기록을 기준선으로
     if (typeof s.streakRecord !== 'number') s.streakRecord = bestStreakOf(s.studyDays);
@@ -543,6 +545,7 @@
   }
   function updateBack() { bridge.setBackHandled(true); }
   function render() {
+    useTick();   // 앞 화면까지의 사용 시간을 넣고 새 화면으로 다시 잰다
     var cur = current();
     if (cur.view !== 'ytv') ytStopPlayer();   // 영상 화면을 떠나면 멈춘다 (유튜브 정책: 안 보이는 곳에서 재생 금지)
     bridge.setRotate(cur.view === 'ytv');   // 가로 회전은 영상 화면에서만 (왼쪽 영상 · 오른쪽 스크립트)
@@ -1062,7 +1065,7 @@
     SENT.undo.push({ id: w.id, sw: w.sw, se: w.se, sh: w.sh, sa: w.sa });
     if (easy) { w.sw = Math.max(1, sentW(w) - 1); w.se = (w.se || 0) + 1; }
     else { w.sw = Math.min(20, sentW(w) + 2); w.sh = (w.sh || 0) + 1; }
-    w.sa = Date.now(); SENT.n++;
+    w.sa = Date.now(); SENT.n++; useCount('sent');
     save(); bridge.stop();
     sentNext(); sentMount('judge');
   }
@@ -1070,7 +1073,7 @@
     var u = SENT && SENT.undo.pop(), w = u && byId(u.id); if (!w) return;
     ['sw', 'se', 'sh', 'sa'].forEach(function (k) { if (u[k] === undefined) delete w[k]; else w[k] = u[k]; });
     var j = SENT.recent.lastIndexOf(u.id); if (j >= 0) SENT.recent.length = j + 1;   // 되돌린 뒤 보던 (판정 안 한) 카드는 최근 목록에서 뺀다
-    SENT.n = Math.max(0, SENT.n - 1); SENT.id = u.id;
+    SENT.n = Math.max(0, SENT.n - 1); SENT.id = u.id; useCount('sent', -1);
     save(); bridge.stop(); sentMount('prev');
   }
 
@@ -1191,6 +1194,66 @@
     });
     return best;
   }
+  /* ================= 사용 기록 (v2.13) =================
+     앱이 화면에 떠 있는 시간을 날짜·기능별로 쌓는다 (화면이 꺼지거나 앱이 내려가면 멈춤 — 백그라운드 듣기 복습은 안 셈).
+     S.usage['YYYY-MM-DD'] = { t: 총 ms, f: { 기능: ms }, c: { sent·yt·talk: 횟수 } } — 판정한 카드 수는 studyDays */
+  var USE_FEAT = { study: 'study', summary: 'study', sent: 'sent', talk: 'talk', chat: 'talk', yt: 'yt', ytv: 'yt', audio: 'audio' };   // 나머지(홈·단어장·추가·설정·통계) = etc
+  var USE_ORDER = [['study', '단어 학습'], ['sent', '문장 공부'], ['talk', '회화 연습'], ['yt', '유튜브'], ['audio', '듣기 복습'], ['etc', '홈·단어장·설정']];
+  var USE = { f: null, at: 0, paused: false, saved: 0 }, useSel = null;   // useSel: 통계에서 고른 날
+  function useDay() { var d = localDate(); return S.usage[d] || (S.usage[d] = { t: 0, f: {}, c: {} }); }
+  function useTick() {   // 지금까지 잰 시간을 넣고, 지금 화면의 기능으로 다시 잰다
+    if (!S) return;
+    var now = Date.now();
+    if (USE.f && USE.at) {
+      var ms = Math.min(now - USE.at, 60000);   // ponytail: 틱(15초)이 밀려도 한 번에 최대 1분 — 멈춘 틈이 통째로 들어가지 않게
+      if (ms > 0) { var u = useDay(); u.t += ms; u.f[USE.f] = (u.f[USE.f] || 0) + ms; }
+    }
+    var c = current();
+    USE.f = USE.paused || document.hidden || !c ? null : (USE_FEAT[c.view] || 'etc');
+    USE.at = now;
+    if (now - USE.saved > 60000) { USE.saved = now; save(); }
+  }
+  function useCount(k, n) { var u = useDay(); u.c[k] = Math.max(0, (u.c[k] || 0) + (n || 1)); }
+  setInterval(useTick, 15000);
+  function fmtMin(ms, html) {   // 32분 · 1시간 5분
+    var m = Math.round(ms / 60000), u = function (x) { return html ? '<small>' + x + '</small>' : x; };
+    return m < 60 ? m + u('분') : Math.floor(m / 60) + u('시간') + (m % 60 ? ' ' + (m % 60) + u('분') : '');
+  }
+  function useHTML(today) {   // 통계: 앱 사용 — 오늘·7일 평균 타일, 최근 14일(날짜를 누르면 그날), 기능별 시간·횟수
+    var U = S.usage, all = 0, w7 = 0, max = 1, bars = [];
+    for (var k in U) all += U[k].t || 0;
+    for (var i = 13; i >= 0; i--) {
+      var d = new Date(today); d.setDate(today.getDate() - i);
+      var key = dateKey(d), v = (U[key] || {}).t || 0;
+      bars.push({ d: d, k: key, v: v }); if (v > max) max = v; if (i < 7) w7 += v;
+    }
+    var sel = useSel && U[useSel] !== undefined || useSel === dateKey(today) ? useSel : dateKey(today);
+    if (!bars.some(function (b) { return b.k === sel; })) sel = dateKey(today);
+    var maxIdx = 0; bars.forEach(function (b, i) { if (b.v > bars[maxIdx].v) maxIdx = i; });
+    var barsHtml = bars.map(function (b, i) {
+      var on = b.k === sel, lab = b.v > 0 && (on || i === maxIdx) ? '<span class="bv">' + Math.round(b.v / 60000) + '</span>' : '';
+      return '<div class="bar-col' + (on ? ' sel' : '') + '" role="button" data-action="use-day" data-d="' + b.k + '" aria-label="' + (b.d.getMonth() + 1) + '월 ' + b.d.getDate() + '일 ' + fmtMin(b.v) + '">' +
+        '<div class="bar-stack">' + lab + '<div class="bar u" style="height:' + Math.round(b.v / max * 100) + '%"></div></div>' +
+        '<div class="bar-x' + (b.d.getDay() === 0 ? ' sun' : '') + '">' + (i % 2 === 1 || on ? b.d.getDate() : '') + '</div></div>';
+    }).join('');
+    var e = U[sel] || { t: 0, f: {}, c: {} }, sd = new Date(sel + 'T00:00:00'), isToday = sel === dateKey(today);
+    var rows = USE_ORDER.filter(function (o) { return e.f[o[0]] > 0; }).map(function (o) {
+      var ms = e.f[o[0]], pct = e.t ? Math.max(2, Math.round(ms / e.t * 100)) : 0;
+      return '<div class="srow"><div class="sl">' + o[1] + '</div><div class="sbar"><div style="width:' + pct + '%;background:var(--primary)"></div></div><div class="sn">' + Math.round(ms / 60000) + '<small>분</small></div></div>';
+    }).join('');
+    var cards = (S.studyDays[sel] || {}).judged || 0, cc = e.c || {};
+    var cnt = [cards ? '카드 ' + cards + '개' : '', cc.sent ? '문장 공부 ' + cc.sent + '문장' : '', cc.yt ? '유튜브 ' + cc.yt + '문장 재생' : '', cc.talk ? '회화 ' + cc.talk + '번 말하기' : ''].filter(Boolean).join(' · ');
+    return '<div class="tiles">' +
+      '<div class="tile"><b>' + fmtMin((U[dateKey(today)] || {}).t || 0, true) + '</b><span>오늘 앱 사용</span></div>' +
+      '<div class="tile"><b>' + fmtMin(w7 / 7, true) + '</b><span>최근 7일 하루 평균</span></div>' +
+      '</div>' +
+      '<div class="card-box"><div class="cb-title">앱 사용 시간 <span class="muted small">누적 ' + fmtMin(all) + '</span></div>' +
+      '<div class="bars">' + barsHtml + '</div><div class="legend"><span>하루 사용 시간(분) · 막대를 누르면 그날 기능별</span></div></div>' +
+      '<div class="card-box" id="useDay"><div class="cb-title">' + (isToday ? '오늘' : (sd.getMonth() + 1) + '월 ' + sd.getDate() + '일') + ' 기능별 <span class="muted small">' + fmtMin(e.t) + '</span></div>' +
+      (rows || '<div class="empty">' + (isToday ? '오늘은 아직 기록이 없어요' : '이날은 기록이 없어요') + '</div>') +
+      (cnt ? '<div class="use-c">' + cnt + '</div>' : '') + '</div>';
+  }
+
   RENDER.stats = function () {
     var c = counts(), total = S.words.length, days = S.studyDays;
     var totJ = 0, totM = 0, dayCount = 0;
@@ -1257,7 +1320,7 @@
       '<div class="tile"><b>' + bestStreak() + '<small>일</small></b><span>최장 연속</span></div>' +
       '<div class="tile"><b>' + dayCount + '<small>일</small></b><span>총 학습일</span></div>' +
       '<div class="tile"><b>' + rate + '<small>%</small></b><span>외움률 (' + totM + '/' + totJ + ')</span></div>' +
-      '</div>' +
+      '</div>' + useHTML(today) +
       '<div class="card-box"><div class="cb-title">최근 14일 <span class="muted small">이번 주 ' + wkDays + '일 · ' + wk + '개</span></div>' +
       '<div class="bars">' + barsHtml + '</div>' +
       '<div class="legend"><span><i class="sw m"></i>외웠다</span><span><i class="sw j"></i>아직</span></div></div>' +
@@ -1370,7 +1433,7 @@
   // userText null → 첫 인사(오프닝) 요청
   function talkTurn(userText) {
     if (!TALK || TALK.busy) return;
-    if (userText !== null) TALK.msgs.push({ role: 'user', text: userText });
+    if (userText !== null) { TALK.msgs.push({ role: 'user', text: userText }); useCount('talk'); }
     else TALK.msgs.push({ role: 'user', text: 'Start the conversation with a natural opening line for the scenario. No feedback yet.', hidden: true });
     var myTalk = TALK, myReq = ++TALK.req;
     KO = { src: '', busy: false };
@@ -2006,7 +2069,7 @@
     var rb = $('[data-action="yt-replay"]'); if (rb) rb.disabled = false;
     if (YTV.perr) { bridge.openUrl('https://youtu.be/' + r.vid + '?t=' + Math.floor(x.s)); return; }
     if (!YTP || !YTV.ready) { YTV.pending = i; return; }
-    var g = ytRange(r, i);
+    var g = ytRange(r, i); useCount('yt');
     ytPlayRange(g.from, g.end, S.settings.ytPause);
   }
   function ytRange(r, i) {   // 문장 i 를 재생할 구간 { from, end }
@@ -2621,6 +2684,7 @@
     },
     'undo': function () { undo(); },
     'sent': function () { sentStart(); },
+    'use-day': function (el) { useSel = el.getAttribute('data-d'); var y = $('#view-stats').scrollTop; RENDER.stats(); $('#view-stats').scrollTop = y; },
     'sent-judge': function (el) {
       var card = $('#sentArea .card'); if (!card || flying) return;
       var easy = el.getAttribute('data-easy') === '1';
@@ -2883,8 +2947,8 @@
 
   /* ---------------- lifecycle ---------------- */
   window.onTtsReady = function (ok) { TTS_OK = !!ok; if (!ok) toast('영어 TTS 음성을 찾지 못했어요. 기기 TTS 설정을 확인해 주세요'); };
-  window.onAppResume = function () { if (current() && current().view === 'home') RENDER.home(); };
-  window.onAppPause = function () { saveNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
+  window.onAppResume = function () { USE.paused = false; useTick(); if (current() && current().view === 'home') RENDER.home(); };
+  window.onAppPause = function () { useTick(); USE.paused = true; USE.f = null; saveNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
   document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); else window.onAppResume(); });
   window.addEventListener('pagehide', saveNow);
 
