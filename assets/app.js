@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.11';
+  var APP_VERSION = '2.12';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -653,7 +653,7 @@
   /* ================= HOME ================= */
   RENDER.home = function () {
     ensureDaily();
-    var c = counts(), goal = S.settings.dailyGoal, d = S.studyDays[localDate()] || { judged: 0, memorized: 0 };
+    var c = counts(), goal = S.settings.dailyGoal, d = S.studyDays[localDate()] || { judged: 0, memorized: 0 }, sn = sentPool().length;
     var streak = calcStreak();
     var pct = clamp(Math.round(d.judged / Math.max(1, goal) * 100), 0, 100);
     var cta, sub;
@@ -682,6 +682,7 @@
       '</div>' +
       '<button class="review-btn" style="--c:var(--s2)" data-action="start" data-stage="2"' + (c[2] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">2단계 복습</div><div class="rb-s">주기적으로 복습 → 확실하면 3단계로</div></div><span class="rb-n">' + c[2] + '</span><span class="chev">›</span></button>' +
       '<button class="review-btn" style="--c:var(--s3)" data-action="start" data-stage="3"' + (c[3] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">3단계 최종 점검</div><div class="rb-s">최종 확인 → 통과하면 졸업</div></div><span class="rb-n">' + c[3] + '</span><span class="chev">›</span></button>' +
+      '<button class="review-btn" style="--c:var(--s4)" data-action="sent"' + (sn ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">영어 문장 공부</div><div class="rb-s">졸업한 단어 예문 · 한글 보고 영어로</div></div><span class="rb-n">' + sn + '</span><span class="chev">›</span></button>' +
       '<div class="row"><button class="btn" data-action="list" data-stage="0">대기 ' + c[0] + '개</button><button class="btn" data-action="list-starred">★ 중요 ' + starCount() + '개</button><button class="btn" data-action="list" data-stage="4">졸업 ' + c[4] + '개</button></div>' +
       (S.settings.tipDismissed ? '' :
         '<div class="tip"><button class="close" data-action="tip-close">×</button><b>3단계 단어장 사용법</b><br>매일 새 단어 ' + goal + '개를 예문과 함께 익히고, 단어와 예문이 자연스럽게 나오면 오른쪽으로 스와이프하세요.' +
@@ -961,6 +962,116 @@
   function finishSession() {
     saveNow();
     go('summary', {}, true);
+  }
+
+  /* ================= 영어 문장 공부 (v2.12) =================
+     졸업한 단어의 예문: 한글 → (탭) 가려 둔 영어가 보이며 읽어 줌 → ▲ 쉬움 / ▼ 어려움. 끝없이 계속 꺼낸다.
+     가중치 sw(1~20, 처음 3): 어려움 +2 · 쉬움 −1 — 클수록 자주 나온다. se/sh = 쉬움·어려움 누적 횟수, sa = 마지막으로 본 때 */
+  var SENT = null;   // { id: 지금 문장(단어 id), n, recent: [최근 id], undo: [], token }
+  function sentPool() { return S.words.filter(function (w) { return w.stage === 4 && w.e && w.k; }); }
+  function sentW(w) { return typeof w.sw === 'number' ? w.sw : 3; }
+  function sentPick(skip) {   // 가중치 비례 무작위 · skip(방금 본 것)은 빼고
+    var pool = sentPool(), c = pool.filter(function (w) { return skip.indexOf(w.id) < 0; });
+    if (!c.length) c = pool;
+    var tot = 0; c.forEach(function (w) { tot += sentW(w); });
+    var r = Math.random() * tot;
+    for (var i = 0; i < c.length; i++) { r -= sentW(c[i]); if (r < 0) return c[i]; }
+    return c[c.length - 1] || null;
+  }
+  function sentNext() {
+    var k = Math.min(3, Math.floor(sentPool().length / 2)), w = sentPick(k > 0 ? SENT.recent.slice(-k) : []);   // 방금 본 3문장은 바로 다시 안 나오게 — 후보는 늘 2개 이상 남겨 가중치가 먹게 (문장이 적을 때 같은 순서로만 돌던 것)
+    SENT.id = w ? w.id : null;
+    if (w) { SENT.recent.push(w.id); if (SENT.recent.length > 20) SENT.recent.shift(); }
+  }
+  function sentStart() {
+    if (!sentPool().length) { toast('졸업한 단어 중 예문·해석이 있는 단어가 아직 없어요'); return; }
+    SENT = { id: null, n: 0, recent: [], undo: [], token: Date.now() };
+    sentNext(); go('sent');
+  }
+  RENDER.sent = function () {
+    if (!SENT) { go('home', {}, true); return; }
+    var v = $('#view-sent');
+    if (v.getAttribute('data-token') !== String(SENT.token)) {
+      v.setAttribute('data-token', String(SENT.token));
+      v.innerHTML = '<div class="study" style="--c:var(--s4)">' +
+        '<div class="study-top"><button class="icon-btn" data-action="back" aria-label="닫기">' + ICON_X + '</button>' +
+        '<span class="stage-pill">졸업</span><span class="st-title">영어 문장 공부</span><span class="counter" id="sentCount"></span></div>' +
+        '<div class="card-area" id="sentArea"></div>' +
+        '<div class="study-actions"><div class="judge' + (S.settings.swapJudge ? ' swapped' : '') + '">' +
+        '<button class="btn no" data-action="sent-judge" data-easy="0"><span>▼ 어려움</span><small>더 자주 나와요</small></button>' +
+        '<button class="btn yes" data-action="sent-judge" data-easy="1"><span>▲ 쉬움</span><small>가끔 나와요</small></button></div>' +
+        '<div class="navrow"><button class="btn undo" data-action="sent-undo" id="sentUndo">↶ 되돌리기</button></div>' +
+        '<div class="demote">탭: 영어 보기·듣기 &nbsp;·&nbsp; ▲ 쉬움 &nbsp;·&nbsp; ▼ 어려움</div></div></div>';
+    }
+    sentMount('none');
+  };
+  function sentMount(anim) {
+    var area = $('#sentArea'), w = byId(SENT.id); if (!area) return;
+    area.innerHTML = '';
+    $('#sentCount').innerHTML = SENT.n + '<small>문장</small>';
+    $('#sentUndo').disabled = !SENT.undo.length;
+    if (!w) { area.innerHTML = '<div class="empty">졸업한 단어 중 예문·해석이 있는 단어가 아직 없어요</div>'; return; }
+    var card = document.createElement('div');
+    card.className = 'card sent-card' + (anim === 'judge' ? ' enter' : anim === 'prev' ? ' enter-prev' : '');
+    card.innerHTML = '<div class="card-top">' + (w.t ? '<span class="tag theme">' + esc(w.t) + '</span>' : '') +
+      '<span class="tag pos">어려움 ' + (w.sh || 0) + ' · 쉬움 ' + (w.se || 0) + '</span></div>' +
+      '<div class="plain"><div class="label">우리말</div><div class="ko-big">' + esc(w.k) + '</div></div>' +
+      '<div class="reveal" data-reveal="e" data-max="1" data-step="0"><div class="label">영어</div><div class="content">' +
+      '<div class="en"><span>' + esc(w.e) + '</span><button class="spk sm" data-action="sent-speak" aria-label="다시 듣기">' + ICON_SPK + '</button></div>' +
+      '<div class="sent-w">' + esc(w.w) + ' · ' + esc(w.m) + '</div></div><div class="cover">영어로 말해 본 뒤 탭</div></div>' +
+      '<div class="stamp yes pos-t">쉬움</div><div class="stamp no pos-b">어려움</div>';
+    area.appendChild(card);
+    sentBind(card);
+  }
+  function sentTap() {   // 처음 탭 = 영어 보이기 + 읽기, 그다음 탭 = 다시 읽기
+    var w = byId(SENT.id), r = $('#sentArea .reveal'); if (!w || !r) return;
+    if (r.getAttribute('data-step') === '0') { r.setAttribute('data-step', '1'); bridge.vibrate(6); }
+    speak(w.e, 'en');
+  }
+  function sentBind(card) {   // 위·아래로만 민다 (학습 카드 bindDrag 의 세로 부분)
+    var d = null, sup = false, yes = $('.stamp.yes', card), no = $('.stamp.no', card);
+    function stamps(dy) { yes.style.opacity = clamp(-dy / 70, 0, 1); no.style.opacity = clamp(dy / 70, 0, 1); }
+    function reset() { card.style.transition = 'transform .25s ease-out'; card.style.transform = ''; stamps(0); }
+    card.addEventListener('pointerdown', function (e) {
+      if (flying || e.target.closest('button') || (e.pointerType === 'mouse' && e.button !== 0)) return;   // 날아가는 카드는 다시 못 잡게
+      d = { x: e.clientX, y: e.clientY, dy: 0, t: Date.now(), moved: false, id: e.pointerId };
+      try { card.setPointerCapture(e.pointerId); } catch (err) { }
+      card.style.transition = 'none';
+    });
+    card.addEventListener('pointermove', function (e) {
+      if (!d || e.pointerId !== d.id) return;
+      d.dy = e.clientY - d.y;
+      if (!d.moved && (Math.abs(d.dy) > 8 || Math.abs(e.clientX - d.x) > 8)) d.moved = true;
+      if (d.moved) { card.style.transform = 'translate(0,' + d.dy + 'px)'; stamps(d.dy); }
+    });
+    card.addEventListener('pointerup', function (e) {
+      if (!d || e.pointerId !== d.id) return;
+      var q = d; d = null;
+      if (!q.moved) { reset(); return; }   // 탭은 click 에서 (TalkBack·키보드 클릭도 되게)
+      sup = true; setTimeout(function () { sup = false; }, 60);   // 민 뒤에 오는 click 은 탭 아님
+      var th = Math.min(110, card.offsetHeight * 0.25), v = q.dy / Math.max(1, Date.now() - q.t);
+      if (Math.abs(q.dy) > th || (Math.abs(v) > 0.6 && Math.abs(q.dy) > 30)) { var easy = q.dy < 0; flyOut(card, easy ? 'up' : 'down', function () { sentJudge(easy); }); return; }
+      reset();
+    });
+    card.addEventListener('pointercancel', function (e) { if (d && e.pointerId === d.id) { d = null; reset(); } });
+    card.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    card.addEventListener('click', function (e) { if (sup || flying || e.target.closest('button')) return; sentTap(); });
+  }
+  function sentJudge(easy) {
+    var w = byId(SENT.id); if (!w) return;
+    SENT.undo.push({ id: w.id, sw: w.sw, se: w.se, sh: w.sh, sa: w.sa });
+    if (easy) { w.sw = Math.max(1, sentW(w) - 1); w.se = (w.se || 0) + 1; }
+    else { w.sw = Math.min(20, sentW(w) + 2); w.sh = (w.sh || 0) + 1; }
+    w.sa = Date.now(); SENT.n++;
+    save(); bridge.stop();
+    sentNext(); sentMount('judge');
+  }
+  function sentUndo() {
+    var u = SENT && SENT.undo.pop(), w = u && byId(u.id); if (!w) return;
+    ['sw', 'se', 'sh', 'sa'].forEach(function (k) { if (u[k] === undefined) delete w[k]; else w[k] = u[k]; });
+    var j = SENT.recent.lastIndexOf(u.id); if (j >= 0) SENT.recent.length = j + 1;   // 되돌린 뒤 보던 (판정 안 한) 카드는 최근 목록에서 뺀다
+    SENT.n = Math.max(0, SENT.n - 1); SENT.id = u.id;
+    save(); bridge.stop(); sentMount('prev');
   }
 
   /* ================= SUMMARY ================= */
@@ -2509,6 +2620,14 @@
       flyOut(card, 'down', function () { judge(false, true); });
     },
     'undo': function () { undo(); },
+    'sent': function () { sentStart(); },
+    'sent-judge': function (el) {
+      var card = $('#sentArea .card'); if (!card || flying) return;
+      var easy = el.getAttribute('data-easy') === '1';
+      flyOut(card, easy ? 'up' : 'down', function () { sentJudge(easy); });
+    },
+    'sent-undo': function () { if (!flying) sentUndo(); },
+    'sent-speak': function () { var w = SENT && byId(SENT.id); if (w) speak(w.e, 'en'); },
     'reveal-all': function () { var spoke = false; $$('#cardArea .reveal').forEach(function (r) { if (cycleReveal(r, true, spoke)) spoke = true; }); },
     'toggle-mode': function () { S.settings.mode = S.settings.mode === 'en' ? 'ko' : 'en'; save(); mountCard('none'); },
     'toggle-swap': function () {
@@ -2770,7 +2889,7 @@
   window.addEventListener('pagehide', saveNow);
 
   // debugging / testing hooks
-  window.__vocab = { state: function () { return S; }, save: saveNow, go: go, startSession: startSession, judge: judge, applyTheme: applyTheme, themes: function () { return THEMES.map(function (t) { return t.id; }); }, reload: function () { S = loadState(); goTab('home'); } };
+  window.__vocab = { state: function () { return S; }, save: saveNow, go: go, startSession: startSession, judge: judge, applyTheme: applyTheme, themes: function () { return THEMES.map(function (t) { return t.id; }); }, reload: function () { S = loadState(); goTab('home'); }, sentPick: sentPick };
 
   S = loadState();
   applyTheme();
