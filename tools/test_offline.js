@@ -297,6 +297,40 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   await ytdl('OTHERVID007', 'fail', 'cancel', '');
   eq('끼어든 받기가 끝나면 받던 영상을 다시 부름 (잃지 않음)', (await dl('dl')).split(',').filter(v => v === 'NEXTVIDE006').length, 2);
 
+  // --- 17. (v2.15) 받은 영상 탭 = 멈춤/이어 재생 · 영상 고정 토글 ---
+  await p.evaluate(() => window.__vocab.go('yt')); await p.waitForTimeout(100);
+  await open('OFFLINE0001'); await ready();
+  eq('받은 영상 칸은 탭 동작이 있음', (await tag()) + ' ' + await p.getAttribute('#ytBox', 'data-action'), 'VIDEO yt-tap');
+  await p.click('#ytBox'); await p.waitForTimeout(400);
+  const t1 = await vt();
+  eq('탭하면 재생 · 가운데 표시 없음', (await p.evaluate(() => !document.querySelector('#ytPlayer').paused)) + ' ' + await p.$$eval('#ytBox .yt-flash', x => x.length), 'true 0');
+  await p.click('#ytBox'); await p.waitForTimeout(150);
+  const t2 = await vt(); await p.waitForTimeout(300);
+  eq('다시 탭하면 멈춤 · 시간이 안 흐름', (await p.evaluate(() => document.querySelector('#ytPlayer').paused)) + ' ' + (t2 > t1 - 0.01) + ' ' + (Math.abs((await vt()) - t2) < 0.01), 'true true true');
+  await p.click('#ys1 .ys-t'); await p.waitForTimeout(300);
+  await p.click('#ytBox'); await p.waitForTimeout(100);
+  const tm = await vt(); await p.click('#ytBox'); await paused();
+  eq('문장 중간에 멈췄다 탭으로 이으면 그 문장 끝에서 멈춤', (await vt()) < 5.3 && (await vt()) > tm, true);
+  // 고정 토글 (세로)
+  const covered = () => p.evaluate(() => { const b = document.querySelector('#ytBox').getBoundingClientRect(); return document.querySelector('#ytBox').contains(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)) ? 'visible' : 'covered'; });
+  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 250; }); await p.waitForTimeout(150);
+  eq('고정 전: 목록을 올리면 영상이 덮임 · 버튼 꺼짐', (await covered()) + ' ' + await p.getAttribute('.yt-pinb', 'aria-pressed'), 'covered false');
+  await p.click('.yt-pinb'); await p.waitForTimeout(150);
+  eq('📌 켜면 영상이 안 가려짐 · 저장 · 스크롤 여백 = 영상 높이', (await covered()) + ' ' + await p.evaluate(() => window.__vocab.state().settings.ytPin) + ' ' + await p.evaluate(() => Math.abs(parseFloat(getComputedStyle(document.querySelector('#ytList')).scrollPaddingTop) - document.querySelector('#ytBox').offsetHeight) < 2), 'visible true true');
+  await p.evaluate(() => window.__vocab.go('yt')); await p.waitForTimeout(100); await open('OFFLINE0001'); await p.waitForTimeout(200);
+  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 250; }); await p.waitForTimeout(150);
+  eq('다시 열어도 고정 유지', (await covered()) + ' ' + await p.getAttribute('.yt-pinb', 'aria-pressed'), 'visible true');
+  await p.setViewportSize({ width: 690, height: 829 }); await p.waitForTimeout(250);   // Fold 안쪽 화면 세로 — 45vh < 16:9 높이
+  eq('Fold 안쪽 화면 세로 + 고정: 영상 폭 = 화면 폭(오른쪽 틈 없음) · 16:9 · 여백 = 영상 높이', await p.evaluate(() => { const b = document.querySelector('#ytBox'), l = document.querySelector('#ytList'); return [b.offsetWidth === l.clientWidth, Math.abs(b.offsetHeight - b.offsetWidth * 9 / 16) < 1.5, Math.abs(parseFloat(getComputedStyle(l).scrollPaddingTop) - b.offsetHeight) < 1.5].join(); }), 'true,true,true');
+  eq('받은 영상 탭 영역 = 버튼(TalkBack)', await p.evaluate(() => ['role', 'aria-label'].map(k => document.querySelector('#ytBox').getAttribute(k)).join()), 'button,재생·멈춤');
+  await p.setViewportSize({ width: 844, height: 390 }); await p.waitForTimeout(250);
+  eq('가로 화면: 고정 버튼 숨김(원래 안 가려짐)', await p.$eval('.yt-pinb', e => getComputedStyle(e).visibility), 'hidden');
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
+  await p.click('.yt-pinb'); await p.waitForTimeout(150);
+  await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 250; }); await p.waitForTimeout(150);
+  eq('📌 끄면 원래대로 덮임', (await covered()) + ' ' + await p.evaluate(() => window.__vocab.state().settings.ytPin), 'covered false');
+  await p.screenshot({ path: OUT + '/340-yt-pin.png' });
+
   eq('토큰 없는 호출 없음', await p.evaluate(() => window.__badToken || 0), 0);
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();

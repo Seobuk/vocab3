@@ -2,7 +2,7 @@
 
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.14 (versionCode 38).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.15 (versionCode 39).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -51,6 +51,8 @@
   - 오프라인(v2.14, 사용자 요청): 링크 추가 때 자동으로 받고(한 번에 하나, `YTDL` 줄), 다 받으면 `r.off={kind,size}` → 영상 화면은 유튜브 iframe 대신
     앱 `<video>`(YT 플레이어와 같은 인터페이스의 어댑터, `local: true`)로 재생 — 유튜브 화면 요소 없음·오프라인. 시작 때 mediaList 로 기록과 실제 파일을 맞춘다.
     파형으로 경계 맞춤 `ytSnapCalc` → 문장 `vs`/`ve`(ytClean 보존), ytRange 는 ms/me(손 수정) > vs/ve > AI 시간 순. 테스트 `tools/test_offline.js`(가짜 Android + WAV).
+  - v2.15: 받은 영상은 #ytBox 탭(`yt-tap`) = 멈춤/이어 재생(stopAt 유지). 📌 `S.settings.ytPin` → `#view-ytv.yt-pinned`: 플레이어를 목록 위(z-index 2) +
+    고정 중(세로)엔 영상을 화면 폭 16:9(max-height 해제 — 45vh 가 폭을 줄이면 옆 틈으로 가린 문장이 눌렸다) + `.yt-list` scroll-padding-top 56.25vw — v2.4 의 "목록이 영상을 덮는" 동작을 끌 수 있게(사용자 요청, 기본 꺼짐). 가로에선 버튼 숨김.
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
 - `tools/test_*.js`, `tools/shots.js` — Playwright UI 테스트 (Gemini·음성인식은 stub). 스크린샷 `build/shots/`.
 - `store/` — Play 등록 문구·개인정보처리방침(권한·외부 전송이 바뀌면 같이 갱신). `docs/screenshots/` README 용.

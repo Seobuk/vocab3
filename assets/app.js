@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.14';
+  var APP_VERSION = '2.15';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -403,7 +403,7 @@
   var S = null;
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
@@ -1921,11 +1921,13 @@
     if (!YTV || YTV.id !== r.id) YTV = { id: r.id, act: -1, cur: -1, stopAt: null, card: null, ko: {} };
     YTV.ready = false; YTV.perr = null; YTV.pending = null;
     $('#view-ytv').innerHTML =
-      '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title" id="ytTitle"></span><span style="width:42px"></span></div>' +
+      '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title" id="ytTitle"></span>' +
+      '<button class="icon-btn yt-pinb' + (S.settings.ytPin ? ' on' : '') + '" data-action="yt-pin" aria-pressed="' + !!S.settings.ytPin + '" aria-label="영상 고정">📌</button></div>' +   // v2.15: 켜면 목록을 올려도 영상이 안 가려진다 (세로만)
       // v2.4: 영상은 맨 위 제자리에 고정(sticky)되고, 목록을 올리면 문장 영역이 그 위를 덮어 화면을 넓게 쓴다 (사용자 요청).
       // 따라다니는 작은 창은 없음. ※ 덮인 채로 문장을 누르면 가려진 플레이어로 재생된다 — 유튜브 정책(보이지 않는 플레이어 재생 금지)과 어긋남을 알고 고른 방식
       '<div class="yt-list" id="ytList"><div class="yt-player" id="ytBox"><div id="ytPlayer"></div></div><div class="yt-body" id="ytBody"></div></div>' +
       '<div class="yt-fab" id="ytFab"></div><div class="yt-side" id="ytSide"></div>';   // yt-side: 가로 화면에서 영상 아래 왼쪽 (시간 수정, v2.11)
+    $('#view-ytv').classList.toggle('yt-pinned', !!S.settings.ytPin);
     if (r.off && !r.snap) ytSnap(r);   // 파형이 앱이 꺼져 있던 사이에 나왔으면 지금 맞춘다
     ytRenderBody();
     ytMakePlayer(r);
@@ -2028,6 +2030,7 @@
     var myV = YTV, vid = r.vid, box = $('#ytBox'); if (!box) return;
     var local = !!(r.off && !YTV.noLocal);
     box.classList.toggle('local', local);   // 받은 영상엔 v2.11 잘라내기(--ytcut) 안 씀 — 칸에 딱 맞게
+    ['data-action', 'role', 'tabindex', 'aria-label'].forEach(function (k, i) { if (local) box.setAttribute(k, ['yt-tap', 'button', '0', '재생·멈춤'][i]); else box.removeAttribute(k); });   // 받은 영상은 탭 = 멈춤/재생 (유튜브 iframe 은 자체 탭 동작)
     box.innerHTML = local ? '<video id="ytPlayer" playsinline preload="auto"></video>' + (r.off.kind === 'm4a' ? '<div class="yt-acard"><b>🎧</b><span>' + esc(r.title || '소리만 받은 영상') + '</span></div>' : '') : '<div id="ytPlayer"></div>';
     if (local) { ytMakeLocal(r, box.querySelector('video')); return; }
     ytApi(function () {
@@ -3000,6 +3003,17 @@
     'yt-word': function (el) { var i = +el.getAttribute('data-i'); if (YTV.act !== i) ytPlaySent(i); else ytWord(i, +el.getAttribute('data-t')); },   // 처음 누르면 재생, 재생한 문장에서 누르면 뜻
     'yt-ko': function (el) { var i = +el.getAttribute('data-i'); YTV.ko[i] = !YTV.ko[i]; el.classList.toggle('blur', !YTV.ko[i]); },
     'yt-card': function () { },
+    'yt-tap': function () {   // 받은 영상 탭: 재생 중이면 멈춤, 멈춰 있으면 이어 재생 — 문장 중간에서 멈췄다 이으면 그 문장 끝에서 멈춤(stopAt 그대로)
+      if (!YTP || !YTP.local || !YTV.ready) return;
+      var on = YTP.getPlayerState() === 1;
+      if (on) { if (YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; } YTP.pauseVideo(); }
+      else { bridge.stop(); YTP.playVideo(); }
+    },
+    'yt-pin': function (el) {
+      var on = S.settings.ytPin = !S.settings.ytPin; save();
+      $('#view-ytv').classList.toggle('yt-pinned', on); el.classList.toggle('on', on); el.setAttribute('aria-pressed', String(on));
+      toast(on ? '📌 영상 고정 — 목록을 올려도 영상이 안 가려져요' : '고정 해제 — 목록을 올리면 문장이 영상을 덮어요');
+    },
     'yt-edit': function () {
       YTV.edit = !YTV.edit; ytRenderBody();
       if (YTV.edit) toast('±를 누르면 바뀐 곳을 들려줘요 · 멈춘 곳에서 "지금"');
