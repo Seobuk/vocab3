@@ -313,6 +313,16 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   await p.click('#ytBox'); await p.waitForTimeout(100);
   const tm = await vt(); await p.click('#ytBox'); await paused();
   eq('문장 중간에 멈췄다 탭으로 이으면 그 문장 끝에서 멈춤', (await vt()) < 5.3 && (await vt()) > tm, true);
+  // v2.21: 영상 오른쪽·왼쪽 1/3 두 번 톡 = 다음·앞 문장
+  const side = async fx => { const bx = await p.$eval('#ytBox', e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }); await p.mouse.dblclick(bx[0] + bx[2] * fx, bx[1] + bx[3] / 2); await p.waitForTimeout(400); };
+  const actRow = () => p.$$eval('.ys.act', x => x.map(e => e.id).join());
+  await side(0.9);
+  eq('오른쪽 두 번 톡 → 다음 문장 재생', (await actRow()) + ' ' + (await p.evaluate(() => !document.querySelector('#ytPlayer').paused)), 'ys2 true');
+  await side(0.1);
+  eq('왼쪽 두 번 톡 → 앞 문장 재생', (await actRow()) + ' ' + (await p.evaluate(() => !document.querySelector('#ytPlayer').paused)), 'ys1 true');
+  await side(0.5); await p.waitForTimeout(200);
+  eq('가운데 두 번 톡은 문장 이동 없음', await actRow(), 'ys1');
+  await p.evaluate(() => document.querySelector('#ytPlayer').pause()); await p.waitForTimeout(100);
   // 고정 토글 (세로)
   const covered = () => p.evaluate(() => { const b = document.querySelector('#ytBox').getBoundingClientRect(); return document.querySelector('#ytBox').contains(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)) ? 'visible' : 'covered'; });
   await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 250; }); await p.waitForTimeout(150);

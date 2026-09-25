@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.20 (versionCode 44).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.21 (versionCode 45).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -31,7 +31,7 @@
     v2.17: 유튜브 문장을 꾹 눌러 담은 `S.sentBox`({id,e,k,vid,title,s,at}+가중치)도 풀에 들어간다 — `sentItem(id)` 로 단어/담은 문장을 찾는다, 카드에 📺 출처·빼기.
   - 사용 기록(v2.13) `S.usage['YYYY-MM-DD'] = {t, f:{study,sent,talk,yt,audio,etc: ms}, c:{sent,yt,talk}}`: `useTick()` 이 render()·onAppPause/Resume·15초 틱마다
     지금 화면의 기능으로 시간을 쌓는다(한 번에 최대 1분, 앱이 내려가면 안 셈, 백그라운드 듣기 복습 제외). `useCount()` 로 횟수. 통계 `useHTML()`. 테스트 `tools/test_usage.js`(Playwright clock).
-  - 유튜브 쉐도잉 `S.yt`(v2.2~): 링크 → oEmbed(제목) + Gemini `fileData.fileUri`(영상 통째, 구간 자르기 안 씀) → 문장 `{s,t(끝),e,k,x:[익힐 표현]}` — 시간은 Gemini 에게 영상 표기 MM:SS.d 로 받아 `ytSec()` 로 초 환산(초로 달라고 하면 1분 넘어서 틀림, v2.5; `r.tv=2`)
+  - 유튜브 쉐도잉 `S.yt`(v2.2~): 링크 → oEmbed(제목) + Gemini `fileData.fileUri`(첫 요청은 영상 통째, 이어 받기는 v2.21 부터 `videoMetadata.startOffset` 으로 뒷부분만 — 구간 기준 시간이 오면 앱이 더함, 400 이면 통째로) → 문장 `{s,t(끝),e,k,x:[익힐 표현]}` — 시간은 Gemini 에게 영상 표기 MM:SS.d 로 받아 `ytSec()` 로 초 환산(초로 달라고 하면 1분 넘어서 틀림, v2.5; `r.tv=2`)
     (한 문장은 끝까지 한 항목, 화면 자막 줄바꿈 무시). `yt` 목록 · `ytv` 영상 화면(YouTube IFrame API 는 이 화면에서만 로드).
     플레이어(#ytBox)는 목록(#ytList) 맨 위에 sticky 로 제자리, 목록을 올리면 불투명한 #ytBody 가 그 위를 덮는다 (v2.4, 사용자 요청 —
     v2.3 의 따라다니는 작은 창은 거슬린다고 뺐다). 버튼은 오른쪽 아래 #ytFab (z-index 19, 어두운 막 20 아래).
@@ -57,6 +57,9 @@
   - v2.19: 영상 길이 `r.dur`(ytTick 이 플레이어에서) — 안 잘렸어도(STOP) 마지막 문장이 영상 끝보다 1분 넘게 앞이면 이어 받기, 예전 기록은
     "이어서 정리하기"(`ytContinue`, 뒷부분만 붙임, `YTJOB.more`). 다시 정리가 일부만 받으면 완성본 유지. 이어 받기 겹침은 앞 문장 시작·같은 문장으로 거름,
     앞으로 못 나가면 멈춤, 요청에 마지막 문장 인용. 선택창 "📖 단어 뜻 보기"(`YTV.wpick`, 한 번 톡 — TalkBack).
+  - v2.21: 끝에 영어 말이 없다고 확인되면 `r.tail`(=그때 마지막 끝) → `ytTailDone` 이면 "이어서 정리하기" 안내·링크 숨김. 일찍 멈춤 이어 받기는 3번까지.
+    다시 정리는 새 결과가 있던 것보다 덜 갔을 때만 버림. status 0 재시도는 걸린 시간으로(10분 초과만 뺌). 진행 표시 `#ytJobT`("N분째", ytTick 이 갱신).
+    받은 영상 좌우 1/3 두 번 톡(400ms, `YTV.vtap`) = 앞·뒤 문장. 회색 ▶ 는 `WebChromeClient.getDefaultVideoPoster()` 투명 1x1.
   - v2.18: 단어 한 번 톡 = 문장 다시 재생, 두 번 톡(400ms, `YTV.tap`) = 뜻. 정리 `ytTranscribe`: 답이 잘리면(MAX_TOKENS·못 읽는 JSON → `ytSalvage`)
     마지막 문장 끝부터 "Continue … after MM:SS.d" 로 이어 받기(최대 20번), 0·5xx 는 `YT_RETRY` 간격으로 두 번 더, 못 읽은 답도 두 번 더. 테스트 `tools/test_yt_long.js`.
   - v2.17: 문장 꾹 누르기 = 선택창 `ytRowMenu`(문장 공부에 넣기·복사·앞/뒤와 합치기 `ytMergeAt`→`ytJoin`·쪼개기 `YTV.split`→단어 누름 `ytSplitAt`),

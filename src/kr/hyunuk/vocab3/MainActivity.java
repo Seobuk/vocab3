@@ -126,7 +126,12 @@ public class MainActivity extends Activity {
                 if (url == null || !url.startsWith("https://" + getPackageName() + "/")) backHandled = false;
             }
         });
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public Bitmap getDefaultVideoPoster() {   // 받은 영상 재생 전의 커다란 회색 ▶ 그림 — <video poster> 로는 안 가려져서 투명 1x1 로 (v2.21)
+                return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+            }
+        });
         web.addJavascriptInterface(new Bridge(), "Android");
         if (Build.VERSION.SDK_INT >= 35) {
             // Android 15+: edge-to-edge is enforced, so pad the WebView by the system bar / keyboard insets.
