@@ -84,3 +84,5 @@ npm test
 ## 라이선스
 
 소스 코드는 [MIT](LICENSE)입니다. v2.14부터 배포 APK에는 NewPipeExtractor(GPL-3.0-or-later) 등이 들어가므로 **배포 APK는 GPL-3.0-or-later 조건**입니다 — [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [COPYING.GPL-3.0.txt](COPYING.GPL-3.0.txt).
+
+**부탁:** 이 앱은 개인 학습용으로 만들었습니다. 상업적으로 이용(판매·유료 서비스·광고 수익 등)하지 말아 주세요. 이 부탁은 위 라이선스에 조건을 더하는 것이 아니며 법적 구속력은 없습니다 (GPL 은 추가 제한을 허용하지 않습니다).

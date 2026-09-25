@@ -14,4 +14,6 @@ NewPipeExtractor가 GPL-3.0-or-later이므로 **배포 APK 전체는 GPL-3.0-or-
 | protobuf-javalite | 4.35.1 | BSD-3-Clause | https://github.com/protocolbuffers/protobuf |
 | Mozilla Rhino | 1.8.1 | MPL-2.0 | https://github.com/mozilla/rhino |
 
+개인 학습용으로 만든 앱이니 상업적으로 이용하지 말아 주세요 — 라이선스 조건이 아닌 부탁입니다 (GPL 은 추가 제한을 허용하지 않음).
+
 유튜브 영상을 받는 것은 YouTube 서비스 약관에 어긋날 수 있습니다. 이 기능은 개인 학습용이며, Google Play 등록용 빌드에는 넣지 않습니다.
