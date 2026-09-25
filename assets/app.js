@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.15';
+  var APP_VERSION = '2.16';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -445,6 +445,8 @@
     var ml = bridge.mediaList();   // v2.14 받은 영상 — 실제 파일과 맞춘다 (복원한 백업의 off 도 이 폰 파일 기준)
     s.yt.forEach(function (r) {
       r.title = String(r.title || ''); r.date = String(r.date || ''); r.addedAt = Number(r.addedAt) || 0; r.sents = Array.isArray(r.sents) ? ytClean(r.sents) : null; if (r.tv !== 2 && r.tv !== 3) delete r.tv;
+      if (r.sents && !r.mb) { var n0 = r.sents.length; r.sents = ytMergeBroken(r.sents); if (r.sents.length !== n0) delete r.snap; }   // v2.16: 자막 줄 단위로 쪼개진 예전 정리도 한 번 되붙인다
+      if (r.sents) r.mb = 1;
       var o = ml ? ml[r.vid] : r.off; delete r.off;
       if (o && (o.kind === 'mp4' || o.kind === 'm4a')) r.off = { kind: o.kind, size: Number(o.size) || 0 };
       if (r.snap !== 1 || !r.off) delete r.snap;   // 파형으로 맞춘 경계 (vs/ve 는 파일을 지워도 유튜브 재생에 그대로 쓴다)
@@ -1848,9 +1850,9 @@
       var out = parseAiJson(res.text);
       out = Array.isArray(out) ? out : out && Array.isArray(out.sents) ? out.sents : null;
       if (!out) throw { msg: '정리 결과를 이해하지 못했어요. 다시 시도해 주세요' };
-      var ns = ytMergeShort(ytClean(out));
+      var ns = ytMergeShort(ytMergeBroken(ytClean(out)));
       if (!ns.length && r.sents && r.sents.length) throw { msg: '영어 문장을 찾지 못했어요' };   // 다시 정리가 빈손이면 있던 문장·단어 뜻 캐시를 지우지 않는다
-      r.sents = ns; r.tv = 3; delete r.snap; save();   // tv 2: 시간을 MM:SS 로 받아 앱이 환산 (v2.5) · tv 3: v2.9 정리 (생각 low · 1초 2장, 거절되면 1장)
+      r.sents = ns; r.tv = 3; r.mb = 1; delete r.snap; save();   // tv 2: 시간을 MM:SS 로 받아 앱이 환산 (v2.5) · tv 3: v2.9 정리 (생각 low · 1초 2장, 거절되면 1장)
       ytSnap(r);   // 받은 영상이 있으면 새 문장 경계도 파형으로 (파일은 그대로)
       YTJOB[r.id] = { busy: false, err: r.sents.length ? '' : '영어 음성을 찾지 못했어요' };
       if (YTV && YTV.id === r.id) { YTV.act = -1; YTV.cur = -1; YTV.card = null; YTV.ko = {}; YTV.stopAt = null; }   // 문장 번호가 바뀌었다
@@ -1870,6 +1872,7 @@
         'Transcribe ALL English speech in the video, in order, exactly as spoken (leave out filler sounds like "um"; do not correct grammar).',
         'One item = one COMPLETE sentence, from its first word to its final punctuation (. ? !). Never split a sentence into two or more items, even if it is long or the speaker pauses in the middle of it.',
         'Ignore on-screen subtitles and caption line breaks: captions often cut one sentence across two lines, so always merge the pieces back into the full spoken sentence. Follow the speech, not the captions.',
+        'Many videos have burned-in captions (English and/or Korean) that cut one spoken sentence into several short lines; never copy that line breaking. Every "e" must be a whole sentence that ends with . ? or !',
         'For each item, in this order: "s" = the moment the first word of the sentence begins, "e" = the English sentence, "t" = the moment its last word ends, "k" = a natural Korean translation. "s" and "t" are timestamps on the video timeline in MM:SS.d format — minutes:seconds with one decimal, e.g. "01:15.4" and "01:19.8" (use H:MM:SS.d past one hour). Read them straight off the MM:SS timestamps you see for the video; do NOT convert them to total seconds. "t" must not include any of the next sentence or the pause after it. Times increase from item to item.',
         '"x" = 0 to 3 words or expressions from that sentence worth learning for an intermediate (B1-B2) learner: idioms, phrasal verbs, collocations, less common words; never basic words. Each: "q" = the exact text as it appears in "e", "w" = its dictionary form, "p" = one of n., v., adj., adv., phr., idiom, "m" = a short Korean meaning in this context.',
         'Do not make very short interjections (1-3 words such as "Yes.", "Right.", "Okay.", "Thank you.") separate items: join them to the neighbouring sentence of the same speaker.',
@@ -2228,6 +2231,25 @@
   }
   // 새로 정리한 문장 중 너무 짧은 것(3단어 이하: "Yes." "Right.")은 시간 간격이 더 가까운 앞이나 뒤 문장과 합친다
   function ytWords(e) { return ytTokens(e).filter(function (t, k) { return k % 2 === 1; }).length; }
+  // v2.16: 화면에 박힌 자막을 따라 한 문장이 여러 줄로 쪼개진 결과를 되붙인다 — 영어가 . ? ! 로 끝나지 않으면 다음 것과 합친다.
+  // ponytail: 문장부호로만 판단, 한 덩어리는 20초·50단어까지 (문장부호를 통째로 빼먹은 결과가 거대한 한 문장이 되지 않게)
+  function ytMergeBroken(a) {
+    var out = [], END = /[.?!…。？！]["'”’)\]]*$/;
+    a.forEach(function (x) {
+      var p = out[out.length - 1], pEnd = p ? (p.t != null ? p.t : p.s) : 0;
+      if (p && !END.test(p.e.trim()) && x.s - pEnd < 1.5 && (x.t != null ? x.t : x.s) - p.s <= 20 && ytWords(p.e) + ytWords(x.e) <= 50) {
+        var m = { s: p.s, e: p.e + ' ' + x.e, k: (p.k + ' ' + x.k).replace(/^\s+|\s+$/g, ''), x: p.x.concat(x.x).slice(0, 3) };
+        if (x.t != null) m.t = x.t;
+        if (p.ms) m.ms = 1;
+        if (x.me && m.t != null) m.me = 1;   // 손으로 고친 시작은 앞 조각, 끝은 뒤 조각 것
+        if (p.vs != null) m.vs = p.vs;
+        if (x.ve != null) m.ve = x.ve;
+        if (p.lk || x.lk) { m.lk = {}; [p.lk, x.lk].forEach(function (l) { for (var k in l) if (Object.prototype.hasOwnProperty.call(l, k)) m.lk[k] = l[k]; }); }   // 눌러 본 단어 뜻 캐시
+        out[out.length - 1] = m;
+      } else out.push(x);
+    });
+    return out;
+  }
   function ytMergeShort(a) {
     a = a.slice();
     var endOf = function (x) { return x.t != null ? x.t : x.s; };

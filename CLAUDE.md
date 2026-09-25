@@ -2,7 +2,7 @@
 
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.15 (versionCode 39).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.16 (versionCode 40).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -40,7 +40,8 @@
     유튜브 받아쓰기는 항상 `AI_DEFAULT_MODEL`(Flash-Lite — 다른 모델은 시간이 크게 밀림), 스키마 propertyOrdering s,e,t,k,x. 플레이어 controls 0.
     v2.9 정밀도: `thinkingConfig {thinkingLevel:'low'}`(aiGenerate 는 부르는 쪽 생각 설정을 thinkingBudget 0 으로 덮지 않고, 400+think 면 빼고 한 번 더)
     + `videoMetadata {fps:2}`(입력 토큰 약 1.7배 → 429·400 이면 fps 없이 한 번 더). 제한 시간 600초(JS `YT_AI_MS`·Java setReadTimeout). 새 정리는 `r.tv=3`, 그 전 영상엔 "다시 정리하기" 안내.
-    새 결과는 `ytMergeShort` 로 3단어 이하 문장을 시간 간격이 짧은 이웃에 합친다. 테스트 `tools/test_yt_merge.js`.
+    새 결과는 `ytMergeBroken`(v2.16: . ? ! 로 안 끝나면 다음 것과, 20초·50단어 한도 — 화면에 박힌 자막 줄 단위로 쪼갠 결과를 되붙임, 예전 정리는 migrate 에서 `r.mb` 로 한 번) →
+    `ytMergeShort` 로 3단어 이하 문장을 시간 간격이 짧은 이웃에 합친다. 테스트 `tools/test_yt_merge.js`.
     v2.8 의 "소리로 문장 끝 맞추기"(Visualizer 음량 VAD) 실험은 v2.9 에서 뺐다 — 사용자 결정, 다시 넣지 말 것.
     남은 오차는 Gemini 시간 자체(fps 2 = 0.5초 간격, fps 없이 다시 보낸 영상은 1초 간격; 1초 간격일 때 평균 1~2초 틀렸음).
   - 손 보정(v2.11, 사용자 요청 — 가로 화면만): 영상 아래 왼쪽 `#ytSide` 패널(`ytSideRender`/`ytEditHTML`/`ytAdj`)에서 누른 문장(`YTV.act`)의 시작·끝을 ±0.1·0.5초·"지금"(영상 위치).

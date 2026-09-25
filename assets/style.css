@@ -564,8 +564,10 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .yt-player iframe, .yt-player #ytPlayer { position: absolute; left: 0; top: calc(-1 * var(--ytcut)); width: 100%; height: calc(100% + 2 * var(--ytcut)); border: 0; }
 /* v2.15 영상 고정(📌): 영상을 목록 위로 올려 문장이 덮지 않게 + 따라가기·단어 카드가 영상 밑으로 숨지 않게.
    고정 중(세로)엔 화면 폭 그대로 16:9 — max-height 45vh 가 비율을 타고 폭을 줄이면(Fold 안쪽 화면) 오른쪽 틈으로 가린 문장이 보이고 눌렸다 */
-#view-ytv.yt-pinned .yt-player { z-index: 2; box-shadow: 0 6px 14px rgba(0, 0, 0, .12); width: calc(100% + 20px); max-height: none; }
-#view-ytv.yt-pinned .yt-list { scroll-padding-top: 56.25vw; }   /* = 고정된 영상 높이 */
+@media (orientation: portrait) {   /* 세로에서만 — 가로 배치(왼쪽 영상 --ytw)를 덮으면 화면이 깨진다 (v2.16 수정) */
+  #view-ytv.yt-pinned .yt-player { z-index: 2; box-shadow: 0 6px 14px rgba(0, 0, 0, .12); width: calc(100% + 20px); max-height: none; }
+  #view-ytv.yt-pinned .yt-list { scroll-padding-top: 56.25vw; }   /* = 고정된 영상 높이 */
+}
 .yt-pinb { font-size: 18px; border-radius: 12px; opacity: .55; }
 .yt-pinb.on { opacity: 1; background: var(--primary-soft); }
 .yt-player[data-action] { cursor: pointer; }   /* 받은 영상: 탭 = 멈춤/재생 */
@@ -597,7 +599,6 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
   #view-ytv .yt-player { position: absolute; top: 58px; left: 0; width: var(--ytw); margin: 0; min-height: 0; max-height: none; }   /* #view-ytv 기준 — 목록을 스크롤해도 안 움직임 */
   #view-ytv .yt-list { margin-left: var(--ytw); }
   #view-ytv .yt-pinb { visibility: hidden; }   /* 가로는 원래 안 가려진다 — 자리는 남겨 제목이 가운데 */
-  #view-ytv.yt-pinned .yt-list { scroll-padding-top: 0; }
   #view-ytv .yt-body { border-radius: 0; box-shadow: none; min-height: 0; }
 }
 .yt-hint { padding: 2px 6px 8px; line-height: 1.5; }

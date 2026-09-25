@@ -324,6 +324,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   eq('Fold 안쪽 화면 세로 + 고정: 영상 폭 = 화면 폭(오른쪽 틈 없음) · 16:9 · 여백 = 영상 높이', await p.evaluate(() => { const b = document.querySelector('#ytBox'), l = document.querySelector('#ytList'); return [b.offsetWidth === l.clientWidth, Math.abs(b.offsetHeight - b.offsetWidth * 9 / 16) < 1.5, Math.abs(parseFloat(getComputedStyle(l).scrollPaddingTop) - b.offsetHeight) < 1.5].join(); }), 'true,true,true');
   eq('받은 영상 탭 영역 = 버튼(TalkBack)', await p.evaluate(() => ['role', 'aria-label'].map(k => document.querySelector('#ytBox').getAttribute(k)).join()), 'button,재생·멈춤');
   await p.setViewportSize({ width: 844, height: 390 }); await p.waitForTimeout(250);
+  eq('고정한 채 가로로 돌려도 왼쪽 영상 · 오른쪽 스크립트 (영상이 목록을 안 덮음)', await p.evaluate(() => { const b = document.querySelector('#ytBox').getBoundingClientRect(), l = document.querySelector('#ytList').getBoundingClientRect(); return [Math.round(b.right) <= Math.round(l.left) + 1, b.width < innerWidth * 0.6, getComputedStyle(document.querySelector('#ytList')).scrollPaddingTop].join(); }), 'true,true,auto');
   eq('가로 화면: 고정 버튼 숨김(원래 안 가려짐)', await p.$eval('.yt-pinb', e => getComputedStyle(e).visibility), 'hidden');
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
   await p.click('.yt-pinb'); await p.waitForTimeout(150);
