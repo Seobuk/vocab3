@@ -45,7 +45,7 @@ const SENTS = [
 
   // --- 선택창 ---
   await menu(0);
-  eq('꾹 누르면 선택창: 문장·한글 + 5가지 · 첫 문장은 "앞과 합치기" 꺼짐', await p.textContent('#sheet .ym-e') + ' | ' + await p.$$eval('#sheet .yt-menu .btn', x => x.map(e => (e.disabled ? '-' : '+') + e.getAttribute('data-action')).join()), 'Hi everyone, welcome back. | +yt-m-study,+yt-m-copy,-yt-m-merge,+yt-m-merge,+yt-m-split');
+  eq('꾹 누르면 선택창: 문장·한글 + 5가지 · 첫 문장은 "앞과 합치기" 꺼짐', await p.textContent('#sheet .ym-e') + ' | ' + await p.$$eval('#sheet .yt-menu .btn', x => x.map(e => (e.disabled ? '-' : '+') + e.getAttribute('data-action')).join()), 'Hi everyone, welcome back. | +yt-m-study,+yt-m-copy,+yt-m-word,-yt-m-merge,+yt-m-merge,+yt-m-split');
   await p.screenshot({ path: OUT + '/350-yt-menu.png' });
 
   // --- 문장 공부에 넣기 ---
@@ -108,6 +108,13 @@ const SENTS = [
   await menu(1); await p.click('#sheet [data-action="yt-m-split"]'); await p.waitForTimeout(250);
   await p.click('#ys2 .ys-t'); await p.waitForTimeout(150);
   eq('다른 문장을 누르면 쪼개기 취소 · 그 문장 재생', (await p.$$eval('.ys.splitting', x => x.length)) + ' ' + (await es()).length, '0 3');
+
+  // --- v2.19 "📖 단어 뜻 보기" → 한 번 톡으로 뜻 (TalkBack 등) ---
+  await menu(2); await p.click('#sheet [data-action="yt-m-word"]'); await p.waitForTimeout(250);
+  eq('단어 고르기 안내', await p.textContent('#ys2 .yt-split-h'), '📖 뜻을 볼 단어를 누르세요 · 취소');
+  await p.click('#ys2 .yw[data-t="3"]'); await p.waitForTimeout(250);
+  eq('한 번 톡 = 그 단어 뜻 카드 · 모드 끝', (await p.$$eval('#ys2 .ycard', x => x.length)) + ' ' + (await p.$$eval('.ys.splitting', x => x.length)), '1 0');
+  await p.click('#ys2 [data-action="yt-card-close"]'); await p.waitForTimeout(150);
 
   // --- 담은 문장이 영어 문장 공부에 나옴 (졸업 단어 없어도) · 빼기 ---
   await p.evaluate(() => window.__vocab.go('home')); await p.waitForTimeout(200);

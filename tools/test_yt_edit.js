@@ -136,7 +136,7 @@ const SENTS = [
   const sk2 = (await yt('seek')).length;
   const e2 = await p.$eval('#ys2 .ys-e', e => { const r = e.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
   await p.mouse.move(e2.x, e2.y); await p.mouse.down(); await p.waitForTimeout(700); await p.mouse.up(); await p.waitForTimeout(150);
-  eq('꾹 누르면 선택창(문장 공부·복사·합치기·쪼개기) · 떼도 재생 안 함', (await p.$$eval('#sheet.show .yt-menu .btn', x => x.map(e => e.getAttribute('data-action')).join())) + ' | ' + ((await yt('seek')).length - sk2), 'yt-m-study,yt-m-copy,yt-m-merge,yt-m-merge,yt-m-split | 0');
+  eq('꾹 누르면 선택창(문장 공부·복사·합치기·쪼개기) · 떼도 재생 안 함', (await p.$$eval('#sheet.show .yt-menu .btn', x => x.map(e => e.getAttribute('data-action')).join())) + ' | ' + ((await yt('seek')).length - sk2), 'yt-m-study,yt-m-copy,yt-m-word,yt-m-merge,yt-m-merge,yt-m-split | 0');
   await p.click('#sheet [data-action="yt-m-copy"]'); await p.waitForTimeout(250);
   eq('"복사" = 영어 문장 복사 + 안내', (await p.evaluate(() => window.__copied)) + ' | ' + await toast(), "Let's figure out the rest. | 문장을 복사했어요");
   await p.click('#ys2 .ys-t'); await p.waitForTimeout(150);
