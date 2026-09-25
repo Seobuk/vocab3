@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.19';
+  var APP_VERSION = '2.20';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -2044,7 +2044,7 @@
         (r.tv === 3 ? '' : '<div class="yt-old">문장 시간을 더 정확하게 맞추도록 바꿨어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
         (YTV.undo && YTV.undo.id === r.id ? '<div class="yt-undo">' + (YTV.undo.kind === 'merge' ? '⤓ 문장을 합쳤어요' : '✂ 문장을 쪼갰어요') + ' · <b data-action="yt-undo">되돌리기</b></div>' : '') +
         '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 단어를 두 번 톡 누르면 뜻 · 한글은 눌러서 보기 · 꾹 누르면 문장 공부·복사·합치기·쪼개기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
-        '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b></div>');
+        '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b><br>뒷부분이 빠졌으면 <b data-action="yt-more">이어서 정리하기</b></div>');   // v2.20: 영상 길이를 몰라도 늘 있게
     ytSideRender();
   }
   function ytRowHTML(r, i) {
@@ -2194,7 +2194,7 @@
     var local = !!(r.off && !YTV.noLocal);
     box.classList.toggle('local', local);   // 받은 영상엔 v2.11 잘라내기(--ytcut) 안 씀 — 칸에 딱 맞게
     ['data-action', 'role', 'tabindex', 'aria-label'].forEach(function (k, i) { if (local) box.setAttribute(k, ['yt-tap', 'button', '0', '재생·멈춤'][i]); else box.removeAttribute(k); });   // 받은 영상은 탭 = 멈춤/재생 (유튜브 iframe 은 자체 탭 동작)
-    box.innerHTML = local ? '<video id="ytPlayer" playsinline preload="auto"></video>' + (r.off.kind === 'm4a' ? '<div class="yt-acard"><b>🎧</b><span>' + esc(r.title || '소리만 받은 영상') + '</span></div>' : '') : '<div id="ytPlayer"></div>';
+    box.innerHTML = local ? '<video id="ytPlayer" playsinline preload="auto" poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>' + (r.off.kind === 'm4a' ? '<div class="yt-acard"><b>🎧</b><span>' + esc(r.title || '소리만 받은 영상') + '</span></div>' : '') : '<div id="ytPlayer"></div>';
     if (local) { ytMakeLocal(r, box.querySelector('video')); return; }
     ytApi(function () {
       if (YTV !== myV || YTP || !$('#ytPlayer') || current().view !== 'ytv') return;
@@ -2463,7 +2463,7 @@
   function ytTick() {
     if (!YTP || !YTV || !YTV.ready) return;
     var r = ytRec(YTV.id), t; if (!r) return;
-    if (!(r.dur > 0)) { var du = 0; try { du = YTP.getDuration ? YTP.getDuration() : 0; } catch (e) { } if (du > 0) { r.dur = Math.round(du); save(); } }   // v2.19: 영상 길이 — 정리가 끝까지 됐는지 본다
+    if (!(r.dur > 0)) { var du = 0; try { du = YTP.getDuration ? YTP.getDuration() : 0; } catch (e) { } if (du > 0) { r.dur = Math.round(du); save(); if (ytShort(r)) ytRenderBody(); } }   // 길이를 알게 된 순간 "이어서 정리하기" 안내가 바로 뜨게 (v2.20)   // v2.19: 영상 길이 — 정리가 끝까지 됐는지 본다
     if (!r.sents) return;
     try { t = YTP.getCurrentTime(); } catch (e) { return; }
     // 멈춤: seekTo 직후 getCurrentTime 은 옛 위치를 돌려주므로(iframe API 캐시) 새 위치가 보인 뒤에야 판정을 켠다.

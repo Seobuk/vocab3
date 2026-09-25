@@ -104,6 +104,13 @@ const body = (txt, fin) => JSON.stringify({ candidates: [{ content: { parts: [{ 
   await p.evaluate(([a]) => { window.__calls = []; window.__seq = [[200, a]]; }, [body(JSON.stringify(P5), 'STOP')]);
   await p.click('[data-action="yt-more"]'); await p.waitForTimeout(900);
   eq('이어서 정리: 뒷부분만 1번 요청 · 겹친 문장 빼고 붙임(3 → 5) · 안내 사라짐', (await userText(0)).startsWith('Continue an earlier transcript') + ' ' + (await rec('LONGVIDEO11')).sents.length + ' ' + await p.$$eval('.yt-old', x => x.filter(e => /이어서/.test(e.textContent)).length), 'true 5 0');
+  // --- v2.20: 화면을 연 뒤 길이를 알게 되면 안내가 바로 뜸 (나갔다 들어오지 않아도) · 맨 아래에도 늘 "이어서 정리하기" ---
+  await p.evaluate(() => { window.__dur = 0; window.__delay = 0; });
+  await p.evaluate(([a]) => { window.__calls = []; window.__seq = [[200, a]]; }, [body(JSON.stringify(P1), 'STOP')]);
+  await add('LONGVIDEO12'); await p.waitForTimeout(900);
+  eq('길이를 모를 땐 위 안내 없음 · 맨 아래엔 늘 있음', (await p.$$eval('.yt-old', x => x.filter(e => /이어서/.test(e.textContent)).length)) + ' ' + await p.$$eval('.yt-redo [data-action="yt-more"]', x => x.length), '0 1');
+  await p.evaluate(() => { window.__dur = 900; }); await p.waitForTimeout(500);
+  eq('길이를 알게 되면 바로 위에 안내', await p.$$eval('.yt-old', x => x.filter(e => /까지만 정리됐어요 \(영상 15:00\)/.test(e.textContent)).length), 1);
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();
 })();
