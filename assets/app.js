@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.25';
+  var APP_VERSION = '2.26';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -639,7 +639,7 @@
   }
   function openSheet(html) {
     var s = $('#sheet');
-    s.innerHTML = '<div class="grip"></div>' + html;
+    s.innerHTML = '<div class="grip"></div>' + html; s.scrollTop = 0;   // 앞 창을 스크롤했어도 새 창은 맨 위부터 (v2.26)
     $('#overlay').classList.add('show');
     requestAnimationFrame(function () { s.classList.add('show'); });
     sheetOpen = true; updateBack();
@@ -2169,7 +2169,7 @@
         : j.moreErr ? '<div class="yt-old">⚠ ' + esc(j.moreErr) + ' · <b data-action="yt-more">다시 이어서</b></div>' : ytShort(r) ? '<div class="yt-old">⏱ ' + esc(ytMMSS(ytLastEnd(r))) + '까지만 정리됐어요 (영상 ' + fmtSec(r.dur) + ') · <b data-action="yt-more">이어서 정리하기</b></div>' : '') +
         (r.tv === 3 ? '' : '<div class="yt-old">문장 시간을 더 정확하게 맞추도록 바꿨어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
         (YTV.undo && YTV.undo.id === r.id ? '<div class="yt-undo">' + (YTV.undo.kind === 'merge' ? '⤓ 문장을 합쳤어요' : '✂ 문장을 쪼갰어요') + ' · <b data-action="yt-undo">되돌리기</b></div>' : '') +
-        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장' + ((S.settings.ytHintN || 0) <= 3 ? ' · 문장을 누르면 그 부분부터 재생 · 단어를 두 번 톡 누르면 뜻 · 한글은 눌러서 보기 · 꾹 누르면 문장 공부·복사·합치기·쪼개기' : '') + '</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
+        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장' + ((S.settings.ytHintN || 0) <= 3 ? ' · 문장을 누르면 그 부분부터 재생 · 두 번 톡 = 한글 보기 (단어를 두 번 톡 = 뜻) · 꾹 누르면 문장 공부·복사·합치기·쪼개기' : '') + '</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
         '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b>' + (ytTailDone(r) || j.more ? '' : '<br>뒷부분이 빠졌으면 <b data-action="yt-more">이어서 정리하기</b>') + '</div>');   // v2.20: 영상 길이를 몰라도 늘 있게 (v2.21: 뒤엔 말이 없다고 확인되면 뺌)
     ytSideRender();
   }
@@ -2183,6 +2183,16 @@
       '<span class="ys-t">' + (YTV.edit ? fmtSecD(ytStart(x)) : fmtSec(ytStart(x))) + (x.ms || x.me ? '<i class="ys-m" title="손으로 고친 시간">✎</i>' : '') + '</span><div class="ys-b"><div class="ys-e">' + e + '</div>' +
       (x.k ? '<button class="ko-line' + (YTV.ko[i] ? '' : ' blur') + '" data-action="yt-ko" data-i="' + i + '">' + esc(x.k) + '</button>' : '') +
       (c ? ytCardHTML(c) : '') + (YTV.split === i ? '<div class="yt-split-h">✂ 두 번째 문장이 시작될 단어를 누르세요 · <b data-action="yt-split-cancel" data-i="' + i + '">취소</b></div>' : YTV.wpick === i ? '<div class="yt-split-h">📖 뜻을 볼 단어를 누르세요 · <b data-action="yt-split-cancel" data-i="' + i + '">취소</b></div>' : '') + '</div></div>';
+  }
+  function ytSentTap(i) {   // v2.26: 문장·한글 줄 한 번 톡 = 그 문장 재생 · 두 번 톡(400ms) = 가린 한글 보이기/가리기 (단어장 예문과 같게, 사용자 요청)
+    var now = Date.now(), lt = YTV.stap;
+    if (lt && lt.i === i && now - lt.at < 400) {
+      YTV.stap = null; YTV.ko[i] = !YTV.ko[i];
+      var k = $('#ys' + i + ' .ko-line'); if (k) k.classList.toggle('blur', !YTV.ko[i]);
+      return;
+    }
+    YTV.stap = { i: i, at: now };
+    ytPlaySent(i);
   }
   // --- 문장 선택창 (v2.17, 꾹 누르기): 문장 공부에 넣기 · 복사 · 앞/뒤와 합치기 · 쪼개기 ---
   function ytRowMenu(i) {
@@ -3497,7 +3507,7 @@
       var hand = (r.sents || []).some(function (x) { return x.ms || x.me; });
       confirm2('문장을 처음부터 다시 정리할까요?\n(단어장에 추가한 단어는 그대로 있어요)' + (hand ? '\n손으로 고친 시간도 새로 정리돼요' : ''), '다시 정리').then(function (ok) { if (ok) ytProcess(r); });
     },
-    'yt-sent': function (el) { ytModeOff(); ytPlaySent(+el.getAttribute('data-i')); },   // 다른 곳을 누르면 쪼개기·단어 고르기 취소
+    'yt-sent': function (el) { ytModeOff(); ytSentTap(+el.getAttribute('data-i')); },   // 다른 곳을 누르면 쪼개기·단어 고르기 취소
     'yt-word': function (el) {   // v2.18: 한 번 톡 = 그 문장 (다시) 재생 · 두 번 톡 = 단어 뜻 (다시 들으려다 뜻이 열리던 것) · 쪼개기 중이면 그 단어 앞에서 나눔
       var i = +el.getAttribute('data-i'), k = +el.getAttribute('data-t'), now = Date.now(), lt = YTV.tap;
       if (YTV.split === i) { ytSplitAt(i, k); return; }
@@ -3532,7 +3542,7 @@
       delete r.snap; if (r.off) ytSnap(r);
       save(); ytRenderBody(); toast('되돌렸어요');
     },
-    'yt-ko': function (el) { var i = +el.getAttribute('data-i'); YTV.ko[i] = !YTV.ko[i]; el.classList.toggle('blur', !YTV.ko[i]); },
+    'yt-ko': function (el) { ytModeOff(); ytSentTap(+el.getAttribute('data-i')); },   // v2.26: 한글 줄도 한 번 톡 = 재생 · 두 번 톡 = 한글 보이기/가리기
     'yt-card': function () { },
     'yt-tap': function (el, e) {   // 받은 영상 탭: 재생 중이면 멈춤, 멈춰 있으면 이어 재생 — 문장 중간에서 멈췄다 이으면 그 문장 끝에서 멈춤(stopAt 그대로)
       if (!YTP || !YTP.local || !YTV.ready) return;

@@ -132,16 +132,22 @@ const SENTS = [
   eq('영상을 눌러 이어 보면 괄호는 시간 따라 다음 문장으로', await p.$$eval('#ytList .ys.cur', x => x.map(e => e.id).join()), 'ys2');
   await p.evaluate(() => { window.__vocab.state().yt[0].sents[2].s = 7.8; });
 
-  // --- 한글 가림 → 누르면 보임 ---
-  await p.click('#ys1 .ko-line'); await p.waitForTimeout(100);
-  eq('누른 문장만 한글 보임', await p.$$eval('#ytList .ko-line.blur', x => x.length), 2);
-  eq('한글 눌러도 재생 안 함', (await yt('seek')).length, 3);
+  // --- v2.26: 한글 줄 한 번 톡 = 그 문장 재생(한글은 그대로 가림) · 두 번 톡 = 한글 보임 ---
+  const skK = (await yt('seek')).length;
+  await p.click('#ys1 .ko-line'); await p.waitForTimeout(500);
+  eq('한글 한 번 톡 = 재생 · 한글은 그대로 가림', ((await yt('seek')).length - skK) + ' ' + await p.$$eval('#ytList .ko-line.blur', x => x.length), '1 3');
+  await p.dblclick('#ys1 .ko-line'); await p.waitForTimeout(150);
+  eq('두 번 톡 = 누른 문장만 한글 보임', await p.$$eval('#ytList .ko-line.blur', x => x.length), 2);
+  await p.waitForTimeout(500); await p.dblclick('#ys1 .ys-t'); await p.waitForTimeout(150);
+  eq('문장 줄(시간 자리) 두 번 톡 = 다시 가림', await p.$$eval('#ytList .ko-line.blur', x => x.length), 3);
+  await p.waitForTimeout(500); await p.dblclick('#ys1 .ko-line'); await p.waitForTimeout(500);
+  const skW = (await yt('seek')).length;
 
   // --- 재생한 문장의 단어: 익힐 표현은 바로 뜻 ---
   await p.dblclick('#ys1 .yw[data-t="5"]'); await p.waitForTimeout(150);   // v2.18: 두 번 톡 = 뜻
   eq('표현 카드', await p.textContent('#ys1 .ycard .yc-h b') + ' = ' + await p.textContent('#ys1 .ycard .yc-m'), 'dig into = 파고들다');
   eq('표현은 Gemini 안 부름', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)).length), 0);
-  eq('두 번 톡: 첫 톡이 문장을 한 번 다시 재생, 둘째 톡은 뜻만', (await yt('seek')).length, 4);
+  eq('두 번 톡: 첫 톡이 문장을 한 번 다시 재생, 둘째 톡은 뜻만', (await yt('seek')).length - skW, 1);
   await p.screenshot({ path: OUT + '/302-yt-word.png' });
   await p.click('#ys1 [data-action="yt-add-word"][data-stage="1"]'); await p.waitForTimeout(150);
   const added = await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'dig into'); return w && [w.stage, w.m, w.e, w.k, w.t, w.dailyDate ? 'd' : ''].join('|'); });

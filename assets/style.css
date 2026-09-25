@@ -257,7 +257,7 @@ h1, h2, h3, p { margin: 0; }
 .overlay.show { display: block; }
 .sheet {
   position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 24px 24px 0 0;
-  padding: 14px 20px 24px; z-index: 21; transform: translateY(100%); transition: transform .25s ease-out; max-height: 88%; overflow-y: auto;
+  padding: 14px 20px 24px; z-index: 21; transform: translateY(calc(100% + 40px)); transition: transform .25s ease-out;   /* +40px: 넓은 화면의 떠 있는 판과 숨은 위치를 같게 — 폴드를 펼 때 닫힌 창이 비치지 않게 (v2.26) */ max-height: 88%; overflow-y: auto;
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }
 .sheet.show { transform: none; }
@@ -764,3 +764,16 @@ body { word-break: keep-all; overflow-wrap: break-word; }
 .item .it-k { transition: filter .2s, opacity .2s; }
 .item .it-k.hid { filter: blur(5px); opacity: .55; }
 .item .it-src { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+/* ===== v2.26 넓은 화면(폴드 안쪽·가로)에선 아래 창을 오른쪽 아래에 작게 — 영상·목록이 가려지지 않게 (사용자 요청) ===== */
+@media (min-width: 600px) {
+  .sheet { left: auto; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); width: min(380px, calc(100% - 28px)); max-height: calc(100% - 28px); border-radius: 22px; padding: 16px 18px 18px; box-shadow: var(--shadow-float); }   /* 14px: 유튜브 떠 있는 버튼(#ytFab)과 맞춰 판이 덮는다 */
+  .sheet.show { transform: none; }
+  .sheet .grip { display: none; }
+  .sheet .sh-word { font-size: 22px; }
+  .overlay { background: rgba(0, 0, 0, .22); }
+  .overlay:has(~ .modal.show) { background: rgba(0, 0, 0, .45); }   /* 확인 창은 예전처럼 진하게 */
+  .yt-menu .btn { padding: 11px 12px; font-size: 14.5px; }
+}
+/* ===== v2.26 학습 카드: 넓은 화면(폴드 안쪽·가로)에선 가로로 넓게 · 내용이 넘치면 칸이 눌려 글자가 삐져나오지 않고 카드가 스크롤 (사용자 요청) ===== */
+.card > * { flex-shrink: 0; }
+@media (min-width: 600px) { .card { max-width: min(820px, 100%); padding: 24px 28px 22px; } }
