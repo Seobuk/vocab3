@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.17';
+  var APP_VERSION = '2.18';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -1849,17 +1849,8 @@
     bridge.aiCall('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(watch), '', '', 15000).then(function (res) {
       if (res.status === 404 || res.status === 400) throw { msg: '영상을 찾을 수 없어요 — 비공개·삭제됐거나 링크가 잘못됐어요' };
       try { var o = JSON.parse(res.text); if (o && o.title) { r.title = String(o.title); save(); ytRefresh(r.id); } } catch (e) { }
-      // 유튜브 받아쓰기는 설정과 상관없이 Flash-Lite — 3 Flash·Pro 는 시간이 수십 초~수 분씩 밀린다는 보고 (v2.7)
-      // v2.9: 생각(low) + 1초에 2장으로 시간 정밀도를 올린다. 1초 2장은 입력 토큰이 약 1.7배 → 긴 영상이 한도(429)·크기(400)에 걸리면 1초 1장으로 한 번 더
-      return aiGenerate(ytBody(watch, 2), 'youtube', YT_AI_MS, AI_DEFAULT_MODEL).then(function (res) {
-        if (res.status === 429 || (res.status === 400 && !/api key/i.test(res.text))) return aiGenerate(ytBody(watch, 0), 'youtube', YT_AI_MS, AI_DEFAULT_MODEL);   // 400 은 이유를 가리기 어려워 키 오류만 빼고 한 번 더
-        return res;
-      });
-    }).then(function (res) {
-      if (res.status !== 200) throw { msg: aiErrorMessage(res) };
-      var out = parseAiJson(res.text);
-      out = Array.isArray(out) ? out : out && Array.isArray(out.sents) ? out.sents : null;
-      if (!out) throw { msg: '정리 결과를 이해하지 못했어요. 다시 시도해 주세요' };
+      return ytTranscribe(r, watch);
+    }).then(function (out) {
       var ns = ytMergeShort(ytMergeBroken(ytClean(out)));
       if (!ns.length && r.sents && r.sents.length) throw { msg: '영어 문장을 찾지 못했어요' };   // 다시 정리가 빈손이면 있던 문장·단어 뜻 캐시를 지우지 않는다
       r.sents = ns; r.tv = 3; r.mb = 1; delete r.snap; save();   // tv 2: 시간을 MM:SS 로 받아 앱이 환산 (v2.5) · tv 3: v2.9 정리 (생각 low · 1초 2장, 거절되면 1장)
@@ -1873,7 +1864,68 @@
     }).then(function () { ytRefresh(r.id); });
   }
   var YT_AI_MS = 600000;   // 생각을 켜면 몇십 초 더 걸린다 — 긴 영상도 끊기지 않게 10분 (Java 읽기 제한도 같이)
-  function ytBody(watch, fps) {
+  // v2.18: 긴 영상(1시간 등)은 답이 최대 길이에서 잘려 "이해하지 못했어요"가 났다 → 온전한 문장까지 살리고, 마지막 문장 뒤부터 이어서 다시 요청(끝까지).
+  // 붐빔·연결·서버 오류·못 읽은 답은 기다렸다 자동으로 다시. 유튜브 받아쓰기는 설정과 상관없이 Flash-Lite (v2.7), 생각 low + 1초 2장 (v2.9)
+  var YT_RETRY = [5000, 15000];   // 자동 재시도 간격 (테스트는 __vocab.ytRetry 로 줄인다)
+  function ytWait(ms) { return new Promise(function (ok) { setTimeout(ok, ms); }); }
+  function ytMMSS(sec) { var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = (sec % 60).toFixed(1); return (h ? h + ':' + pad(m) : pad(m)) + ':' + (s < 10 ? '0' : '') + s; }
+  function ytAsk(watch, fps, after, tries) {   // 붐빔(503)·서버 오류·연결 끊김은 5초·15초 뒤 두 번 더
+    return aiGenerate(ytBody(watch, fps, after), 'youtube', YT_AI_MS, AI_DEFAULT_MODEL).then(function (res) {
+      var st = res.status, n = tries || 0;
+      if ((st === 0 || st >= 500) && n < YT_RETRY.length) return ytWait(YT_RETRY[n]).then(function () { return ytAsk(watch, fps, after, n + 1); });
+      return res;
+    });
+  }
+  function ytParseOut(text) {   // → { items: 문장 배열 | null(못 읽음), cut: 답이 최대 길이에서 잘렸나 }
+    var txt = '', fin = '';
+    try { var c = JSON.parse(text).candidates[0]; fin = c.finishReason || ''; (c.content && c.content.parts || []).forEach(function (p) { if (p.text) txt += p.text; }); } catch (e) { return { items: null, cut: false }; }
+    txt = txt.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
+    try { var o = JSON.parse(txt); o = Array.isArray(o) ? o : o && Array.isArray(o.sents) ? o.sents : null; if (o) return { items: o, cut: fin === 'MAX_TOKENS' }; } catch (e) { }
+    var part = ytSalvage(txt);
+    return { items: part.length ? part : null, cut: true };
+  }
+  function ytSalvage(t) {   // 잘린 JSON 배열 '[{..},{..},{.' → 끝까지 닫힌 항목들만
+    var start = t.indexOf('['), depth = 0, str = false, esc = false, last = -1;
+    if (start < 0) return [];
+    for (var i = start; i < t.length; i++) {
+      var ch = t.charAt(i);
+      if (str) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') str = false; continue; }
+      if (ch === '"') str = true;
+      else if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') { depth--; if (depth === 1 && ch === '}') last = i; }
+    }
+    if (last < 0) return [];
+    try { var a = JSON.parse(t.slice(start, last + 1) + ']'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  function ytTranscribe(r, watch) {   // → Promise<문장 배열(원본)> — 잘리면 이어서, 못 읽으면 다시
+    var all = [], fps = 2, bad = 0, rounds = 0;
+    function endOf(x) { var t = ytSec(x.t); return t > 0 ? t : ytSec(x.s) || 0; }
+    function step(after) {
+      rounds++;
+      return ytAsk(watch, fps, after).then(function (res) {   // 1초 2장은 입력이 약 1.7배 — 한도(429)·크기(400)에 걸리면 이번 영상은 1초 1장으로
+        if (fps && (res.status === 429 || (res.status === 400 && !/api key/i.test(res.text)))) { fps = 0; return ytAsk(watch, 0, after); }
+        return res;
+      }).then(function (res) {
+        if (res.status !== 200) { if (all.length) return ytDone('part'); throw { msg: aiErrorMessage(res) }; }
+        var o = ytParseOut(res.text), items = o.items;
+        if (!items) {   // 못 읽은 답 — 같은 자리부터 두 번까지 다시
+          if (++bad <= YT_RETRY.length) return ytWait(YT_RETRY[bad - 1]).then(function () { return step(after); });
+          if (all.length) return ytDone('part');
+          throw { msg: '정리 결과를 이해하지 못했어요. 다시 시도해 주세요' };
+        }
+        bad = 0;
+        var from = after == null ? -1 : after - 0.05, fresh = items.filter(function (x) { return x && ytSec(x.s) > from; });
+        all = all.concat(fresh);
+        if (!o.cut || !fresh.length || rounds >= 20) return ytDone(o.cut && rounds >= 20 ? 'part' : '');
+        var next = endOf(fresh[fresh.length - 1]);
+        if (YTJOB[r.id]) { YTJOB[r.id].prog = ytMMSS(next); ytRefresh(r.id); }   // "12:30까지 정리했어요"
+        return step(next);
+      });
+    }
+    function ytDone(why) { if (why === 'part') toast('긴 영상의 뒷부분 일부는 정리하지 못했어요 — 필요하면 "다시 정리하기"'); return all; }
+    return step(null);
+  }
+  function ytBody(watch, fps, after) {
     var vid = { fileData: { fileUri: watch } };
     if (fps) vid.videoMetadata = { fps: fps };   // 1초에 2장 → 모델이 보는 시간 표시가 0.5초 간격
     return {
@@ -1888,7 +1940,8 @@
         'Do not make very short interjections (1-3 words such as "Yes.", "Right.", "Okay.", "Thank you.") separate items: join them to the neighbouring sentence of the same speaker.',
         'Skip parts that are not English speech (music, Korean narration). If there is no English speech at all, return [].'
       ].join('\n') }] },
-      contents: [{ role: 'user', parts: [vid, { text: 'Transcribe this video.' }] }],   // 문서 권장: 영상 먼저, 지시는 뒤
+      contents: [{ role: 'user', parts: [vid, { text: after == null ? 'Transcribe this video.' :   // 문서 권장: 영상 먼저, 지시는 뒤
+        'Continue an earlier transcript of this video. It already covers everything up to ' + ytMMSS(after) + '. Transcribe only the sentences that start after ' + ytMMSS(after) + ', in order, through to the end of the video.' }] }],
       generationConfig: {
         thinkingConfig: { thinkingLevel: 'low' },   // 생각을 조금 켜면 시간 오차가 줄었다는 벤치마크 (3.1 Flash-Lite 평균 2.09 → 1.25초). 안 받는 모델이면 aiGenerate 가 빼고 다시
         mediaResolution: 'MEDIA_RESOLUTION_LOW',   // 받아쓰기엔 화면이 거의 필요 없다 (2.5 계열에선 토큰 1/4)
@@ -1955,12 +2008,12 @@
     $('#view-ytv').classList.toggle('yt-editing', !!(YTV.edit && has && !j.busy));   // 폰 가로에선 수정 중에 영상을 조금 줄여 아래 패널 자리를 만든다 (CSS)
     fab.innerHTML = has ? '<button class="guide-pill yt-pm' + (S.settings.ytPause ? ' on' : '') + '" data-action="yt-pause-mode" aria-pressed="' + !!S.settings.ytPause + '" aria-label="문장마다 멈춤">⏸ 문장마다</button>' +
       '<button class="yt-again" data-action="yt-replay" aria-label="한 번 더"' + (YTV.act < 0 ? ' disabled' : '') + '><span>↻</span><small>한 번 더</small></button>' : '';
-    body.innerHTML = ytDlHTML(r) + (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요' + (YTV.noLocal ? ' · 받은 파일도 재생되지 않아요 — 위의 “지우기”로 지우고 다시 받아 주세요' : '') + '</div>' : '') + (j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<br><span class="small">영상 길이에 따라 1~5분 걸려요. 그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
+    body.innerHTML = ytDlHTML(r) + (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요' + (YTV.noLocal ? ' · 받은 파일도 재생되지 않아요 — 위의 “지우기”로 지우고 다시 받아 주세요' : '') + '</div>' : '') + (j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<br><span class="small">' + (j.prog ? j.prog + '까지 정리했어요 — 긴 영상은 나눠서 이어 받아요. ' : '영상 길이에 따라 1~5분 걸려요. ') + '그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
       : j.err ? '<div class="empty">' + esc(j.err) + '<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">다시 시도</button></div>'
       : !has ? '<div class="empty">아직 정리 전이에요<br><button class="btn primary" data-action="yt-retry" style="margin-top:12px">문장 정리하기</button></div>'
       : (r.tv === 3 ? '' : '<div class="yt-old">문장 시간을 더 정확하게 맞추도록 바꿨어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
         (YTV.undo && YTV.undo.id === r.id ? '<div class="yt-undo">' + (YTV.undo.kind === 'merge' ? '⤓ 문장을 합쳤어요' : '✂ 문장을 쪼갰어요') + ' · <b data-action="yt-undo">되돌리기</b></div>' : '') +
-        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 재생한 문장의 단어를 누르면 뜻 · 한글은 눌러서 보기 · 꾹 누르면 문장 공부·복사·합치기·쪼개기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
+        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 단어를 두 번 톡 누르면 뜻 · 한글은 눌러서 보기 · 꾹 누르면 문장 공부·복사·합치기·쪼개기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
         '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b></div>');
     ytSideRender();
   }
@@ -3105,11 +3158,13 @@
       confirm2('문장을 처음부터 다시 정리할까요?\n(단어장에 추가한 단어는 그대로 있어요)' + (hand ? '\n손으로 고친 시간도 새로 정리돼요' : ''), '다시 정리').then(function (ok) { if (ok) ytProcess(r); });
     },
     'yt-sent': function (el) { if (YTV.split != null) { var s0 = YTV.split; YTV.split = null; ytRow(s0); } ytPlaySent(+el.getAttribute('data-i')); },   // 다른 곳을 누르면 쪼개기 취소
-    'yt-word': function (el) {   // 처음 누르면 재생, 재생한 문장에서 누르면 뜻 · 쪼개기 중이면 그 단어 앞에서 나눔
-      var i = +el.getAttribute('data-i');
-      if (YTV.split === i) { ytSplitAt(i, +el.getAttribute('data-t')); return; }
+    'yt-word': function (el) {   // v2.18: 한 번 톡 = 그 문장 (다시) 재생 · 두 번 톡 = 단어 뜻 (다시 들으려다 뜻이 열리던 것) · 쪼개기 중이면 그 단어 앞에서 나눔
+      var i = +el.getAttribute('data-i'), k = +el.getAttribute('data-t'), now = Date.now(), lt = YTV.tap;
+      if (YTV.split === i) { ytSplitAt(i, k); return; }
       if (YTV.split != null) { var s0 = YTV.split; YTV.split = null; ytRow(s0); }
-      if (YTV.act !== i) ytPlaySent(i); else ytWord(i, +el.getAttribute('data-t'));
+      if (lt && lt.i === i && lt.k === k && now - lt.at < 400) { YTV.tap = null; ytWord(i, k); return; }
+      YTV.tap = { i: i, k: k, at: now };
+      ytPlaySent(i);
     },
     'yt-m-study': function (el) {
       var r = YTV && ytRec(YTV.id), x = r && r.sents[+el.getAttribute('data-i')]; if (!x || !x.k || x.kp) return;
@@ -3298,7 +3353,7 @@
   window.addEventListener('pagehide', saveNow);
 
   // debugging / testing hooks
-  window.__vocab = { state: function () { return S; }, save: saveNow, go: go, startSession: startSession, judge: judge, applyTheme: applyTheme, themes: function () { return THEMES.map(function (t) { return t.id; }); }, reload: function () { S = loadState(); goTab('home'); }, sentPick: sentPick, ytSnapCalc: ytSnapCalc, ytRange: ytRange };
+  window.__vocab = { state: function () { return S; }, save: saveNow, go: go, startSession: startSession, judge: judge, applyTheme: applyTheme, themes: function () { return THEMES.map(function (t) { return t.id; }); }, reload: function () { S = loadState(); goTab('home'); }, sentPick: sentPick, ytSnapCalc: ytSnapCalc, ytRange: ytRange, ytRetry: function (a) { YT_RETRY = a; } };
 
   S = loadState();
   applyTheme();
