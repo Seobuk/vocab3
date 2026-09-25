@@ -1,8 +1,8 @@
 # 3단계 단어장 (vocab3) — Claude Code 작업 지침
 
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
-공개 저장소 github.com/Seobuk/vocab3 (MIT). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.13 (versionCode 37).
+공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.14 (versionCode 38).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -13,6 +13,11 @@
   - **브릿지 토큰**: 브릿지는 유튜브 iframe·광고 프레임에도 주입되므로 모든 `@JavascriptInterface` 메서드는 첫 인자 `String t` + `if (!ok(t)) return …;`.
     토큰은 Java 가 index.html 에만 심고(`window.__bt`), app.js 는 시작할 때 `BT`·`AND` 로 잡아 두고 `AND.x(BT, …)` 로만 부른다. 테스트 스텁도 같은 계약(`'TKN'`).
 - `src/kr/hyunuk/vocab3/ReviewService.java` — 듣기 복습 포그라운드 서비스(알림 제어).
+- `src/kr/hyunuk/vocab3/Offline.java` (v2.14) — 유튜브 영상 받기(NewPipeExtractor, 360p 합쳐진 MP4 → 없으면 M4A, 10MB Range 청크),
+  `getNoBackupFilesDir()/videos/<vid>.mp4|m4a|env`(자동 백업 25MB 한도에 안 걸리게), `/media/<vid>` Range 서빙(WebView 가 Range 를 한 번 더 적용하는 걸 보정),
+  파형 추출(MediaExtractor+MediaCodec → 20ms 마다 dBFS+100 한 바이트). 브릿지 ytDownload/ytDownloadCancel/mediaList/mediaDelete/mediaEnv,
+  JS 콜백 onYtDl(vid, st, a, b)·onMediaEnv(vid). 안드로이드 13(API 33) 이상에서만(추출기가 API 33 메서드를 씀, desugaring 안 함).
+  **유튜브가 바뀌어 추출이 깨지면** `tools/setup-sdk.ps1`·`.sh` 의 NewPipeExtractor 버전·URL·SHA-256 을 둘 다 올리고 `/ship` (2~4개월마다 깨지는 편, 360p 는 장애 때도 대개 됨).
 - `assets/index.html · style.css · app.js` — UI/로직 전부. `app.js` 는 **ES5 IIFE** (프레임워크 없음, 화살표함수·let/const·템플릿문자열 안 씀).
   - 화면: `RENDER.<view>` 함수 + `go(view, params)` / `goTab()` / `back()` 스택. 클릭은 `data-action="…"` → `ACTIONS` 맵 하나로 처리.
   - 상태 `S` = SharedPreferences 키 `vocab3.state.v1` 의 JSON 한 덩어리. 새 필드는 `defaultSettings()/defaultTalk()/mkWord()` 에 기본값 + `migrate()` 에 옛 데이터 보정.
@@ -43,6 +48,9 @@
     "다시 정리하기"는 고친 시간도 덮어쓴다(확인 창에 안내). 문장 꾹 누르기(550ms) = 영어 문장 복사(`bridge.copy`), 떼며 생기는 click 은 버림. 테스트 `tools/test_yt_edit.js`.
   - 가로 화면(v2.6): 영상 화면에서만 회전 허용(`bridge.setRotate` → `setRequestedOrientation(USER|PORTRAIT)`, render() 에서 전환), 가로면 CSS 로 왼쪽 영상·오른쪽 스크립트.
   - `#app`·`#view-ytv` 는 `overflow: clip` — hidden 이면 scrollIntoView 가 틀을 밀어 숨긴 시트가 올라온다.
+  - 오프라인(v2.14, 사용자 요청): 링크 추가 때 자동으로 받고(한 번에 하나, `YTDL` 줄), 다 받으면 `r.off={kind,size}` → 영상 화면은 유튜브 iframe 대신
+    앱 `<video>`(YT 플레이어와 같은 인터페이스의 어댑터, `local: true`)로 재생 — 유튜브 화면 요소 없음·오프라인. 시작 때 mediaList 로 기록과 실제 파일을 맞춘다.
+    파형으로 경계 맞춤 `ytSnapCalc` → 문장 `vs`/`ve`(ytClean 보존), ytRange 는 ms/me(손 수정) > vs/ve > AI 시간 순. 테스트 `tools/test_offline.js`(가짜 Android + WAV).
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
 - `tools/test_*.js`, `tools/shots.js` — Playwright UI 테스트 (Gemini·음성인식은 stub). 스크린샷 `build/shots/`.
 - `store/` — Play 등록 문구·개인정보처리방침(권한·외부 전송이 바뀌면 같이 갱신). `docs/screenshots/` README 용.
@@ -55,7 +63,7 @@ npm install && npx playwright install chromium                 # 테스트
 - `keystore/vocab3.jks` (릴리스 서명 키, alias `vocab3`) 와 `keystore/PASSWORD.txt` (비밀번호 한 줄) 를 넣어 둘 것 — 둘 다 git 제외.
   **업데이트는 반드시 이 키로 서명**해야 기존 설치 위에 올라간다. 키가 없으면 build.sh 가 `build/debug.jks` 디버그 키로 서명하고 `⚠⚠ DEBUG 키` 경고를 찍는다 — 그 APK 는 배포 금지.
 - `gh auth status` 로 GitHub CLI 로그인 확인 (릴리스에 사용).
-- 빌드가 윈도우 네이티브로 안 되면 WSL Ubuntu 에서 같은 `build.sh` 가 돈다: `sudo apt install aapt dalvik-exchange zipalign apksigner default-jdk-headless && ./tools/setup-sdk.sh`.
+- v2.14 부터 `sdk/libs/*.jar`(setup 스크립트가 SHA-256 검증으로 받음)와 Android SDK build-tools 의 **d8** 이 필요하다 — WSL 의 apt(dx) 경로로는 빌드 안 됨.
 
 ## 일상 작업
 ```
