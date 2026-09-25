@@ -136,11 +136,13 @@ const SENTS = [
   const sk2 = (await yt('seek')).length;
   const e2 = await p.$eval('#ys2 .ys-e', e => { const r = e.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
   await p.mouse.move(e2.x, e2.y); await p.mouse.down(); await p.waitForTimeout(700); await p.mouse.up(); await p.waitForTimeout(150);
-  eq('꾹 누르면 영어 문장 복사 + 안내 · 떼도 재생 안 함', (await p.evaluate(() => window.__copied)) + ' | ' + await toast() + ' | ' + ((await yt('seek')).length - sk2), "Let's figure out the rest. | 문장을 복사했어요 | 0");
+  eq('꾹 누르면 선택창(문장 공부·복사·합치기·쪼개기) · 떼도 재생 안 함', (await p.$$eval('#sheet.show .yt-menu .btn', x => x.map(e => e.getAttribute('data-action')).join())) + ' | ' + ((await yt('seek')).length - sk2), 'yt-m-study,yt-m-copy,yt-m-merge,yt-m-merge,yt-m-split | 0');
+  await p.click('#sheet [data-action="yt-m-copy"]'); await p.waitForTimeout(250);
+  eq('"복사" = 영어 문장 복사 + 안내', (await p.evaluate(() => window.__copied)) + ' | ' + await toast(), "Let's figure out the rest. | 문장을 복사했어요");
   await p.click('#ys2 .ys-t'); await p.waitForTimeout(150);
   eq('그다음 짧게 누르면 재생', (await yt('seek')).length - sk2, 1);
   await p.mouse.move(e2.x, e2.y); await p.mouse.down(); await p.mouse.move(e2.x, e2.y + 30); await p.waitForTimeout(700); await p.mouse.up(); await p.waitForTimeout(100);
-  eq('누른 채 움직이면(스크롤) 복사 안 함', await p.evaluate(() => window.__copied === "Let's figure out the rest." && !document.getElementById('toast').textContent.includes('Hi')), true);
+  eq('누른 채 움직이면(스크롤) 선택창 안 뜸', await p.$$eval('#sheet.show', x => x.length), 0);
 
   // --- 영상 위아래 64px 는 칸 밖 (멈출 때 뜨는 제목줄·더보기 가리기) ---
   const box = await rect('#ytBox'), pl = await rect('#ytPlayer');
@@ -166,8 +168,9 @@ const SENTS = [
   const e3 = await p.$eval('#ys0 .ys-e', e => { const r = e.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
   await p.mouse.move(e3.x, e3.y); await p.mouse.down(); await p.waitForTimeout(150);
   await p.dispatchEvent('#ys0 .ys-e', 'contextmenu'); await p.waitForTimeout(50);
-  const early = await p.evaluate(() => window.__copied); await p.mouse.up(); await p.waitForTimeout(100);
-  eq('길게 누르기 신호(contextmenu)가 오면 550ms 전이라도 복사', early, 'Hi everyone, welcome back.');
+  const early = await p.$$eval('#sheet.show .ym-e', x => x.map(e => e.textContent).join()); await p.mouse.up(); await p.waitForTimeout(100);
+  eq('길게 누르기 신호(contextmenu)가 오면 550ms 전이라도 선택창', early, 'Hi everyone, welcome back.');
+  await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();
 })();

@@ -182,7 +182,9 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   const e2 = await p.$eval('#ys2 .ys-e', e => { const r = e.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
   const t0 = await vt();
   await p.mouse.move(e2.x, e2.y); await p.mouse.down(); await p.waitForTimeout(700); await p.mouse.up(); await p.waitForTimeout(150);
-  eq('꾹 누르면 복사 · 재생 안 함', (await p.evaluate(() => window.__copied)) + ' | ' + ((await vt()) === t0), 'It takes a lot of practice every day. | true');
+  eq('꾹 누르면 선택창 · 재생 안 함', (await p.$$eval('#sheet.show .yt-menu .btn', x => x.length)) + ' | ' + ((await vt()) === t0), '5 | true');
+  await p.click('#sheet [data-action="yt-m-copy"]'); await p.waitForTimeout(250);
+  eq('선택창 "복사" = 영어 문장 복사', await p.evaluate(() => window.__copied), 'It takes a lot of practice every day.');
   await p.click('#ytSide [data-action="yt-edit"]:not(.yed-open)'); await p.waitForTimeout(100);
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(200);
 

@@ -2,7 +2,7 @@
 
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.16 (versionCode 40).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.17 (versionCode 41).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -27,6 +27,7 @@
   - 학습 완료 연출 `celebrate()`(컨페티 canvas·카운트업·WebAudio 효과음), 단어 추가 `aiFillWords()`(8개 배치).
   - 영어 문장 공부(v2.12) `SENT` · 화면 `sent`: 졸업(stage 4) + 예문 e + 해석 k 가 있는 단어만. 한글 → 탭하면 영어 공개·읽기 → ▲ 쉬움 / ▼ 어려움.
     가중치 `w.sw`(1~20, 없으면 3; 어려움 +2 · 쉬움 −1), 누적 `se`/`sh`, 마지막 `sa`. `sentPick` 은 가중치 비례 무작위 + 최근 3문장 제외. 테스트 `tools/test_sent.js`.
+    v2.17: 유튜브 문장을 꾹 눌러 담은 `S.sentBox`({id,e,k,vid,title,s,at}+가중치)도 풀에 들어간다 — `sentItem(id)` 로 단어/담은 문장을 찾는다, 카드에 📺 출처·빼기.
   - 사용 기록(v2.13) `S.usage['YYYY-MM-DD'] = {t, f:{study,sent,talk,yt,audio,etc: ms}, c:{sent,yt,talk}}`: `useTick()` 이 render()·onAppPause/Resume·15초 틱마다
     지금 화면의 기능으로 시간을 쌓는다(한 번에 최대 1분, 앱이 내려가면 안 셈, 백그라운드 듣기 복습 제외). `useCount()` 로 횟수. 통계 `useHTML()`. 테스트 `tools/test_usage.js`(Playwright clock).
   - 유튜브 쉐도잉 `S.yt`(v2.2~): 링크 → oEmbed(제목) + Gemini `fileData.fileUri`(영상 통째, 구간 자르기 안 씀) → 문장 `{s,t(끝),e,k,x:[익힐 표현]}` — 시간은 Gemini 에게 영상 표기 MM:SS.d 로 받아 `ytSec()` 로 초 환산(초로 달라고 하면 1분 넘어서 틀림, v2.5; `r.tv=2`)
@@ -52,6 +53,8 @@
   - 오프라인(v2.14, 사용자 요청): 링크 추가 때 자동으로 받고(한 번에 하나, `YTDL` 줄), 다 받으면 `r.off={kind,size}` → 영상 화면은 유튜브 iframe 대신
     앱 `<video>`(YT 플레이어와 같은 인터페이스의 어댑터, `local: true`)로 재생 — 유튜브 화면 요소 없음·오프라인. 시작 때 mediaList 로 기록과 실제 파일을 맞춘다.
     파형으로 경계 맞춤 `ytSnapCalc` → 문장 `vs`/`ve`(ytClean 보존), ytRange 는 ms/me(손 수정) > vs/ve > AI 시간 순. 테스트 `tools/test_offline.js`(가짜 Android + WAV).
+  - v2.17: 문장 꾹 누르기 = 선택창 `ytRowMenu`(문장 공부에 넣기·복사·앞/뒤와 합치기 `ytMergeAt`→`ytJoin`·쪼개기 `YTV.split`→단어 누름 `ytSplitAt`),
+    합치기·쪼개기 뒤 `ytEdited()` 가 번호 바뀐 상태(act/cur/card/ko/split/stopAt)를 정리하고 한 번 되돌리기(`YTV.undo`). 테스트 `tools/test_yt_menu.js`.
   - v2.15: 받은 영상은 #ytBox 탭(`yt-tap`) = 멈춤/이어 재생(stopAt 유지). 📌 `S.settings.ytPin` → `#view-ytv.yt-pinned`: 플레이어를 목록 위(z-index 2) +
     고정 중(세로)엔 영상을 화면 폭 16:9(max-height 해제 — 45vh 가 폭을 줄이면 옆 틈으로 가린 문장이 눌렸다) + `.yt-list` scroll-padding-top 56.25vw — v2.4 의 "목록이 영상을 덮는" 동작을 끌 수 있게(사용자 요청, 기본 꺼짐). 가로에선 버튼 숨김.
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.

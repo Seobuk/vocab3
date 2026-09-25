@@ -3,7 +3,7 @@
   "private": true,
   "description": "Playwright UI tests for the 3단계 단어장 web UI (assets/)",
   "scripts": {
-    "test": "node tools/shots.js && node tools/test_reveal.js && node tools/test_audio.js && node tools/test_study.js && node tools/test_ai.js && node tools/test_theme.js && node tools/test_talk.js && node tools/test_stt.js && node tools/test_talk_wait.js && node tools/test_v2.js && node tools/test_yt.js && node tools/test_yt_merge.js && node tools/test_yt_edit.js && node tools/test_offline.js && node tools/test_sent.js && node tools/test_usage.js",
+    "test": "node tools/shots.js && node tools/test_reveal.js && node tools/test_audio.js && node tools/test_study.js && node tools/test_ai.js && node tools/test_theme.js && node tools/test_talk.js && node tools/test_stt.js && node tools/test_talk_wait.js && node tools/test_v2.js && node tools/test_yt.js && node tools/test_yt_merge.js && node tools/test_yt_edit.js && node tools/test_offline.js && node tools/test_yt_menu.js && node tools/test_sent.js && node tools/test_usage.js",
     "shots": "node tools/store_shots.js",
     "setup": "npm install && npx playwright install chromium",
     "build": "bash build.sh"
