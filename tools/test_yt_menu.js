@@ -52,7 +52,7 @@ const SENTS = [
   await p.click('#sheet [data-action="yt-m-study"]'); await p.waitForTimeout(250);
   eq('문장 공부에 넣기 → 담김(영어·한글·영상·제목)', JSON.stringify(await p.evaluate(() => window.__vocab.state().sentBox.map(x => [x.e, x.k, x.vid, x.title]))), JSON.stringify([['Hi everyone, welcome back.', '안녕하세요 여러분.', 'MENUMENU001', 'Menu Talk']]));
   await menu(0);
-  eq('두 번째엔 "담겨 있어요" (꺼짐)', await p.$eval('#sheet [data-action="yt-m-study"]', e => e.disabled + ' ' + e.textContent), 'true 📚 문장 공부에 담겨 있어요');
+  eq('두 번째엔 "담겨 있어요" (꺼짐)', await p.$eval('#sheet [data-action="yt-m-study"]', e => e.disabled + ' ' + e.textContent), 'true 문장 공부에 담겨 있어요');
   await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
 
   // --- 뒤와 합치기 → 되돌리기 ---
@@ -78,7 +78,7 @@ const SENTS = [
   eq('나누는 시간 = 글자 비율 어림 (3.0~7.0 사이) · 이어짐', sp[0].t > 3.2 && sp[0].t < 6.8 && sp[1].s === sp[0].t && sp[1].t === 7, true);
   eq('쪼갠 뒤 되돌리기 줄', await p.textContent('.yt-undo'), '✂ 문장을 쪼갰어요 · 되돌리기');
   await menu(1);
-  eq('쪼갠 조각은 한글이 안 맞아 문장 공부에 못 담음', await p.$eval('#sheet [data-action="yt-m-study"]', e => e.disabled + ' ' + e.textContent), 'true 📚 쪼갠 문장은 한글이 안 맞아 담을 수 없어요');
+  eq('쪼갠 조각은 한글이 안 맞아 문장 공부에 못 담음', await p.$eval('#sheet [data-action="yt-m-study"]', e => e.disabled + ' ' + e.textContent), 'true 쪼갠 문장은 한글이 안 맞아 담을 수 없어요');
   await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
   await p.click('.yt-undo [data-action="yt-undo"]'); await p.waitForTimeout(200);
   eq('되돌리기 → 원래 문장 · 한글 표시 없음', (await es())[1] + ' ' + (await p.evaluate(() => !!window.__vocab.state().yt[0].sents[1].kp)), 'Today we will dig into why agents really matter. false');

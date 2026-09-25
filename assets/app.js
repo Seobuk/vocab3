@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.21';
+  var APP_VERSION = '2.22';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -13,16 +13,16 @@
       l: { bg: '#F4F5FA', surface: '#FFFFFF', surface2: '#EEF0F7', line: '#E4E6EF', text: '#151827', muted: '#6C7280', primary: '#4F46E5', soft: '#EEF0FF', on: '#FFFFFF' },
       d: { bg: '#0F1117', surface: '#181B25', surface2: '#222634', line: '#2A2F3D', text: '#ECEFF4', muted: '#9AA3B2', primary: '#8F8AFA', soft: '#262A48', on: '#14123A' } },
     { id: 'coral', name: '코랄 선셋',
-      l: { bg: '#FFF5F1', surface: '#FFFFFF', surface2: '#FBE9E2', line: '#F1D9CF', text: '#2A1712', muted: '#8A665C', primary: '#C9412A', soft: '#FFE5DC', on: '#FFFFFF' },
+      l: { bg: '#FFF5F1', surface: '#FFFFFF', surface2: '#FBE9E2', line: '#F1D9CF', text: '#2A1712', muted: '#8A665C', primary: '#C9412A', soft: '#FFE5DC', on: '#FFFFFF', ink: '#AB3724' },
       d: { bg: '#171110', surface: '#221917', surface2: '#2E221F', line: '#3B2D29', text: '#F6ECE8', muted: '#B39C94', primary: '#FF8266', soft: '#3A241F', on: '#1A0D09' } },
     { id: 'teal', name: '딥 틸',
-      l: { bg: '#EEF8F6', surface: '#FFFFFF', surface2: '#E0F0ED', line: '#CFE3DF', text: '#0F2320', muted: '#587570', primary: '#0B7F73', soft: '#DDF3EF', on: '#FFFFFF' },
+      l: { bg: '#EEF8F6', surface: '#FFFFFF', surface2: '#E0F0ED', line: '#CFE3DF', text: '#0F2320', muted: '#587570', primary: '#0B7F73', soft: '#DDF3EF', on: '#FFFFFF', ink: '#085E55' },
       d: { bg: '#0D1614', surface: '#152120', surface2: '#1E2C2A', line: '#283835', text: '#E8F3F1', muted: '#93ABA6', primary: '#2DD4BF', soft: '#143732', on: '#062421' } },
     { id: 'lavender', name: '라벤더',
       l: { bg: '#F6F3FE', surface: '#FFFFFF', surface2: '#ECE7FB', line: '#DED6F3', text: '#1B1530', muted: '#6C6588', primary: '#7C3AED', soft: '#EEE6FF', on: '#FFFFFF' },
       d: { bg: '#12101A', surface: '#1A1726', surface2: '#241F33', line: '#2F2942', text: '#EFEBFA', muted: '#A49CBE', primary: '#B197FC', soft: '#2A2347', on: '#160F2E' } },
     { id: 'rose', name: '로즈',
-      l: { bg: '#FFF1F5', surface: '#FFFFFF', surface2: '#FBE5EC', line: '#F2D3DD', text: '#2A1420', muted: '#8A6273', primary: '#D42670', soft: '#FFE1EA', on: '#FFFFFF' },
+      l: { bg: '#FFF1F5', surface: '#FFFFFF', surface2: '#FBE5EC', line: '#F2D3DD', text: '#2A1420', muted: '#8A6273', primary: '#D42670', soft: '#FFE1EA', on: '#FFFFFF', ink: '#B62160' },
       d: { bg: '#1A1015', surface: '#241820', surface2: '#30212B', line: '#3D2C37', text: '#F7EAF0', muted: '#B497A4', primary: '#F472B6', soft: '#3E1F30', on: '#2A0B1C' } },
     { id: 'forest', name: '포레스트',
       l: { bg: '#F0F7F1', surface: '#FFFFFF', surface2: '#E3EFE5', line: '#D1E2D5', text: '#122016', muted: '#5C7562', primary: '#2B7A4B', soft: '#DFF2E4', on: '#FFFFFF' },
@@ -31,10 +31,10 @@
       l: { bg: '#EEF5FB', surface: '#FFFFFF', surface2: '#E1EDF7', line: '#CFE0EE', text: '#0F1F2B', muted: '#5B7184', primary: '#0A6BA8', soft: '#DDEEFA', on: '#FFFFFF' },
       d: { bg: '#0D1419', surface: '#152029', surface2: '#1D2B36', line: '#283846', text: '#E8F0F6', muted: '#93A6B5', primary: '#38BDF8', soft: '#17364A', on: '#062033' } },
     { id: 'amber', name: '앰버 허니',
-      l: { bg: '#FFF7EA', surface: '#FFFFFF', surface2: '#FBEBD1', line: '#F0DDBD', text: '#2A1E0A', muted: '#85683E', primary: '#B45309', soft: '#FDEBCF', on: '#FFFFFF' },
+      l: { bg: '#FFF7EA', surface: '#FFFFFF', surface2: '#FBEBD1', line: '#F0DDBD', text: '#2A1E0A', muted: '#85683E', primary: '#B45309', soft: '#FDEBCF', on: '#FFFFFF', ink: '#924307' },
       d: { bg: '#171309', surface: '#221C10', surface2: '#2E2616', line: '#3B3220', text: '#F6EEDD', muted: '#B5A585', primary: '#FBBF24', soft: '#3D2F10', on: '#2A1D02' } },
     { id: 'sand', name: '웜 샌드',
-      l: { bg: '#F8F3EC', surface: '#FFFDFA', surface2: '#EFE6DA', line: '#E2D6C6', text: '#2A2118', muted: '#7A6957', primary: '#8B5E34', soft: '#F1E4D3', on: '#FFFFFF' },
+      l: { bg: '#F8F3EC', surface: '#FFFDFA', surface2: '#EFE6DA', line: '#E2D6C6', text: '#2A2118', muted: '#7A6957', primary: '#8B5E34', soft: '#F1E4D3', on: '#FFFFFF', ink: '#714C2A' },
       d: { bg: '#171310', surface: '#211C17', surface2: '#2C251F', line: '#39312A', text: '#F3ECE3', muted: '#ADA090', primary: '#D9A87A', soft: '#3A2D22', on: '#211508' } },
     { id: 'graphite', name: '그래파이트',
       l: { bg: '#F4F4F5', surface: '#FFFFFF', surface2: '#E9E9EC', line: '#DBDBE0', text: '#18181B', muted: '#6B6B75', primary: '#1F2937', soft: '#E6E8EC', on: '#FFFFFF' },
@@ -44,6 +44,13 @@
   var ICON_SPK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
   var ICON_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
   var ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  var SVG_O = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';   // v2.22: 이모지 대신 선 아이콘 (Feather/Tabler MIT 경로)
+  var ICON_TALK = SVG_O + '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+  var ICON_VIDEO = SVG_O + '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M10 9l5 3-5 3z"/></svg>';
+  var ICON_HEADSET = SVG_O + '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>';
+  var ICON_PIN = SVG_O + '<path d="M15 4.5l-4 4-4 1.5-1.5 1.5 7 7 1.5-1.5 1.5-4 4-4"/><path d="M9 15l-4.5 4.5"/><path d="M14.5 4l5.5 5.5"/></svg>';
+  var ICON_TIME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2.5 1.5M9.5 3h5"/></svg>';
+  var ICON_BACK2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>';
 
   var isAndroid = (typeof window.Android !== 'undefined') && window.Android !== null;
   // 브리지 토큰 — 안드로이드가 우리 index.html 에만 심는다. 브리지(window.Android)는 유튜브 iframe·광고 프레임에도 주입되므로
@@ -403,7 +410,7 @@
   var S = null;
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, ytHintN: 0 };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
@@ -591,7 +598,7 @@
     var t = $('#toast');
     t.textContent = msg; t.classList.add('show');
     if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 1800);
+    toastTimer = setTimeout(function () { t.classList.remove('show'); }, Math.min(5000, 1500 + String(msg).length * 60));   // 긴 안내는 더 오래 (v2.22)
   }
   var modalResolve = null;
   function ask(msg, buttons) {
@@ -652,7 +659,7 @@
     root.setAttribute('data-theme', dark ? 'dark' : 'light');
     root.setAttribute('data-color', t.id);
     var map = { '--bg': p.bg, '--surface': p.surface, '--surface2': p.surface2, '--line': p.line, '--text': p.text, '--muted': p.muted, '--primary': p.primary, '--primary-soft': p.soft, '--on-primary': p.on,
-      '--primary-2': shiftHue(p.primary, 18, dark ? 4 : 6), '--primary-rgb': hexRgb(p.primary).join(', '), '--primary-deep': t.l.primary };
+      '--primary-2': shiftHue(p.primary, 18, dark ? 4 : 6), '--primary-rgb': hexRgb(p.primary).join(', '), '--primary-deep': t.l.primary, '--primary-ink': p.ink || p.primary };   // ink: 연한 판 위 글자 대비 (라이트 5종)
     for (var k in map) root.style.setProperty(k, map[k]);
     var meta = $('meta[name=theme-color]'); if (meta) meta.setAttribute('content', p.bg);
     bridge.setSystemBars(p.bg, !dark);
@@ -697,13 +704,13 @@
       '<div class="wrap">' +
       '<div class="home-head"><div><div class="eyebrow">' + fmtToday() + '</div><h1>3단계 단어장</h1></div>' +
       '<div class="hh-r"><div class="eyebrow ver">v' + APP_VERSION + '</div><div class="streak">🔥 ' + streak + '일 연속</div></div></div>' +
-      '<div class="today"><div class="t-eyebrow">TODAY</div><div class="t-title">오늘의 학습</div><div class="t-sub">' + sub + '</div>' +
+      '<div class="today"><div class="t-title">오늘의 학습</div><div class="t-sub">' + sub + '</div>' +
       '<div class="t-bar"><div style="width:' + pct + '%"></div></div>' + cta + '</div>' +
       // 자주 쓰는 세 가지는 한 번에: 회화 · 유튜브 · 듣기 (단어 추가는 아래 탭바에)
       '<div class="quick">' +
-      '<button class="q" data-action="talk"><span class="q-ic">🗣</span><span class="q-t">회화 연습</span><span class="q-s">AI와 영어로</span></button>' +
-      '<button class="q" data-action="yt"><span class="q-ic">📺</span><span class="q-t">유튜브</span><span class="q-s">쉐도잉 · 표현</span></button>' +
-      '<button class="q" data-action="audio"><span class="q-ic">🎧</span><span class="q-t">듣기 복습</span><span class="q-s">' + (AUD.active ? (AUD.playing ? '재생 중' : '일시정지') : '운전 중에') + '</span></button>' +
+      '<button class="q" data-action="talk"><span class="q-ic">' + ICON_TALK + '</span><span class="q-t">회화 연습</span><span class="q-s">AI와 영어로</span></button>' +
+      '<button class="q" data-action="yt"><span class="q-ic">' + ICON_VIDEO + '</span><span class="q-t">유튜브</span><span class="q-s">쉐도잉 · 표현</span></button>' +
+      '<button class="q" data-action="audio"><span class="q-ic">' + ICON_HEADSET + '</span><span class="q-t">듣기 복습</span><span class="q-s">' + (AUD.active ? (AUD.playing ? '재생 중' : '일시정지') : '운전 중에') + '</span></button>' +
       '</div>' +
       '<button class="review-btn" style="--c:var(--s2)" data-action="start" data-stage="2"' + (c[2] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">2단계 복습</div><div class="rb-s">주기적으로 복습 → 확실하면 3단계로</div></div><span class="rb-n">' + c[2] + '</span><span class="chev">›</span></button>' +
       '<button class="review-btn" style="--c:var(--s3)" data-action="start" data-stage="3"' + (c[3] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">3단계 최종 점검</div><div class="rb-s">최종 확인 → 통과하면 졸업</div></div><span class="rb-n">' + c[3] + '</span><span class="chev">›</span></button>' +
@@ -1200,7 +1207,7 @@
     requestAnimationFrame(frame);
   }
   function celebrate(big) {
-    var c = $('#confetti'); if (c) confetti(c, big);
+    var c = $('#confetti'); if (c && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) confetti(c, big);
     $$('#view-summary [data-count]').forEach(function (el) { countUp(el, Number(el.getAttribute('data-count')) || 0, big ? 1100 : 800); });
     playChime(big);
     bridge.vibrate(big ? 40 : 15);
@@ -2032,12 +2039,13 @@
   RENDER.ytv = function (p) {
     var r = ytRec(p.id); if (!r) { go('yt', {}, true); return; }
     ytStopPlayer();
-    if (!YTV || YTV.id !== r.id) YTV = { id: r.id, act: -1, cur: -1, stopAt: null, card: null, ko: {} };
+    if (!YTV || YTV.id !== r.id) { YTV = { id: r.id, act: -1, cur: -1, stopAt: null, card: null, ko: {} }; S.settings.ytHintN = (S.settings.ytHintN || 0) + 1; save(); }   // 사용법 문단은 처음 3번만 (v2.22)
     YTV.undo = null; YTV.split = null; YTV.wpick = null;   // 되돌리기·쪼개기·단어 고르기는 이 화면에 있는 동안만
     YTV.ready = false; YTV.perr = null; YTV.pending = null;
     $('#view-ytv').innerHTML =
       '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title" id="ytTitle"></span>' +
-      '<button class="icon-btn yt-pinb' + (S.settings.ytPin ? ' on' : '') + '" data-action="yt-pin" aria-pressed="' + !!S.settings.ytPin + '" aria-label="영상 고정">📌</button></div>' +   // v2.15: 켜면 목록을 올려도 영상이 안 가려진다 (세로만)
+      '<button class="icon-btn yt-edb" data-action="yt-edit" aria-pressed="false" aria-label="문장 시간 수정">' + ICON_TIME + '</button>' +
+      '<button class="icon-btn yt-pinb' + (S.settings.ytPin ? ' on' : '') + '" data-action="yt-pin" aria-pressed="' + !!S.settings.ytPin + '" aria-label="영상 고정">' + ICON_PIN + '</button></div>' +   // v2.15: 켜면 목록을 올려도 영상이 안 가려진다 (세로만)
       // v2.4: 영상은 맨 위 제자리에 고정(sticky)되고, 목록을 올리면 문장 영역이 그 위를 덮어 화면을 넓게 쓴다 (사용자 요청).
       // 따라다니는 작은 창은 없음. ※ 덮인 채로 문장을 누르면 가려진 플레이어로 재생된다 — 유튜브 정책(보이지 않는 플레이어 재생 금지)과 어긋남을 알고 고른 방식
       '<div class="yt-list" id="ytList"><div class="yt-player" id="ytBox"><div id="ytPlayer"></div></div><div class="yt-body" id="ytBody"></div></div>' +
@@ -2053,6 +2061,8 @@
     $('#ytTitle').textContent = r.title || '유튜브';
     // 오른쪽 아래: "한 번 더"는 오른손 엄지로 계속 누르게 된다 — 크게
     $('#view-ytv').classList.toggle('yt-editing', !!(YTV.edit && has && !j.busy));   // 폰 가로에선 수정 중에 영상을 조금 줄여 아래 패널 자리를 만든다 (CSS)
+    var eb = $('.yt-edb'), eon = !!(YTV.edit && has && !j.busy);   // 위 막대: 시계(수정 켜기) ↔ "완료"
+    if (eb) { eb.style.display = has && !j.busy && !YTV.perr ? '' : 'none'; eb.innerHTML = eon ? '완료' : ICON_TIME; eb.setAttribute('aria-pressed', String(eon)); eb.setAttribute('aria-label', eon ? '시간 수정 끝' : '문장 시간 수정'); }
     fab.innerHTML = has ? '<button class="guide-pill yt-pm' + (S.settings.ytPause ? ' on' : '') + '" data-action="yt-pause-mode" aria-pressed="' + !!S.settings.ytPause + '" aria-label="문장마다 멈춤">⏸ 문장마다</button>' +
       '<button class="yt-again" data-action="yt-replay" aria-label="한 번 더"' + (YTV.act < 0 ? ' disabled' : '') + '><span>↻</span><small>한 번 더</small></button>' : '';
     body.innerHTML = ytDlHTML(r) + (YTV.perr ? '<div class="yt-err">앱 안에서 재생할 수 없는 영상이에요' + (YTV.perr === 101 || YTV.perr === 150 ? ' (올린 사람이 퍼가기를 막음)' : '') + ' — 문장을 누르면 유튜브 앱에서 그 시점으로 열려요' + (YTV.noLocal ? ' · 받은 파일도 재생되지 않아요 — 위의 “지우기”로 지우고 다시 받아 주세요' : '') + '</div>' : '') + (j.busy ? '<div class="empty">⏳ 영상을 듣고 문장을 정리하는 중…<span id="ytJobT">' + ytJobT(j) + '</span><br><span class="small">' + (j.prog ? j.prog + '까지 정리했어요 — 긴 영상은 나눠서 이어 받아요. ' : '영상 길이에 따라 1~5분 걸려요. ') + '그동안 위에서 영상을 먼저 봐도 돼요.</span></div>'
@@ -2061,7 +2071,7 @@
       : (j.more ? '<div class="yt-old">⏳ ' + esc(j.prog || '') + ' 뒤를 이어서 정리하는 중…<span id="ytJobT">' + ytJobT(j) + '</span> (위 문장은 그대로 쓸 수 있어요)</div>' : ytShort(r) ? '<div class="yt-old">⏱ ' + esc(ytMMSS(ytLastEnd(r))) + '까지만 정리됐어요 (영상 ' + fmtSec(r.dur) + ') · <b data-action="yt-more">이어서 정리하기</b></div>' : '') +
         (r.tv === 3 ? '' : '<div class="yt-old">문장 시간을 더 정확하게 맞추도록 바꿨어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
         (YTV.undo && YTV.undo.id === r.id ? '<div class="yt-undo">' + (YTV.undo.kind === 'merge' ? '⤓ 문장을 합쳤어요' : '✂ 문장을 쪼갰어요') + ' · <b data-action="yt-undo">되돌리기</b></div>' : '') +
-        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장 · 문장을 누르면 그 부분부터 재생 · 단어를 두 번 톡 누르면 뜻 · 한글은 눌러서 보기 · 꾹 누르면 문장 공부·복사·합치기·쪼개기</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
+        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장' + ((S.settings.ytHintN || 0) <= 3 ? ' · 문장을 누르면 그 부분부터 재생 · 단어를 두 번 톡 누르면 뜻 · 한글은 눌러서 보기 · 꾹 누르면 문장 공부·복사·합치기·쪼개기' : '') + '</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
         '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b>' + (ytTailDone(r) ? '' : '<br>뒷부분이 빠졌으면 <b data-action="yt-more">이어서 정리하기</b>') + '</div>');   // v2.20: 영상 길이를 몰라도 늘 있게 (v2.21: 뒤엔 말이 없다고 확인되면 뺌)
     ytSideRender();
   }
@@ -2081,12 +2091,12 @@
     var r = YTV && ytRec(YTV.id), x = r && r.sents && r.sents[i]; if (!x) return;
     var inBox = sentBoxHas(r.vid, x.e), b = function (act, label, on, extra) { return '<button class="btn" data-action="' + act + '" data-i="' + i + '"' + (extra || '') + (on ? '' : ' disabled') + '>' + label + '</button>'; };
     openSheet('<div class="ym-e">' + esc(x.e) + '</div>' + (x.k ? '<div class="small muted ym-k">' + esc(x.k) + '</div>' : '') + '<div class="yt-menu">' +
-      b('yt-m-study', inBox ? '📚 문장 공부에 담겨 있어요' : x.kp ? '📚 쪼갠 문장은 한글이 안 맞아 담을 수 없어요' : x.k ? '📚 문장 공부에 넣기' : '📚 해석이 없어 담을 수 없어요', !inBox && !!x.k && !x.kp) +
-      b('yt-m-copy', '📋 복사', true) +
-      b('yt-m-word', '📖 단어 뜻 보기', true) +
-      b('yt-m-merge', '⤒ 앞 문장과 합치기', i > 0, ' data-d="-1"') +
-      b('yt-m-merge', '⤓ 뒤 문장과 합치기', i < r.sents.length - 1, ' data-d="1"') +
-      b('yt-m-split', '✂ 쪼개기', ytWords(x.e) > 1) +
+      b('yt-m-study', inBox ? '문장 공부에 담겨 있어요' : x.kp ? '쪼갠 문장은 한글이 안 맞아 담을 수 없어요' : x.k ? '문장 공부에 넣기' : '해석이 없어 담을 수 없어요', !inBox && !!x.k && !x.kp) +
+      b('yt-m-copy', '복사', true) +
+      b('yt-m-word', '단어 뜻 보기', true) +
+      b('yt-m-merge', '앞 문장과 합치기', i > 0, ' data-d="-1"') +
+      b('yt-m-merge', '뒤 문장과 합치기', i < r.sents.length - 1, ' data-d="1"') +
+      b('yt-m-split', '쪼개기', ytWords(x.e) > 1) +
       '</div><div class="sh-actions"><button class="btn" data-action="close-sheet">닫기</button></div>');
   }
   function ytJoin(p, x) {   // 두 문장을 하나로 — 시작·손 수정 시작·파형 시작은 앞 것, 끝은 뒤 것 (ytMergeBroken 과 같은 규칙)
@@ -2142,28 +2152,29 @@
   }
   // --- 시간 수정 (v2.11, 가로 화면): 누른 문장의 시작·끝을 ±0.1·0.5초 또는 "지금"(영상 위치)으로 ---
   function ytSideRender() {
-    var el = $('#ytSide'), r = YTV && ytRec(YTV.id); if (!el) return;
-    if (!r || !r.sents || !r.sents.length || YTJOB[r.id] && YTJOB[r.id].busy) { el.innerHTML = ''; return; }
-    if (!YTV.edit) { el.innerHTML = '<button class="yed-b yed-open" data-action="yt-edit">✎ 문장 시간 수정</button>'; return; }
-    el.innerHTML = r.sents[YTV.act] ? ytEditHTML(r, YTV.act)
-      : '<div class="small muted yed-h">고칠 문장을 오른쪽에서 누르세요</div><div class="yed-c"><button class="yed-b" data-action="yt-edit">✓ 수정 끝</button></div>';
+    var el = $('#ytSide'), r = YTV && ytRec(YTV.id); if (!el || (YTV && YTV.drag)) return;   // 끄는 중엔 캔버스를 바꾸지 않는다 (포인터를 놓침)
+    if (!YTV.edit || !r || !r.sents || !r.sents[YTV.act] || YTJOB[r.id] && YTJOB[r.id].busy) { el.innerHTML = ''; return; }
+    el.innerHTML = ytEditHTML(r, YTV.act);
+    ytWaveBind($('#ytWave')); ytWaveDraw();
   }
-  function ytEditHTML(r, i) {   // 시작 | −0.5 −0.1 +0.1 +0.5 지금 / 끝 | … / 문장 듣기 · 재생멈춤 · 2초 · 수정 끝
-    var x = r.sents[i];
-    var b = function (k, d, label, aria) { return '<button class="yed-b" data-action="yt-adj" data-k="' + k + '" data-d="' + d + '" aria-label="' + aria + '">' + label + '</button>'; };
-    var row = function (k, name, v) {
-      return '<div class="yed-r"><span class="yed-l">' + name + '<b>' + fmtSecD(v) + '</b></span>' + b(k, -0.5, '−0.5', name + ' 0.5초 앞으로') + b(k, -0.1, '−0.1', name + ' 0.1초 앞으로') +
-        b(k, 0.1, '+0.1', name + ' 0.1초 뒤로') + b(k, 0.5, '+0.5', name + ' 0.5초 뒤로') + b(k, 'now', '지금', name + '을 지금 영상 위치로') + '</div>';
-    };
-    return '<div class="yed">' + row('s', '시작', ytStart(x)) + row('t', '끝', ytRange(r, i).end) +
-      '<div class="yed-c"><button class="yed-b" data-action="yt-edit-play">▶ 문장</button><button class="yed-b" data-action="yt-playpause" aria-label="재생·멈춤">⏯</button>' +
-      '<button class="yed-b" data-action="yt-back2" aria-label="2초 뒤로 가서 재생">⟲ 2초</button><button class="yed-b" data-action="yt-edit">✓ 끝</button></div></div>';
+  function ytEditHTML(r, i) {   // 1줄: ⟲2초 ⏯ + 띠 / 2줄: [시작|끝] · −0.5 −0.1 (지금) +0.1 +0.5 · ▶ 문장 — 좁으면 ±줄이 셋째 줄 (CSS)
+    var k = YTV.ek === 't' ? 't' : 's', nm = k === 's' ? '시작' : '끝', on = ytPlaying();
+    var seg = function (kk, name, v) { return '<button class="yed-k' + (k === kk ? ' on' : '') + '" role="radio" aria-checked="' + (k === kk) + '" data-action="yt-ek" data-k="' + kk + '">' + name + '<b>' + fmtSecD(v) + '</b></button>'; };
+    var n = function (d, label, aria) { return '<button class="yed-n" data-action="yt-adj" data-k="' + k + '" data-d="' + d + '" aria-label="' + nm + ' ' + aria + '">' + label + '</button>'; };
+    return '<button class="yed-i yed-back" data-action="yt-back2" aria-label="2초 뒤로 가서 재생">' + ICON_BACK2 + '2초</button>' +
+      '<button class="yed-i yed-pp" data-action="yt-playpause" aria-label="재생·멈춤" data-on="' + on + '">' + (on ? ICON_PAUSE : ICON_PLAY) + '</button>' +
+      '<canvas class="yed-wave" id="ytWave" aria-hidden="true"></canvas>' +
+      '<div class="yed-seg" role="radiogroup" aria-label="고칠 곳">' + seg('s', '시작', ytStart(r.sents[i])) + seg('t', '끝', ytRange(r, i).end) + '</div>' +
+      '<div class="yed-fine">' + n(-0.5, '−0.5', '0.5초 앞으로') + n(-0.1, '−0.1', '0.1초 앞으로') +
+      '<button class="yed-now" data-action="yt-adj" data-k="' + k + '" data-d="now" aria-label="' + nm + '을 지금 영상 위치로">지금</button>' +
+      n(0.1, '+0.1', '0.1초 뒤로') + n(0.5, '+0.5', '0.5초 뒤로') + '</div>' +
+      '<button class="yed-i yed-go" data-action="yt-edit-play" aria-label="고친 구간으로 문장 듣기">' + ICON_PLAY + '문장</button>';
   }
-  function ytAdj(k, d) {
+  function ytAdj(k, d, at) {   // d: ±초 · 'now'(영상 위치) · 'at'(띠에서 끈 값 at)
     var r = YTV && ytRec(YTV.id), i = YTV ? YTV.act : -1, x = r && r.sents && r.sents[i]; if (!x) return;
     var prev = r.sents[i - 1], next = r.sents[i + 1], now = d === 'now', v, want;
     if (now) { if (!YTP || !YTV.ready) return; try { v = YTP.getCurrentTime(); } catch (e) { return; } }
-    else v = (k === 's' ? ytStart(x) : ytRange(r, i).end) + d;
+    else v = d === 'at' ? at : (k === 's' ? ytStart(x) : ytRange(r, i).end) + d;
     want = v = Math.round(v * 10) / 10;
     if (k === 's') {   // 순서가 안 바뀌게: 앞 문장 시작 ~ 다음 문장 시작(같은 시간은 허용 — ytClean 규칙) · 끝 0.5초 전까지. 지금 값은 늘 범위 안
       var lo = Math.min(prev ? prev.s : 0, x.s), hi = Math.max(Math.min(next ? next.s : Infinity, ytRange(r, i).end - 0.5), x.s);
@@ -2179,6 +2190,89 @@
     if (now || !YTP || !YTV.ready || YTV.perr) return;   // "지금"은 들으면서 누르는 거라 재생을 끊지 않는다
     var g = ytRange(r, i);   // 바뀐 곳을 1.5초 들려준다 (시작이면 앞부분, 끝이면 끝부분)
     if (k === 's') ytPlayRange(g.from, Math.min(g.from + 1.5, g.end), true); else ytPlayRange(Math.max(g.from, g.end - 1.5), g.end, true);
+  }
+  function ytPlaying() { try { return !!(YTP && YTV && YTV.ready && YTP.getPlayerState() === 1); } catch (e) { return false; } }
+  function ytWin(r, i) {   // 띠에 보일 구간: 문장 앞뒤 1.5초(짧으면 합쳐 5초). 같은 문장이고 경계가 안쪽이면 그대로 — 손 밑에서 눈금이 움직이지 않게
+    var a = ytStart(r.sents[i]), b = ytRange(r, i).end, w = YTV.win;
+    if (w && w.i === i && a >= (w.a ? w.a + 0.2 : 0) && b <= w.b - 0.2) return w;
+    var pad = Math.max(1.5, (5 - (b - a)) / 2);
+    return (YTV.win = { i: i, a: Math.max(0, Math.round((a - pad) * 10) / 10), b: Math.round((b + pad) * 10) / 10 });
+  }
+  var YT_ENV = { vid: null };   // 띠 파형 — 영상마다 한 번 읽는다 (onMediaEnv 가 오면 비움)
+  function ytB64(b) { try { var bin = atob(b), e = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) e[i] = bin.charCodeAt(i); return e; } catch (x) { return null; } }
+  function ytEnv(r) {
+    if (YT_ENV.vid !== r.vid) {
+      var b = r.off ? bridge.mediaEnv(r.vid) : '', e = b ? ytB64(b) : null;
+      YT_ENV = { vid: r.vid, e: e && e.length > 10 ? e : null, lo: 0, hi: 100 };
+      if (YT_ENV.e) { var srt = Array.prototype.slice.call(e).sort(function (p, q) { return p - q; }); YT_ENV.lo = srt[Math.floor(e.length * 0.1)]; YT_ENV.hi = Math.max(YT_ENV.lo + 10, srt[Math.floor(e.length * 0.98)]); }   // ytSnapCalc 와 같은 백분위 — 영상마다 소리 크기가 달라도 띠 높이가 비슷하게
+    }
+    return YT_ENV.e;
+  }
+  function ytWaveDraw() {   // 띠 그리기 — ytSideRender · 끌기 · ytTick(0.2초)마다
+    var cv = $('#ytWave'), r = YTV && ytRec(YTV.id), i = YTV ? YTV.act : -1; if (!cv || !r || !r.sents || !r.sents[i]) return;
+    var W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1; if (!W || !H) return;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    var g = cv.getContext('2d'), cs = getComputedStyle(cv), col = function (k) { return cs.getPropertyValue(k).trim(); };
+    var w = ytWin(r, i), d = YTV.drag, s = d && d.k === 's' ? d.v : ytStart(r.sents[i]), t = d && d.k === 't' ? d.v : ytRange(r, i).end;
+    var X = function (v) { return (v - w.a) / (w.b - w.a) * W; }, mid = H / 2 - 1, pr = col('--primary'), mu = col('--muted'), e = ytEnv(r), k, x;
+    cv.setAttribute('data-env', e ? '1' : '0'); cv.setAttribute('data-a', w.a); cv.setAttribute('data-b', w.b);   // 테스트용
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgba(' + col('--primary-rgb') + ',.13)'; g.fillRect(X(s), 0, X(t) - X(s), H);   // 이 문장 구간
+    g.fillStyle = mu; g.globalAlpha = .35;   // 앞뒤 문장 = 아래 3px 막대
+    [i - 1, i + 1].forEach(function (j) { var q = r.sents[j]; if (q) g.fillRect(X(ytStart(q)), H - 3, X(ytRange(r, j).end) - X(ytStart(q)), 3); });
+    if (e) {   // 받은 영상: 2px 칸마다 소리 크기 최댓값 → 위아래 대칭 면, 구간 안은 --primary
+      var top = [], amp = (H - 12) / 2, F = 0.02;
+      for (x = 0; x <= W; x += 2) {
+        var f0 = Math.max(0, Math.floor((w.a + x / W * (w.b - w.a)) / F)), f1 = Math.max(f0 + 1, Math.floor((w.a + (x + 2) / W * (w.b - w.a)) / F)), m = 0;
+        for (var f = f0; f < f1 && f < e.length; f++) if (e[f] > m) m = e[f];
+        top.push(Math.max(0.5, Math.min(1, Math.max(0, (m - YT_ENV.lo) / (YT_ENV.hi - YT_ENV.lo))) * amp));
+      }
+      var path = function () { g.beginPath(); g.moveTo(0, mid - top[0]); for (k = 1; k < top.length; k++) g.lineTo(k * 2, mid - top[k]); for (k = top.length - 1; k >= 0; k--) g.lineTo(k * 2, mid + top[k]); g.closePath(); };
+      g.globalAlpha = .45; path(); g.fill();
+      g.save(); g.beginPath(); g.rect(X(s), 0, X(t) - X(s), H); g.clip(); g.globalAlpha = 1; g.fillStyle = pr; path(); g.fill(); g.restore();
+    } else {   // 유튜브(파형 없음): 가운데 줄 + 1초 눈금
+      g.globalAlpha = .5; g.fillRect(0, mid, W, 1);
+      for (k = Math.ceil(w.a); k <= w.b; k++) g.fillRect(Math.round(X(k)), mid - 5, 1, 11);
+    }
+    ['s', 't'].forEach(function (kk) {   // 손잡이 [ ] — 고르는 쪽은 굵게 + 잡는 곳
+      var hx = Math.round(X(kk === 's' ? s : t)), on = kk === (YTV.ek === 't' ? 't' : 's'), lw = on ? 3 : 2, fx = kk === 's' ? hx - lw / 2 : hx + lw / 2 - 8;
+      g.globalAlpha = on ? 1 : .55; g.fillStyle = pr;
+      g.fillRect(hx - lw / 2, 0, lw, H); g.fillRect(fx, 0, 8, lw); g.fillRect(fx, H - lw, 8, lw);
+      if (on) { g.beginPath(); if (g.roundRect) g.roundRect(hx - 5, mid - 10, 10, 20, 5); else g.rect(hx - 5, mid - 10, 10, 20); g.fillStyle = col('--surface'); g.fill(); g.lineWidth = 2; g.strokeStyle = pr; g.stroke(); }
+    });
+    g.globalAlpha = 1;
+    var c = -1; try { if (YTP && YTV.ready) c = YTP.getCurrentTime(); } catch (x2) { }
+    if (c >= w.a && c <= w.b) { g.fillStyle = col('--text'); g.fillRect(Math.round(X(c)), 0, 1.5, H); }   // 재생 위치
+  }
+  function ytWaveBind(cv) {   // 띠: [ ] 가까이(24px) 눌러 끌면 그 경계, 끌지 않고 톡 = 그 경계 고르기, 빈 곳 톡 = 거기서부터 재생
+    if (!cv) return;
+    var at = function (ev) { var b = cv.getBoundingClientRect(), w = YTV.win; return w.a + (ev.clientX - b.left) / b.width * (w.b - w.a); };
+    var px = function (v) { var b = cv.getBoundingClientRect(), w = YTV.win; return b.left + (v - w.a) / (w.b - w.a) * b.width; };
+    cv.addEventListener('pointerdown', function (ev) {
+      var r = ytRec(YTV.id), i = YTV.act; if (!r || !r.sents[i] || !YTV.win) return;
+      var ds = Math.abs(ev.clientX - px(ytStart(r.sents[i]))), dt = Math.abs(ev.clientX - px(ytRange(r, i).end));
+      if (Math.min(ds, dt) > 24) {
+        if (!YTP || !YTV.ready || YTV.perr) return;
+        if (YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; }
+        YTV.stopAt = null; bridge.stop(); YTP.seekTo(Math.max(0, Math.round(at(ev) * 10) / 10), true); YTP.playVideo(); return;
+      }
+      var k = ds < dt || (ds === dt && YTV.ek !== 't') ? 's' : 't';
+      YTV.ek = k; YTV.drag = { k: k, v: k === 's' ? ytStart(r.sents[i]) : ytRange(r, i).end, x0: ev.clientX, moved: false };
+      try { cv.setPointerCapture(ev.pointerId); } catch (x) { }
+      ev.preventDefault();
+      [].forEach.call(document.querySelectorAll('#ytSide .yed-k'), function (b) { var on = b.getAttribute('data-k') === k; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+      ytWaveDraw();
+    });
+    cv.addEventListener('pointermove', function (ev) {
+      var d = YTV.drag; if (!d) return;
+      if (Math.abs(ev.clientX - d.x0) > 4) d.moved = true;
+      if (!d.moved) return;
+      d.v = Math.max(0, Math.round(at(ev) * 10) / 10);
+      var b = $('#ytSide .yed-k.on b'); if (b) b.textContent = fmtSecD(d.v);
+      ytWaveDraw();
+    });
+    cv.addEventListener('pointerup', function () { var d = YTV.drag; YTV.drag = null; if (d && d.moved) ytAdj(d.k, 'at', d.v); else ytSideRender(); });
+    cv.addEventListener('pointercancel', function () { YTV.drag = null; ytSideRender(); });
   }
   function ytRow(i) { var r = YTV && ytRec(YTV.id), el = $('#ys' + i); if (r && el && r.sents[i]) el.outerHTML = ytRowHTML(r, i); }
   function ytCardHTML(c) {
@@ -2348,6 +2442,7 @@
     var li = document.getElementById('yd-' + vid); if (li) li.textContent = ytDlShort(r);
   }
   window.onMediaEnv = function (vid) {
+    if (YT_ENV.vid === vid) YT_ENV.vid = null;   // 띠 파형도 새로
     var r = ytRecVid(vid); if (!r || !ytSnap(r)) return;
     if (YTV && YTV.id === r.id && current().view === 'ytv') ytRenderBody();   // 줄 시간·수정 패널 값도 새 경계로
   };
@@ -2359,7 +2454,7 @@
   function ytSnap(r) {
     var b = r.off && r.sents && r.sents.length ? bridge.mediaEnv(r.vid) : '', e;
     if (!b) return false;
-    try { var bin = atob(b); e = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) e[i] = bin.charCodeAt(i); } catch (x) { return false; }
+    e = ytB64(b); if (!e) return false;
     ytSnapCalc(r.sents, e); r.snap = 1; save();
     return true;
   }
@@ -2485,6 +2580,7 @@
     if (!(r.dur > 0)) { var du = 0; try { du = YTP.getDuration ? YTP.getDuration() : 0; } catch (e) { } if (du > 0 && isFinite(du)) { r.dur = Math.round(du); save(); if (ytShort(r)) ytRenderBody(); } }   // 길이를 알게 된 순간 "이어서 정리하기" 안내가 바로 뜨게 (v2.20)   // v2.19: 영상 길이 — 정리가 끝까지 됐는지 본다
     if (!r.sents) return;
     try { t = YTP.getCurrentTime(); } catch (e) { return; }
+    if (YTV.edit && !YTV.drag) { ytWaveDraw(); var pb = $('#ytSide .yed-pp'), pon = String(ytPlaying()); if (pb && pb.getAttribute('data-on') !== pon) { pb.setAttribute('data-on', pon); pb.innerHTML = pon === 'true' ? ICON_PAUSE : ICON_PLAY; } }   // 재생선 · ⏯ 모양
     // 멈춤: seekTo 직후 getCurrentTime 은 옛 위치를 돌려주므로(iframe API 캐시) 새 위치가 보인 뒤에야 판정을 켠다.
     // 끝 지점을 자연스럽게 지날 때만 멈추고, 스크러빙으로 훌쩍 넘어가면 그냥 푼다
     if (YTV.stopAt != null && !YTV.raf) {
@@ -2590,7 +2686,7 @@
       '<div class="sh-m">' + esc(w.m) + '</div>' +
       '<div class="field" style="margin-top:10px"><label>예문 (영어)</label><textarea id="ex-e" autocapitalize="sentences">' + esc(w.e) + '</textarea></div>' +
       '<div class="field"><label>예문 해석</label><textarea id="ex-k">' + esc(w.k) + '</textarea></div>' +
-      '<div class="ai-row"><input id="ex-hint" placeholder="AI에게 상황 요청 (선택) 예: 회의에서, 더 짧게" autocomplete="off"><button class="btn ai" data-action="ai-example" data-id="' + esc(w.id) + '">✨ AI 새 예문</button></div>' +
+      '<div class="ai-row"><input id="ex-hint" placeholder="AI에게 상황 요청 (선택) 예: 회의에서, 더 짧게" autocomplete="off"><button class="btn ai" data-action="ai-example" data-id="' + esc(w.id) + '">AI 새 예문</button></div>' +
       '<div class="small muted" id="ai-note">AI가 쓴 예문은 저장 전에 직접 고칠 수 있어요</div>' +
       '<div class="sh-actions"><button class="btn" data-action="close-sheet">취소</button><button class="btn primary" data-action="ex-save" data-id="' + esc(w.id) + '">저장</button></div>'
     );
@@ -2636,7 +2732,7 @@
       '<div class="field"><label>뜻 *</label><input id="f-m" value="' + esc(v.m) + '" placeholder="예: 알아내다, 해결하다"></div>' +
       '<div class="field"><label>예문 (영어) — 실제로 말할 문장으로</label><textarea id="f-e" placeholder="I can\'t figure out how to set this up.">' + esc(v.e) + '</textarea></div>' +
       '<div class="field"><label>예문 해석</label><textarea id="f-k" placeholder="이걸 어떻게 설정하는지 도무지 모르겠어.">' + esc(v.k) + '</textarea></div>' +
-      '<div class="ai-row"><input id="f-hint" placeholder="AI에게 상황 요청 (선택) 예: 여행 중" autocomplete="off"><button class="btn ai" data-action="ai-edit-example">✨ AI 예문 생성</button></div>' +
+      '<div class="ai-row"><input id="f-hint" placeholder="AI에게 상황 요청 (선택) 예: 여행 중" autocomplete="off"><button class="btn ai" data-action="ai-edit-example">AI 예문 생성</button></div>' +
       (isNew ? '<div class="switch-row"><div><div class="sw-t">오늘 학습(1단계)에 바로 추가</div><div class="sw-s">끄면 대기 목록에 들어가 순서대로 나와요</div></div><button class="toggle on" id="f-now" data-action="toggle-el"></button></div>' : '') +
       '<div class="row">' + (isNew ? '<button class="btn" data-action="save-word" data-more="1">저장하고 계속</button>' : '') + '<button class="btn primary" data-action="save-word">저장</button></div>';
   }
@@ -2679,7 +2775,7 @@
     if (!rows.length) { el.innerHTML = ''; return; }
     var useAi = addState.ai && !!AI.key;
     el.innerHTML = '<b>' + rows.length + '개</b> 인식' + (noM ? ' · 뜻 없음 ' + noM + '개' : '') + (noE ? ' · 예문 없음 ' + noE + '개' : '') +
-      ((noM || noE) ? (useAi ? ' → <span class="ai-mark">✨ AI가 채워요</span>' : (noM ? ' → 뜻 없는 단어는 <b>건너뛰어요</b> (AI 채우기를 켜 보세요)' : '')) : '');
+      ((noM || noE) ? (useAi ? ' → <span class="ai-mark">AI가 채워요</span>' : (noM ? ' → 뜻 없는 단어는 <b>건너뛰어요</b> (AI 채우기를 켜 보세요)' : '')) : '');
     var go = $('#impGo'); if (go && !addState.busy) go.textContent = '추가하기 (' + rows.length + '개)';
   }
   function saveWord(more) {
@@ -2775,9 +2871,9 @@
     }
     if (!need.length || !useAi) { finish(); return; }
     addState.busy = true;
-    var btn = $('#impGo'); if (btn) { btn.disabled = true; btn.textContent = '✨ AI가 채우는 중… 0/' + need.length; }
+    var btn = $('#impGo'); if (btn) { btn.disabled = true; btn.textContent = 'AI가 채우는 중… 0/' + need.length; }
     var ta = $('#imp'); if (ta) ta.disabled = true;
-    aiFillWords(need, function (d, tot) { var b = $('#impGo'); if (b) b.textContent = '✨ AI가 채우는 중… ' + d + '/' + tot; }).then(finish, function (err) {
+    aiFillWords(need, function (d, tot) { var b = $('#impGo'); if (b) b.textContent = 'AI가 채우는 중… ' + d + '/' + tot; }).then(finish, function (err) {
       addState.busy = false;
       var b = $('#impGo'); if (b) { b.disabled = false; } var t2 = $('#imp'); if (t2) t2.disabled = false;
       updateImportPreview();
@@ -3273,9 +3369,12 @@
       toast(on ? '📌 영상 고정 — 목록을 올려도 영상이 안 가려져요' : '고정 해제 — 목록을 올리면 문장이 영상을 덮어요');
     },
     'yt-edit': function () {
-      YTV.edit = !YTV.edit; ytRenderBody();
-      if (YTV.edit) toast('±를 누르면 바뀐 곳을 들려줘요 · 멈춘 곳에서 "지금"');
+      YTV.edit = !YTV.edit; YTV.win = null;
+      var r = ytRec(YTV.id); if (YTV.edit && YTV.act < 0 && r && r.sents && r.sents.length) YTV.act = Math.max(0, YTV.cur);   // 문장을 안 골랐으면 지금 나오는 문장(없으면 첫 문장)
+      ytRenderBody();
+      if (YTV.edit) { var el = $('#ys' + YTV.act); if (el) el.scrollIntoView({ block: 'nearest' }); toast('[ ]를 끌거나 ±로 · 멈춘 곳에서 "지금"'); }
     },
+    'yt-ek': function (el) { YTV.ek = el.getAttribute('data-k'); ytSideRender(); },
     'yt-edit-play': function () {   // 고친 구간 그대로 한 문장 듣기 (문장마다 설정과 상관없이 끝에서 멈춤)
       var r = YTV && ytRec(YTV.id); if (!r || !r.sents[YTV.act] || !YTP || !YTV.ready) return;
       var g = ytRange(r, YTV.act); ytPlayRange(g.from, g.end, true);

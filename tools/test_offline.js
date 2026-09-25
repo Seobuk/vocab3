@@ -165,19 +165,20 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   // --- 7. 가로: 저장 줄 · 시간 수정(손 수정이 늘 우선) · 꾹 눌러 복사 ---
   await p.setViewportSize({ width: 844, height: 390 }); await p.waitForTimeout(250);
   eq('가로에서도 저장 줄 보임 (스크립트 맨 위)', await p.evaluate(() => { const r = document.querySelector('#ytDl').getBoundingClientRect(); return r.height > 0 && r.top < innerHeight && r.left >= document.querySelector('#ytBox').getBoundingClientRect().right - 1; }), true);
-  await p.click('#ytSide [data-action="yt-edit"]'); await p.waitForTimeout(100);
+  await p.click('.yt-edb'); await p.waitForTimeout(100);
   await p.click('#ys1 .ys-t'); await p.waitForTimeout(100);
-  eq('수정 패널 값 = 파형 경계 기준 (시작 vs 2.7 · 끝 5.0+0.12)', await p.$$eval('#ytSide .yed-l b', x => x.map(e => e.textContent).join(' ')), '0:02.7 0:05.1');
+  eq('받은 영상: 띠에 파형', await p.getAttribute('#ytWave', 'data-env'), '1');
+  eq('수정 패널 값 = 파형 경계 기준 (시작 vs 2.7 · 끝 5.0+0.12)', await p.$$eval('#ytSide .yed-k b', x => x.map(e => e.textContent).join(' ')), '0:02.7 0:05.1');
   await paused();
-  await p.click('#ytSide [data-action="yt-adj"][data-k="s"][data-d="0.1"]'); await p.waitForTimeout(60);
+  await p.click('#ytSide [data-action="yt-ek"][data-k="s"]'); await p.click('#ytSide [data-action="yt-adj"][data-d="0.1"]'); await p.waitForTimeout(60);
   eq('시작 +0.1 = 보이는 시작(2.7)+0.1 → ms', JSON.stringify(await p.evaluate(() => { const x = window.__vocab.state().yt.find(r => r.vid === 'OFFLINE0001').sents[1]; return [x.s, x.ms]; })), '[2.8,1]');
   near('손으로 고친 시작 그대로 (vs 무시)', await vt(), 2.78, 2.95);
   await paused();
   near('미리듣기 1.5초 뒤 멈춤', await vt(), 4.25, 4.5);
-  await p.click('#ytSide [data-action="yt-adj"][data-k="t"][data-d="-0.1"]'); await p.waitForTimeout(60);
+  await p.click('#ytSide [data-action="yt-ek"][data-k="t"]'); await p.click('#ytSide [data-action="yt-adj"][data-d="-0.1"]'); await p.waitForTimeout(60);
   await paused();
   near('끝 −0.1 → 5.0 (me) 에서 멈춤 — ve+0.12 무시', await vt(), 4.95, 5.2);
-  eq('패널 값', await p.$$eval('#ytSide .yed-l b', x => x.map(e => e.textContent).join(' ')), '0:02.8 0:05.0');
+  eq('패널 값', await p.$$eval('#ytSide .yed-k b', x => x.map(e => e.textContent).join(' ')), '0:02.8 0:05.0');
   await p.screenshot({ path: OUT + '/312-offline-edit.png' });
   const e2 = await p.$eval('#ys2 .ys-e', e => { const r = e.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
   const t0 = await vt();
@@ -185,7 +186,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   eq('꾹 누르면 선택창 · 재생 안 함', (await p.$$eval('#sheet.show .yt-menu .btn', x => x.length)) + ' | ' + ((await vt()) === t0), '6 | true');
   await p.click('#sheet [data-action="yt-m-copy"]'); await p.waitForTimeout(250);
   eq('선택창 "복사" = 영어 문장 복사', await p.evaluate(() => window.__copied), 'It takes a lot of practice every day.');
-  await p.click('#ytSide [data-action="yt-edit"]:not(.yed-open)'); await p.waitForTimeout(100);
+  await p.click('.yt-edb'); await p.waitForTimeout(100);
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(200);
 
   // --- 8. 소리만 받은 영상(m4a) = 같은 <video> + 제목 카드 ---
@@ -337,7 +338,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   eq('받은 영상 탭 영역 = 버튼(TalkBack)', await p.evaluate(() => ['role', 'aria-label'].map(k => document.querySelector('#ytBox').getAttribute(k)).join()), 'button,재생·멈춤');
   await p.setViewportSize({ width: 844, height: 390 }); await p.waitForTimeout(250);
   eq('고정한 채 가로로 돌려도 왼쪽 영상 · 오른쪽 스크립트 (영상이 목록을 안 덮음)', await p.evaluate(() => { const b = document.querySelector('#ytBox').getBoundingClientRect(), l = document.querySelector('#ytList').getBoundingClientRect(); return [Math.round(b.right) <= Math.round(l.left) + 1, b.width < innerWidth * 0.6, getComputedStyle(document.querySelector('#ytList')).scrollPaddingTop].join(); }), 'true,true,auto');
-  eq('가로 화면: 고정 버튼 숨김(원래 안 가려짐)', await p.$eval('.yt-pinb', e => getComputedStyle(e).visibility), 'hidden');
+  eq('가로 화면: 고정 버튼 숨김(원래 안 가려짐)', await p.$eval('.yt-pinb', e => getComputedStyle(e).display), 'none');
   await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250);
   await p.click('.yt-pinb'); await p.waitForTimeout(150);
   await p.evaluate(() => { document.querySelector('#ytList').scrollTop = 250; }); await p.waitForTimeout(150);

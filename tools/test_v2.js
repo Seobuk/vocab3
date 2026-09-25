@@ -143,7 +143,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.click('#tabbar [data-tab="edit"]'); await p.waitForTimeout(300);
   eq('기본 탭 = 붙여넣기', await p.$$eval('#imp', x => x.length), 1);
   await p.fill('#imp', 'mulligan\ntinker with | 만지작거리다\n- ballpark figure | 대략적인 수치 | Can you give me a ballpark figure? | 대략 얼마쯤이야?\nmulligan'); await p.waitForTimeout(100);
-  eq('미리보기', await p.textContent('#impPrev'), '3개 인식 · 뜻 없음 1개 · 예문 없음 2개 → ✨ AI가 채워요');
+  eq('미리보기', await p.textContent('#impPrev'), '3개 인식 · 뜻 없음 1개 · 예문 없음 2개 → AI가 채워요');
   await p.screenshot({ path: OUT + '/209-add-bulk.png' });
   const wordsBefore = await p.evaluate(() => window.__vocab.state().words.length);
   await p.click('#impGo'); await p.waitForTimeout(600);

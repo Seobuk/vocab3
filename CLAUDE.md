@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.21 (versionCode 45).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.22 (versionCode 46).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -46,7 +46,9 @@
     `ytMergeShort` 로 3단어 이하 문장을 시간 간격이 짧은 이웃에 합친다. 테스트 `tools/test_yt_merge.js`.
     v2.8 의 "소리로 문장 끝 맞추기"(Visualizer 음량 VAD) 실험은 v2.9 에서 뺐다 — 사용자 결정, 다시 넣지 말 것.
     남은 오차는 Gemini 시간 자체(fps 2 = 0.5초 간격, fps 없이 다시 보낸 영상은 1초 간격; 1초 간격일 때 평균 1~2초 틀렸음).
-  - 손 보정(v2.11, 사용자 요청 — 가로 화면만): 영상 아래 왼쪽 `#ytSide` 패널(`ytSideRender`/`ytEditHTML`/`ytAdj`)에서 누른 문장(`YTV.act`)의 시작·끝을 ±0.1·0.5초·"지금"(영상 위치).
+  - 손 보정(v2.11, 사용자 요청 — 가로 화면만): v2.22 부터 위 막대 시계 버튼(`.yt-edb`, 수정 중 "완료") → 화면 아래 도크 `#ytSide`(가로만, 102px, `ytSideRender`/`ytEditHTML`/`ytAdj`):
+    띠 canvas `#ytWave`(받은 영상 파형 `YT_ENV` · [ ] 손잡이 끌기 = `ytAdj(k,'at',v)` · 빈 곳 톡 = 거기서 재생, `ytWaveDraw`/`ytWaveBind`/`ytWin`) + [시작|끝] `YTV.ek` + ± 한 벌 + 지금 + 문장 듣기.
+    누른 문장(`YTV.act`, 안 골랐으면 켤 때 지금 문장)의 시작·끝을 ±0.1·0.5초·"지금"(영상 위치)·끌기로.
     고친 문장은 `ms`/`me` 표시(ytClean 이 보존) → `ytRange()` 가 앞 여유(−0.3)·끝 여유(+0.1)·다음 문장 시작에서 자르기를 빼고 그 자리 그대로. 폰 가로에선 수정 중 `--ytw` 를 줄여 패널 자리(160px).
     "다시 정리하기"는 고친 시간도 덮어쓴다(확인 창에 안내). 문장 꾹 누르기(550ms) = 영어 문장 복사(`bridge.copy`), 떼며 생기는 click 은 버림. 테스트 `tools/test_yt_edit.js`.
   - 가로 화면(v2.6): 영상 화면에서만 회전 허용(`bridge.setRotate` → `setRequestedOrientation(USER|PORTRAIT)`, render() 에서 전환), 가로면 CSS 로 왼쪽 영상·오른쪽 스크립트.
@@ -69,6 +71,12 @@
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
 - `tools/test_*.js`, `tools/shots.js` — Playwright UI 테스트 (Gemini·음성인식은 stub). 스크린샷 `build/shots/`.
 - `store/` — Play 등록 문구·개인정보처리방침(권한·외부 전송이 바뀌면 같이 갱신). `docs/screenshots/` README 용.
+
+## 디자인 (v2.22 — Taste Skill · Anthropic frontend-design · UI/UX Pro Max · Vercel Web Interface Guidelines 리뷰)
+- 강조색은 테마 `--primary` 하나: 그라데이션·색 번짐 그림자·Tailwind 고정색(파랑·초록·빨강) 쓰지 않는다. 연한 판(`--primary-soft`) 위 글자는 `--primary-ink`(테마 `ink`, 대비 4.5:1+).
+- 그림자: `--shadow` = 1px 선, 떠 있는 것(학습 카드·단어 카드·FAB)만 `--shadow-float`. 아이콘은 이모지 대신 선 SVG(stroke 2, `SVG_O`). 굵기 700 까지(800 은 드물게).
+- 한국어 `word-break: keep-all` (body). 토스트는 줄바꿈 허용·테마 색·`aria-live`, 길이에 따라 1.5~5초. `prefers-reduced-motion` 이면 움직임·컨페티 끔.
+- 다음 후보(사용자 확인 필요): 세로 화면 시간 수정, 영어 세리프 글꼴, 남은 이모지 SVG 화, 홈 목록 재구성, `--muted` 대비, 글자 크기·반경 토큰 정리.
 
 ## 준비 (처음 한 번)
 ```
