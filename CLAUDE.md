@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.24 (versionCode 48).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.25 (versionCode 49).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -80,6 +80,8 @@
     합치기·쪼개기 뒤 `ytEdited()` 가 번호 바뀐 상태(act/cur/card/ko/split/stopAt)를 정리하고 한 번 되돌리기(`YTV.undo`). 테스트 `tools/test_yt_menu.js`.
   - v2.15: 받은 영상은 #ytBox 탭(`yt-tap`) = 멈춤/이어 재생(stopAt 유지). 📌 `S.settings.ytPin` → `#view-ytv.yt-pinned`: 플레이어를 목록 위(z-index 2) +
     고정 중(세로)엔 영상을 화면 폭 16:9(max-height 해제 — 45vh 가 폭을 줄이면 옆 틈으로 가린 문장이 눌렸다) + `.yt-list` scroll-padding-top 56.25vw — v2.4 의 "목록이 영상을 덮는" 동작을 끌 수 있게(사용자 요청, 기본 꺼짐). 가로에선 버튼 숨김.
+  - 단어장(v2.25): 정렬 `S.settings.listSort`(base · wrong 많이 틀린 순 · wrongAsc · rand — 랜덤 열쇠 `listState.rnd` 는 누를 때만 새로), 졸업 탭에 담은 문장(`{sent: x}` 항목, `openSentBox`),
+    오른쪽 `listSide`(단계 · ✗틀림 ✓맞음 · ▼어려움 ▲쉬움 · 마지막), 예문 `list-ex` 한 번 톡 = 읽기 · 두 번 톡(400ms) = 가린 한글(`.it-k.hid`) 보이기/가리기. 테스트 `tools/test_list.js`.
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
 - `tools/test_*.js`, `tools/shots.js` — Playwright UI 테스트 (Gemini·음성인식은 stub). 스크린샷 `build/shots/`.
 - `store/` — Play 등록 문구·개인정보처리방침(권한·외부 전송이 바뀌면 같이 갱신). `docs/screenshots/` README 용.

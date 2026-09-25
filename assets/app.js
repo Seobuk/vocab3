@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.24';
+  var APP_VERSION = '2.25';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -424,7 +424,7 @@
   var BAK_KEY = 'vocab3.bak.start';   // v2.23: 켤 때 읽은 상태 한 벌 (설정 → 데이터 → "켤 때 상태로")
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, ytHintN: 0 };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, ytHintN: 0, listSort: 'base' };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
@@ -1380,7 +1380,7 @@
   };
 
   /* ================= LIST ================= */
-  var listState = { stage: 'all', q: '', star: false };
+  var listState = { stage: 'all', q: '', star: false, rnd: {}, ko: {}, tap: null };   // rnd: 랜덤 순서 열쇠(누를 때마다 새로) · ko: 한글 해석을 펼친 항목 (v2.25)
   /* ================= 회화 연습 (TALK) ================= */
   // 말하기(기기 음성인식) → Gemini(대화 + 한 줄 교정) → 듣기(기기 TTS). 미션 단어는 1단계 단어에서 뽑는다.
   var SCENARIOS = [
@@ -2734,7 +2734,8 @@
   RENDER.list = function (p) {
     if (p && p.stage !== undefined) listState.stage = p.stage;
     var c = counts(), total = S.words.length;
-    var tabs = [['all', '전체', total], [0, '대기', c[0]], [1, '1단계', c[1]], [2, '2단계', c[2]], [3, '3단계', c[3]], [4, '졸업', c[4]]];
+    var nb = S.sentBox.length, so = S.settings.listSort;
+    var tabs = [['all', '전체', total], [0, '대기', c[0]], [1, '1단계', c[1]], [2, '2단계', c[2]], [3, '3단계', c[3]], [4, '졸업', c[4] + (nb ? '+' + nb : '')]];   // +N: 문장 공부에 담은 유튜브 문장
     $('#view-list').innerHTML =
       '<div class="wrap">' +
       '<div class="home-head"><h1>단어장</h1><button class="btn ghost" data-action="tab" data-tab="edit">+ 추가</button></div>' +
@@ -2742,20 +2743,50 @@
         return '<button class="' + (String(t[0]) === String(listState.stage) ? 'on' : '') + '" data-action="list-tab" data-stage="' + t[0] + '">' + t[1] + '<small>' + t[2] + '</small></button>';
       }).join('') + '</div>' +
       '<div class="search"><span class="muted">🔍</span><input id="q" placeholder="단어·뜻·예문 검색" value="' + esc(listState.q) + '"><button class="chip' + (listState.star ? ' on' : '') + '" data-action="list-star" title="★ 단어만">★' + (starCount() ? ' ' + starCount() : '') + '</button><button class="chip' + (S.settings.listExample ? ' on' : '') + '" data-action="list-example" title="예문 표시">예문</button></div>' +
+      '<div class="sort-row" role="radiogroup" aria-label="정렬">' + [['base', '기본'], ['wrong', '많이 틀린 순'], ['wrongAsc', '적게 틀린 순'], ['rand', '랜덤']].map(function (o) {
+        return '<button class="chip' + (so === o[0] ? ' on' : '') + '" role="radio" aria-checked="' + (so === o[0]) + '" data-action="list-sort" data-v="' + o[0] + '">' + o[1] + (o[0] === 'rand' && so === 'rand' ? ' ↻' : '') + '</button>';
+      }).join('') + '</div>' +
       '<div class="list' + (S.settings.listExample ? ' with-ex' : '') + '" id="listBody"></div>' +
       '</div>';
     renderListBody();
     $('#q').addEventListener('input', function (e) { listState.q = e.target.value; renderListBody(); });
   };
+  // 목록 항목: 단어 w 그대로, 담은 유튜브 문장은 { sent: x } (v2.25 — 졸업 탭에 같이)
+  function liWrong(it) { return it.sent ? it.sent.sh || 0 : it.wrong || 0; }   // 단어: 카드에서 "아직" · 문장: 문장 공부에서 "어려움"
+  function liRight(it) { return it.sent ? it.sent.se || 0 : it.right || 0; }
+  function liTime(it) { return it.sent ? it.sent.at || 0 : it.stageAt || 0; }
+  function liId(it) { return it.sent ? it.sent.id : it.id; }
   function listItems() {
-    var st = listState.stage, q = listState.q.trim().toLowerCase();
+    var st = listState.stage, q = listState.q.trim().toLowerCase(), so = S.settings.listSort;
     var arr = S.words.filter(function (w) { return (st === 'all' || w.stage === Number(st)) && (!listState.star || w.star); });
-    if (q) arr = arr.filter(function (w) { return (w.w + ' ' + w.m + ' ' + w.e + ' ' + w.k + ' ' + w.t).toLowerCase().indexOf(q) >= 0; });
+    if (String(st) === '4' && !listState.star) arr = arr.concat(S.sentBox.map(function (x) { return { sent: x }; }));
+    if (q) arr = arr.filter(function (it) { var x = it.sent || it; return (it.sent ? x.e + ' ' + x.k + ' ' + x.title : x.w + ' ' + x.m + ' ' + x.e + ' ' + x.k + ' ' + x.t).toLowerCase().indexOf(q) >= 0; });
     var rank = { 1: 0, 2: 1, 3: 2, 0: 3, 4: 4 };
-    if (st === 'all') arr.sort(function (a, b) { return rank[a.stage] - rank[b.stage] || a.order - b.order; });
-    else if (Number(st) === 0) arr.sort(function (a, b) { return a.order - b.order; });
-    else arr.sort(function (a, b) { return b.stageAt - a.stageAt; });
+    var base = st === 'all' ? function (a, b) { return rank[a.stage] - rank[b.stage] || a.order - b.order; }
+      : Number(st) === 0 ? function (a, b) { return a.order - b.order; }
+      : function (a, b) { return liTime(b) - liTime(a); };
+    if (so === 'wrong') arr.sort(function (a, b) { return liWrong(b) - liWrong(a) || liRight(a) - liRight(b) || base(a, b); });
+    else if (so === 'wrongAsc') arr.sort(function (a, b) { return liWrong(a) - liWrong(b) || liRight(b) - liRight(a) || base(a, b); });
+    else if (so === 'rand') {   // 순서 열쇠는 "랜덤"을 누를 때만 새로 — 검색하며 글자를 칠 때마다 섞이지 않게
+      var rk = listState.rnd, key = function (it) { var id = liId(it); if (rk[id] == null) rk[id] = Math.random(); return rk[id]; };
+      arr.sort(function (a, b) { return key(a) - key(b); });
+    } else arr.sort(base);
     return arr;
+  }
+  function agoText(t) {   // 마지막으로 본 때: 방금 · 3시간 전 · 2일 전 · 9/3
+    if (!t) return '';
+    var d = Date.now() - t, h = Math.floor(d / 3600000);
+    if (h < 1) return '방금'; if (h < 24) return h + '시간 전';
+    var dd = Math.floor(h / 24); if (dd < 30) return dd + '일 전';
+    var o = new Date(t); return (o.getMonth() + 1) + '/' + o.getDate();
+  }
+  function listSide(it) {   // 오른쪽: 단계 + 틀림/맞음 + (졸업 단어면) 문장 공부 어려움/쉬움 + 마지막으로 본 때 (v2.25)
+    var x = it.sent || it, h = '<span class="it-tag">' + (it.sent ? '담은 문장' : STAGE_SHORT[x.stage]) + '</span>';
+    if (!it.sent && (x.wrong || x.right)) h += '<span class="it-meta" title="틀림 · 맞음">✗<b>' + (x.wrong || 0) + '</b> ✓<b>' + (x.right || 0) + '</b></span>';
+    if (x.sh || x.se) h += '<span class="it-meta" title="문장 공부 어려움 · 쉬움">▼<b>' + (x.sh || 0) + '</b> ▲<b>' + (x.se || 0) + '</b></span>';
+    var last = Math.max(it.sent ? 0 : x.lastSeen || 0, x.sa || 0);
+    if (last) h += '<span class="it-meta">' + agoText(last) + '</span>';
+    return '<span class="it-side">' + h + '</span>';
   }
   function renderListBody() {
     var arr = listItems();
@@ -2766,13 +2797,35 @@
     }
     var show = arr.slice(0, 300);
     var ex = !!S.settings.listExample;
-    body.innerHTML = show.map(function (w) {
+    var exHTML = function (id, e, k) {   // 예문: 한 번 톡 = 읽기 · 두 번 톡 = 가려 둔 한글 보이기/가리기 (v2.25)
+      return '<div class="it-ex" data-action="list-ex" data-id="' + esc(id) + '"><div class="it-e">' + esc(e) + '</div>' + (k ? '<div class="it-k' + (listState.ko[id] ? '' : ' hid') + '">' + esc(k) + '</div>' : '') + '</div>';
+    };
+    body.innerHTML = show.map(function (it) {
+      if (it.sent) {   // 문장 공부에 담은 유튜브 문장 (졸업 탭)
+        var x = it.sent;
+        return '<button class="item" style="--c:' + STAGE_COLOR[4] + '" data-action="list-sent" data-id="' + esc(x.id) + '"><span class="dot"></span><div class="it-body">' +
+          exHTML(x.id, x.e, x.k) + '<div class="it-src">' + esc(x.title || '유튜브') + '</div></div>' + listSide(it) + '</button>';
+      }
+      var w = it;
       // 한 줄: 단어 + 뜻 / 아래: 영어 예문 / 그 아래: 우리말 해석 (설정으로 접을 수 있음)
       return '<button class="item" style="--c:' + STAGE_COLOR[w.stage] + '" data-action="open" data-id="' + esc(w.id) + '">' +
         '<span class="dot"></span><div class="it-body"><div class="it-head"><span class="it-w">' + (w.star ? '<i class="star-i">★</i>' : '') + esc(w.w) + '</span><span class="it-m">' + esc(w.m) + '</span></div>' +
-        (ex && w.e ? '<div class="it-e">' + esc(w.e) + '</div>' + (w.k ? '<div class="it-k">' + esc(w.k) + '</div>' : '') : '') +
-        '</div><span class="it-tag">' + STAGE_SHORT[w.stage] + '</span></button>';
+        (ex && w.e ? exHTML(w.id, w.e, w.k) : '') +
+        '</div>' + listSide(w) + '</button>';
     }).join('') + (arr.length > 300 ? '<div class="empty">외 ' + (arr.length - 300) + '개 — 검색으로 좁혀 보세요</div>' : '');
+  }
+
+  function boxById(id) { for (var i = 0; i < S.sentBox.length; i++) if (S.sentBox[i].id === id) return S.sentBox[i]; return null; }
+  function openSentBox(id) {   // 단어장 졸업 탭의 담은 문장 (v2.25)
+    var x = boxById(id); if (!x) return;
+    var d = x.at ? new Date(x.at) : null;
+    openSheet(
+      '<div class="sh-word"><span style="font-size:19px;line-height:1.35">' + esc(x.e) + '</span><button class="spk" data-action="list-sent-say" data-id="' + esc(x.id) + '" aria-label="읽기">' + ICON_SPK + '</button></div>' +
+      (x.k ? '<div class="sh-m">' + esc(x.k) + '</div>' : '') +
+      '<div class="small muted" style="margin-top:10px;line-height:1.6">' + esc(x.title || '유튜브') + (x.s != null ? ' · ' + fmtSec(x.s) : '') + (d ? ' · ' + (d.getMonth() + 1) + '/' + d.getDate() + ' 담음' : '') +
+      '<br>문장 공부 어려움 ' + (x.sh || 0) + ' · 쉬움 ' + (x.se || 0) + (x.sa ? ' · 마지막 ' + agoText(x.sa) : '') + '</div>' +
+      '<div class="sh-actions"><button class="btn" data-action="list-sent-yt" data-id="' + esc(x.id) + '">영상에서 보기</button><button class="btn danger" data-action="list-sent-drop" data-id="' + esc(x.id) + '">문장 공부에서 빼기</button></div>'
+    );
   }
 
   // 예문 수정 시트 — 학습 카드의 예문을 길게 누르면 열림. AI(Gemini)로 새 예문을 받아 고친 뒤 저장.
@@ -3243,6 +3296,37 @@
       if (current().view === 'list') renderListBody();
     },
     'list-star': function () { listState.star = !listState.star; RENDER.list({}); },
+    'list-sort': function (el) { var v = el.getAttribute('data-v'); if (v === 'rand') listState.rnd = {}; S.settings.listSort = v; save(); RENDER.list({}); },   // 랜덤을 다시 누르면 새로 섞음
+    'list-ex': function (el) {   // 예문 한 번 톡 = 영어 읽기 · 두 번 톡(400ms) = 한글 해석 보이기/가리기 (v2.25)
+      var id = el.getAttribute('data-id'), now = Date.now(), lt = listState.tap;
+      if (lt && lt.id === id && now - lt.at < 400) {
+        listState.tap = null; listState.ko[id] = !listState.ko[id];
+        var k = el.querySelector('.it-k'); if (k) k.classList.toggle('hid', !listState.ko[id]);
+        return;
+      }
+      listState.tap = { id: id, at: now };
+      var w = byId(id) || boxById(id); if (w && w.e) speak(w.e, 'en');
+    },
+    'list-sent': function (el) { openSentBox(el.getAttribute('data-id')); },
+    'list-sent-say': function (el) { var x = boxById(el.getAttribute('data-id')); if (x) speak(x.e, 'en'); },
+    'list-sent-yt': function (el) {   // 담은 문장의 영상 화면으로 — 그 문장이 보이게
+      var x = boxById(el.getAttribute('data-id')), r = null; if (!x) return;
+      S.yt.forEach(function (y) { if (y.vid === x.vid) r = y; });
+      closeSheet();
+      if (!r) { toast('영상 목록에 없어요 (지웠어요)'); return; }
+      go('ytv', { id: r.id });
+      var i = -1; (r.sents || []).forEach(function (y, j) { if (i < 0 && y.e === x.e) i = j; });
+      if (i >= 0) setTimeout(function () { var row = $('#ys' + i); if (row) row.scrollIntoView({ block: 'center' }); }, 300);
+    },
+    'list-sent-drop': function (el) {
+      var id = el.getAttribute('data-id');
+      confirm2('이 문장을 문장 공부에서 뺄까요?', '빼기').then(function (ok) {
+        if (!ok) return;
+        S.sentBox = S.sentBox.filter(function (x) { return x.id !== id; });
+        if (SENT) { SENT.recent = SENT.recent.filter(function (x) { return x !== id; }); SENT.undo = SENT.undo.filter(function (u) { return u.id !== id; }); }
+        save(); closeSheet(); toast('문장 공부에서 뺐어요'); RENDER.list({});
+      });
+    },
     'list-starred': function () { stack = [{ view: 'home', params: {} }]; listState.star = true; go('list', { stage: 'all' }); },
     'speak': function (el) {
       var w = currentWord(); if (!w) return;

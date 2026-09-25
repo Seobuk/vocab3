@@ -751,3 +751,16 @@ body { word-break: keep-all; overflow-wrap: break-word; }
 .yed-n:nth-child(2), .yed-n:nth-child(5) { border-radius: 0 999px 999px 0; }
 .yed-now, .yed-go { border-radius: 999px; }
 .yed-i { border-radius: 999px; }
+
+/* ===== v2.25 단어장: 정렬 줄 · 오른쪽 정보 · 예문 한 번 톡 읽기 / 두 번 톡 한글 ===== */
+.sort-row { display: flex; gap: 6px; overflow-x: auto; margin: 10px 0 0; scrollbar-width: none; }
+.sort-row .chip { flex: none; padding: 6px 12px; font-size: 12.5px; }
+.item .it-side { flex: none; align-self: flex-start; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 3px; }
+.item .it-side .it-tag { margin-top: 0; }
+.item .it-meta { font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.item .it-meta b { color: var(--text); font-weight: 600; margin-left: 1px; }
+.item .it-ex { border-radius: 10px; }
+.item .it-ex:active { background: var(--surface2); }
+.item .it-k { transition: filter .2s, opacity .2s; }
+.item .it-k.hid { filter: blur(5px); opacity: .55; }
+.item .it-src { font-size: 11.5px; color: var(--muted); margin-top: 4px; }

@@ -87,7 +87,7 @@ fs.mkdirSync(OUT, { recursive: true });
   // list
   await page.click('#tabbar [data-tab="list"]');
   await shot('09-list');
-  await page.click('.item');
+  await page.click('.item .it-w');   // v2.25: 예문 자리는 읽기
   await shot('10-sheet');
   await page.mouse.click(195, 60); await page.waitForTimeout(300);
 

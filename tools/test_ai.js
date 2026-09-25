@@ -90,7 +90,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   // (6) word sheet → 예문 수정·AI button; edit screen AI button fills fields
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(250);
   await p.click('[data-action="tab"][data-tab="list"]'); await p.waitForTimeout(200);
-  await p.click('#view-list [data-action="open"]'); await p.waitForTimeout(250);
+  await p.click('#view-list [data-action="open"] .it-w'); await p.waitForTimeout(250);   // v2.25: 예문은 한 번 톡 = 읽기 → 단어를 눌러 창 열기
   console.log('word sheet has ex-edit:', !!(await p.$('[data-action="ex-edit"]')));
   await p.click('[data-action="ex-edit"]'); await p.waitForTimeout(300);
   console.log('editor from list:', !!(await p.$('#ex-e')));
