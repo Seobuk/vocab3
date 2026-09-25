@@ -548,9 +548,11 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 #ytTitle { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; font-size: 15px; line-height: 1.35; }
 #view-ytv.active { display: flex; flex-direction: column; }
 /* 플레이어: 목록 맨 위에 sticky 로 제자리 고정 → 목록을 올리면 .yt-body(불투명)가 그 위를 덮는다 · 16:9, 최소 200px */
-.yt-player { position: sticky; top: 0; z-index: 0; margin: 0 -10px; aspect-ratio: 16 / 9; min-height: 200px; max-height: 45vh; background: #000; }   /* max-height: 가로 큰 화면에서 목록 자리를 다 먹지 않게 */
+.yt-player { position: sticky; top: 0; z-index: 0; margin: 0 -10px; aspect-ratio: 16 / 9; min-height: min(200px, 56.25vw); max-height: 45vh; background: #000; overflow: hidden; --ytcut: 64px; }   /* min-height 200px 이면 비율을 타고 최소 폭 356px 가 되어 좁은 화면(344px)에서 목록이 옆으로 밀렸다 — 좁으면 16:9 그대로 (잘라내기 덕에 iframe 은 200×200 이상) */   /* max-height: 가로 큰 화면에서 목록 자리를 다 먹지 않게 */
 .yt-body { position: relative; z-index: 1; margin: 0 -10px; padding: 8px 10px 150px; min-height: 100%; background: var(--bg); border-radius: 16px 16px 0 0; box-shadow: 0 -6px 16px rgba(0, 0, 0, .10); }   /* 끝 여백: 마지막 문장이 오른쪽 아래 버튼에 가리지 않게 */
-.yt-player iframe, .yt-player #ytPlayer { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+/* v2.11 (사용자 요청): 멈출 때 뜨는 제목줄·공유·"동영상 더보기"를 칸 밖으로 — 플레이어를 위아래 64px 씩 크게 두면 16:9 영상은 그 안 가운데(칸에 딱 맞게),
+   유튜브 안내는 위아래 검은 띠에 떠서 잘린다. ※ 플레이어 일부를 가리는 것 = 유튜브 정책 위반 — 사용자가 알고 고른 방식 (스토어에 올릴 땐 --ytcut: 0) */
+.yt-player iframe, .yt-player #ytPlayer { position: absolute; left: 0; top: calc(-1 * var(--ytcut)); width: 100%; height: calc(100% + 2 * var(--ytcut)); border: 0; }
 /* 오른쪽 아래 버튼 (오른손 엄지) */
 .yt-fab { position: absolute; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 19; }   /* 떠 있는 것들은 어두운 막(20) 아래 — 확인 창이 떠 있을 땐 못 누르게 */
 .yt-fab .guide-pill { margin-left: 0; box-shadow: var(--shadow); }
@@ -564,7 +566,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .yt-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px; scroll-padding-bottom: 150px; }   /* scroll-padding: 따라가기·단어 카드가 오른쪽 아래 버튼에 가리지 않게 */
 /* 가로 화면(v2.6): 왼쪽 영상 · 오른쪽 스크립트. 영상은 제목줄(58px) 아래 왼쪽 칸에 고정, 스크립트만 스크롤 (덮기 없음) */
 @media (orientation: landscape) {
-  #view-ytv { --ytw: min(56vw, calc((100vh - 58px) * 16 / 9)); }
+  #view-ytv { --ytw: min(56vw, calc((100vh - 58px - 56px) * 16 / 9)); }   /* 56px: 영상 아래 "✎ 문장 시간 수정" 자리 (낮은 가로 화면에서도 보이게, v2.11) */
   #view-ytv .yt-player { position: absolute; top: 58px; left: 0; width: var(--ytw); margin: 0; min-height: 0; max-height: none; }   /* #view-ytv 기준 — 목록을 스크롤해도 안 움직임 */
   #view-ytv .yt-list { margin-left: var(--ytw); }
   #view-ytv .yt-body { border-radius: 0; box-shadow: none; min-height: 0; }
@@ -595,3 +597,19 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 [data-theme="dark"] .yc-ok { color: var(--ok); }
 .yc-x { position: absolute; right: 4px; top: 4px; width: 40px; height: 40px; color: var(--muted); display: flex; align-items: center; justify-content: center; }
 .yc-x svg { width: 16px; height: 16px; }
+/* 시간 수정 (v2.11) — 가로 화면에서 영상 아래 왼쪽 빈 곳 (세로에선 없음) */
+.yt-side { display: none; }
+.yed { display: flex; flex-direction: column; gap: 6px; }
+.yed-r { display: grid; grid-template-columns: 54px repeat(5, minmax(0, 1fr)); gap: 5px; align-items: center; }   /* 이름·값 | −0.5 −0.1 +0.1 +0.5 지금 */
+.yed-l { display: flex; flex-direction: column; font-size: 11.5px; font-weight: 700; color: var(--muted); line-height: 1.25; }
+.yed-l b { font-size: 14.5px; color: var(--text); font-variant-numeric: tabular-nums; }
+.yed-c { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.yed-b { height: 40px; min-width: 0; padding: 0 4px; border-radius: 10px; background: var(--primary-soft); color: var(--primary); font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.yed-open { width: 100%; flex: none; }
+.yed-h { line-height: 1.4; padding: 4px 2px; }
+.yt-editing .ys-t { width: 50px; }
+.ys-m { font-style: normal; color: var(--primary); margin-left: 2px; }
+@media (orientation: landscape) {
+  #view-ytv.yt-editing { --ytw: min(56vw, max(300px, calc((100vh - 58px - 160px) * 16 / 9))); }   /* 폰 가로: 수정 중엔 영상을 줄여 아래에 160px — Fold 처럼 높은 화면은 그대로 */
+  #view-ytv .yt-side { display: flex; flex-direction: column; gap: 6px; position: absolute; left: 0; width: var(--ytw); top: calc(58px + var(--ytw) * 9 / 16); bottom: 0; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); overflow-y: auto; box-sizing: border-box; }
+}
