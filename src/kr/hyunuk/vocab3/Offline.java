@@ -433,7 +433,8 @@ final class Offline {
                 if (c2 >= 1 && c2 <= 7) ch = c2;
             }
             long aUs = (long) (a * 1e6), bUs = (long) (b * 1e6);
-            ex.seekTo(Math.max(0, aUs), MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+            // v2.24: PREVIOUS — 조각(fMP4·DASH m4a)이면 CLOSEST 가 조각 뒤쪽 절반에서 다음 조각으로 뛰어 창 앞 소리가 빠지고 시간이 당겨졌다 (앞 샘플은 아래 aUs-50ms 조건이 버림)
+            ex.seekTo(Math.max(0, aUs), MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
             ByteBuffer buf = ByteBuffer.allocate(1 << 16);
             ByteArrayOutputStream out = new ByteArrayOutputStream(1 << 21);
             byte[] h = new byte[7], smp = new byte[1 << 12];

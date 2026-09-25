@@ -179,6 +179,10 @@ const body = (txt, fin) => JSON.stringify({ candidates: [{ content: { parts: [{ 
   eq('429 retryDelay 1초 기다리는 중 안내', /요청 한도 — 1초 뒤 다시/.test(await p.textContent('#ytJobT')), true);
   await p.waitForTimeout(1500);
   eq('기다린 뒤 다시 → 붙음 (요청 2번, 둘 다 1초 2장)', await p.evaluate(() => JSON.stringify(window.__calls.map(c => c.body.contents[0].parts[0].videoMetadata))) + ' ' + (await rec('LONGVIDEO19')).sents.length, JSON.stringify([{ fps: 2 }, { fps: 2 }]) + ' 5');
+  // --- v2.24: 한 답 안에서 진짜로 되풀이한 문장(5초 간격)은 둘 다 둔다 ---
+  await p.evaluate(([a]) => { window.__calls = []; window.__seq = [[200, a]]; }, [body(JSON.stringify([S('00:01.0', '00:03.0', 'Thank you so much everyone.'), S('00:06.0', '00:08.0', 'Thank you so much everyone.'), S('00:10.0', '00:12.0', 'This is another sentence here.')]), 'STOP')]);
+  await add('LONGVIDEO20'); await p.waitForTimeout(900);
+  eq('같은 말 두 번 → 둘 다 (3문장)', (await rec('LONGVIDEO20')).sents.length, 3);
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();
 })();

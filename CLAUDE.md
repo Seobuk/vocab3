@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.23 (versionCode 47).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.24 (versionCode 48).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -16,7 +16,7 @@
   - **저장 주인(v2.23)**: 설정 변경 재생성·"종료" 뒤 다시 열기 때 안 없어진 옛 WebView 가 useTick 1분 저장으로 옛 S 를 써서 손 수정·합치기가 사라졌다(사용자 보고).
     Java: onDestroy 에서 `web.destroy()`, 저장·삭제는 마지막으로 index.html 을 받아 간 페이지(`sLive`)만. JS: `vocab3.owner` 에 페이지 SID — 더 나중 페이지가 있으면
     `bridge.saveRaw` 가 거부(`stale()`), 다시 보이면 reload. **새 저장은 반드시 bridge.save/saveRaw 로만**(AND.save 직접 호출 금지). 켤 때 상태 한 벌 `vocab3.bak.start`
-    (별도 prefs 파일 vocab3.bak, 설정 → 데이터 → "켤 때 상태로"). configChanges 는 density·fontScale 등까지 넓힘. 테스트 `tools/test_stale.js`.
+    (v2.24: Java 가 no_backup/bak-start.json 파일로 — 자동 백업 25MB 에 안 들어가게. 브라우저는 localStorage, 한도에 걸리면 한 벌을 버림. 설정 → 데이터 → "켤 때 상태로"). configChanges 는 density·fontScale 등까지 넓힘. 테스트 `tools/test_stale.js`.
 - `src/kr/hyunuk/vocab3/ReviewService.java` — 듣기 복습 포그라운드 서비스(알림 제어).
 - `src/kr/hyunuk/vocab3/Offline.java` (v2.14) — 유튜브 영상 받기(NewPipeExtractor, 360p 합쳐진 MP4 → 없으면 M4A, 10MB Range 청크),
   `getNoBackupFilesDir()/videos/<vid>.mp4|m4a|env`(자동 백업 25MB 한도에 안 걸리게), `/media/<vid>` Range 서빙(WebView 가 Range 를 한 번 더 적용하는 걸 보정),
@@ -68,6 +68,8 @@
     `ytBody(q)` 창이면 inlineData audio/aac + 창 기준 시간 부탁 → 앱이 +a (창이 10분 안쪽이면 부탁대로 봄). 이어 받기·20분 넘는 받은 영상 정리는 창으로, 창마다 `cont.onPart` 로 붙이고 저장.
     `ytAsk(r,job,q,n)`: 빨리 실패한 5xx·연결 끊김만 5·15초 뒤 다시(`YT_QUICK`), 429 는 retryDelay(없으면 30초) 한 번 기다림, 15분 무진전 마감(`job.dl`), 취소 `yt-stop`(YTJOB 교체 → 늦은 답 버림).
     진행 `#ytJobT`(0초부터 m:ss + 지금 하는 일, 1초 틱), `j.moreErr` ⚠ 배너 + 다시 이어서. 정리 중엔 `bridge.keepOn` 으로 화면 켜 둠(꺼지면 요청이 끊겼다). 테스트 `tools/test_yt_win.js`.
+    v2.24 리뷰 수정: adts 는 SEEK_TO_PREVIOUS_SYNC(조각 m4a 에서 CLOSEST 가 다음 조각으로 뜀), 창 기준/영상 기준은 증거 수(a−5 앞 vs 600 넘음),
+    seen 은 앞 라운드·있던 문장만(한 답 안 되풀이는 둠), 마지막 창이 끝보다 1분 넘게 앞에서 멈추면 한 창 더(3번), 고정 길이 스트리밍은 소리 요청만, 창 제한 10분.
     디자인: 사용자 "너무 네모네" → 버튼 알약·카드 22px·아이콘 연한 원 안 굵은 선(style.css 끝 v2.23 블록).
   - v2.21: 끝에 영어 말이 없다고 확인되면 `r.tail`(=그때 마지막 끝) → `ytTailDone` 이면 "이어서 정리하기" 안내·링크 숨김. 일찍 멈춤 이어 받기는 3번까지.
     다시 정리는 새 결과가 있던 것보다 덜 갔을 때만 버림. status 0 재시도는 걸린 시간으로(10분 초과만 뺌). 진행 표시 `#ytJobT`("N분째", ytTick 이 갱신).

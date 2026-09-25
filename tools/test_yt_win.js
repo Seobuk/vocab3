@@ -28,7 +28,7 @@ const wav = (() => { const n = 8000, b = Buffer.alloc(44 + n * 2); b.write('RIFF
       load: k => LS.getItem('A:' + k), save: (k, v) => { LS.setItem('A:' + k, v); },
       setBackHandled() { }, setSystemBars() { }, setRotate() { }, ttsReady: () => false, speak() { }, stopSpeak() { }, vibrate() { }, share() { }, copy() { }, openUrl() { }, audioState: () => '{}', exitApp() { },
       aiCall(id, url, key, bd) {   // 유튜브 링크 경로 (oEmbed 포함)
-        if (/oembed/.test(url)) { setTimeout(() => window.onAiResult(id, 200, JSON.stringify({ title: 'Win Talk' })), 10); return; }
+        if (/oembed/.test(url)) { setTimeout(() => window.onAiResult(id, 200, JSON.stringify({ title: 'Win Talk' })), window.__odelay || 10); return; }
         window.__calls.push({ body: JSON.parse(bd) });
         const r = window.__aseq.shift() || [200, JSON.stringify({ candidates: [{ content: { parts: [{ text: '[]' }] }, finishReason: 'STOP' }] })];
         setTimeout(() => window.onAiResult(id, r[0], r[1]), r[2] || 10);
@@ -76,6 +76,7 @@ const wav = (() => { const n = 8000, b = Buffer.alloc(44 + n * 2); b.write('RIFF
   const r1 = await rec();
   eq('끝: 43문장 · 마지막 3063 · 영상 끝까지 들음 = tail · 토스트 · 화면 켜 두기 끔', r1.sents.length + ' ' + r1.sents[42].s + ' ' + (r1.tail === r1.sents[42].t) + ' ' + /문장 3개를 이어 붙였어요/.test(await p.textContent('#toast')) + ' ' + await p.evaluate(() => window.__keep.slice(-1)[0]), '43 3063 true true false');
   eq('끝난 뒤 안내·아래 링크 없음', await p.$$eval('[data-action="yt-more"]', x => x.length), 0);
+  eq('마지막 창이 영상 끝보다 1분 넘게 앞에서 멈춤 → 한 창 더 → 파일 끝(-416)', await p.evaluate(() => window.__clips.length), 3);
 
   // --- W2: 영상 기준 시간으로 답해도 두 번 더하지 않음 ---
   await reset();
@@ -120,6 +121,29 @@ const wav = (() => { const n = 8000, b = Buffer.alloc(44 + n * 2); b.write('RIFF
   await p.evaluate(w => { const f = [500, '{}']; window.__cseq = [[200, w], f, f, f]; }, body([S('00:03.0', '00:06.0', 'Kept before the failure sentence.')]));
   await more(); await p.waitForTimeout(900);
   eq('창 2 실패 → 1문장은 남음 · ⚠ "문장 1개는 붙였어요" · 다시 이어서', (await rec()).sents.length + ' ' + await p.$$eval('.yt-old', x => x.filter(e => /⚠ 문장 1개는 붙였어요/.test(e.textContent) && e.querySelector('[data-action="yt-more"]')).length), '41 1');
+  // --- v2.24 V1: 앞쪽 창(a ≤ 605)인데 영상 기준으로 답해도 두 번 더하지 않음 (다시 정리 둘째 창) ---
+  await reset();
+  await p.evaluate(([w1, w2]) => { window.__cseq = [[200, w1], [200, w2]]; }, [body([S('00:05.0', '00:09.0', 'Redo first window opening sentence.'), S('09:00.0', '09:05.0', 'Redo first window closing sentence.')]), body([S('09:10.0', '09:14.0', 'Second window absolute time sentence.'), S('18:00.0', '18:04.0', 'Second window later absolute sentence.')])]);
+  await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(900);
+  eq('둘째 창(a=544) 영상 기준 답 550·1080 그대로', (await rec()).sents.map(x => x.s).join(), '5,540,550,1080');
+  // --- v2.24 V2: 창 기준 답에 창 길이를 조금 넘는 값(606) 하나 → 창 전체를 영상 기준으로 잘못 보지 않음 ---
+  await reset();
+  await p.evaluate(w => { window.__cseq = [[200, w]]; }, body([S('00:03.0', '00:06.0', 'Relative window first sentence here.'), S('05:00.0', '05:04.0', 'Relative window middle sentence here.'), S('10:06.0', '10:08.0', 'Relative window slightly late sentence.')]));
+  await more(); await p.waitForTimeout(700);
+  eq('튀는 값 하나 있어도 +a (2467·2764·3070)', (await rec()).sents.slice(40).map(x => x.s).join(), '2467,2764,3070');
+  // --- v2.24 V4: 제목(oEmbed)을 기다리는 사이 취소 → 정리 시작 안 함 ---
+  await reset();
+  await p.evaluate(() => { window.__odelay = 800; });
+  await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(150);
+  await p.click('[data-action="yt-stop"]'); await p.waitForTimeout(1200);
+  eq('취소 뒤 소리 요청 0번 · 옛 40문장 그대로 · 화면 켜 두기 끔', (await p.evaluate(() => window.__clips.length)) + ' ' + (await rec()).sents.length + ' ' + await p.evaluate(() => window.__keep.slice(-1)[0]), '0 40 false');
+  await p.evaluate(() => { window.__odelay = 0; });
+  // --- v2.24 V5: 429 기다리는 중 취소 → 기다린 뒤 다시 보내지 않음 ---
+  await reset();
+  await p.evaluate(() => { window.__cseq = [[429, '{"error":{"details":[{"retryDelay":"1s"}]}}']]; });
+  await more(); await p.waitForTimeout(300);
+  await p.click('.yt-old [data-action="yt-stop"]'); await p.waitForTimeout(1500);
+  eq('429 대기 중 취소 → 요청 1번뿐', await p.evaluate(() => window.__clips.length), 1);
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();
 })();

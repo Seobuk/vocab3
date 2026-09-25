@@ -86,6 +86,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("vocab3", MODE_PRIVATE);
+        deleteSharedPreferences("vocab3.bak");   // v2.23 이 shared_prefs 에 두던 한 벌 — 이제 no_backup 파일 (v2.24)
 
         int bg = Color.parseColor("#F6F7FB");
         try { bg = Color.parseColor(prefs.getString("sysbar", "#F6F7FB")); } catch (Exception ignored) { }
@@ -190,7 +191,9 @@ public class MainActivity extends Activity {
     // v2.23: 지금 화면에 뜬 페이지의 토큰 — 새 WebView 가 index.html 을 받아 가는 순간 바뀐다. 그 전 페이지(안 없어진 옛 WebView)의 저장은 무시.
     // onCreate 에서 바꾸지 않는 건 일부러: 재생성 때 옛 페이지의 마지막 onAppPause 저장은 새 onCreate 보다 늦게 도착한다.
     private static volatile String sLive;
-    private SharedPreferences store(String key) { return key.startsWith("vocab3.bak") ? getSharedPreferences("vocab3.bak", MODE_PRIVATE) : prefs; }   // 되돌리기용 한 벌은 따로 (매 저장마다 파일이 두 배가 되지 않게)
+    // "켤 때 상태" 한 벌(vocab3.bak.*)은 자동 백업에 안 들어가는 파일로 — shared_prefs 에 두면 클라우드 백업(25MB 한도)이 두 배가 됐다 (v2.24)
+    private boolean isBak(String key) { return key != null && key.startsWith("vocab3.bak"); }
+    private java.io.File bakFile() { return new java.io.File(getNoBackupFilesDir(), "bak-start.json"); }
 
     private WebResourceResponse asset(Uri u, boolean mainFrame) {
         String p = u.getPath();
@@ -505,7 +508,7 @@ public class MainActivity extends Activity {
                 c.setRequestMethod("POST");
                 c.setDoOutput(true);
                 c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-                c.setFixedLengthStreamingMode(pre.length + (mid == null ? 0 : mid.length) + (post == null ? 0 : post.length));   // 본문을 한 번 더 버퍼에 담지 않고, 조용히 다시 보내지도 않게
+                if (mid != null) c.setFixedLengthStreamingMode(pre.length + mid.length + (post == null ? 0 : post.length));   // 소리(12MB 안팎)만: 한 번 더 버퍼에 담지 않고 조용히 다시 보내지도 않게 — 작은 JSON 은 버퍼 모드로 둬 끊긴 keep-alive 연결을 OkHttp 가 다시 보내게 (v2.24)
                 OutputStream os = c.getOutputStream();
                 os.write(pre);
                 if (mid != null) os.write(mid);
@@ -543,19 +546,25 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String load(String t, String key) {
             if (!ok(t)) return null;   // 토큰 없는 호출(유튜브 iframe·광고 프레임)은 무시
-            return store(key).getString(key, null);
+            if (isBak(key)) { try { return readAll(new java.io.FileInputStream(bakFile())); } catch (IOException e) { return null; } }
+            return prefs.getString(key, null);
         }
 
         @JavascriptInterface
         public void save(String t, String key, String value) {
             if (!ok(t) || !bt.equals(sLive)) return;   // v2.23: 옛 페이지는 옛 S 로 덮지 못한다
-            store(key).edit().putString(key, value).apply();
+            if (isBak(key)) {
+                try { OutputStream o = new java.io.FileOutputStream(bakFile()); o.write(value.getBytes(StandardCharsets.UTF_8)); o.close(); } catch (IOException ignored) { }
+                return;
+            }
+            prefs.edit().putString(key, value).apply();
         }
 
         @JavascriptInterface
         public void remove(String t, String key) {
             if (!ok(t) || !bt.equals(sLive)) return;
-            store(key).edit().remove(key).apply();
+            if (isBak(key)) { bakFile().delete(); return; }
+            prefs.edit().remove(key).apply();
         }
 
         @JavascriptInterface

@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.23';
+  var APP_VERSION = '2.24';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -149,7 +149,8 @@
     loadRaw: function (key) { try { return isAndroid ? AND.load(BT, key) : localStorage.getItem(key); } catch (e) { return null; } },
     saveRaw: function (key, val) {
       if (key !== OWN_KEY && stale()) return;   // v2.23: 나보다 나중에 뜬 페이지가 있다 → 옛 S·AI 설정으로 덮지 않는다
-      try { if (isAndroid) AND.save(BT, key, val); else localStorage.setItem(key, val); } catch (e) { }
+      try { if (isAndroid) AND.save(BT, key, val); else localStorage.setItem(key, val); }
+      catch (e) { if (!isAndroid && key === KEY) { try { localStorage.removeItem(BAK_KEY); localStorage.setItem(key, val); } catch (e2) { } } }   // 브라우저 한도: 켤 때 한 벌보다 지금 상태가 먼저 (v2.24)
     },
     openUrl: function (url) { try { if (isAndroid) AND.openUrl(BT, url); else window.open(url, '_blank'); } catch (e) { } },
     // 유튜브 영상 받기 (v2.14, 안드로이드 13+) — 결과는 window.onYtDl(vid, st, a, b) · 파형은 window.onMediaEnv(vid). 브라우저엔 없음
@@ -1875,7 +1876,8 @@
     bridge.aiCall('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(watch), '', '', 15000).then(function (res) {
       if (res.status === 404 || res.status === 400) throw { msg: '영상을 찾을 수 없어요 — 비공개·삭제됐거나 링크가 잘못됐어요' };
       try { var o = JSON.parse(res.text); if (o && o.title) { r.title = String(o.title); save(); ytRefresh(r.id); } } catch (e) { }
-      return ytTranscribe(r, watch);
+      if (YTJOB[r.id] !== job) return [];   // 제목을 기다리는 사이 취소했다
+      return ytTranscribe(r, watch, null, job);
     }).then(function (out) {
       if (YTJOB[r.id] !== job || !ytRec(r.id)) return;   // 취소했거나 지웠다
       var ns = ytMergeShort(ytMergeBroken(ytClean(out)));
@@ -1897,7 +1899,7 @@
   var YT_RETRY = [5000, 15000];   // 자동 재시도 간격 (테스트는 __vocab.ytRetry 로 줄인다)
   // v2.23: 받은 영상은 유튜브 링크 대신 그 소리를 10분 창으로 잘라 보낸다 — 링크는 구간을 잘라도(startOffset) 서버가 소리는 영상 전체를 넣어(2026-08~) 1시간 영상이면 몇 분씩 걸리다 끊겼다
   var YT_WIN = 600;   // ponytail: 창 10분 — 360p(96kbps)·m4a(128kbps) 소리면 base64 9.6~12.8MB < 인라인 한도 20MB. 더 높은 비트레이트면 줄일 것
-  var YT_WIN_MS = 300000, YT_STALL_MS = 15 * 60000, YT_LONG = 1200;   // 창 하나 제한 5분 · 새 문장 없이 15분이면 멈춤 · 20분 넘는 받은 영상은 처음 정리도 창으로
+  var YT_WIN_MS = 600000, YT_STALL_MS = 15 * 60000, YT_LONG = 1200;   // 창 하나 제한 10분(Java 읽기 제한과 같게 — 늦은 정상 답을 먼저 버리지 않게) · 새 문장 없이 15분이면 멈춤 · 20분 넘는 받은 영상은 처음 정리도 창으로
   var YT_QUICK = 90000, YT_429 = 30;   // 이보다 빨리 온 5xx 만 다시 보냄(몇 분 걸린 504 를 되풀이하지 않게) · 429 에 retryDelay 가 없으면 기다릴 초
   function ytWait(ms) { return new Promise(function (ok) { setTimeout(ok, ms); }); }
   function ytMMSS(sec) { var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = (sec % 60).toFixed(1); return (h ? h + ':' + pad(m) : pad(m)) + ':' + (s < 10 ? '0' : '') + s; }
@@ -1906,12 +1908,13 @@
     var el = YTV && YTV.id === r.id && $('#ytJobT'); if (el) el.textContent = ytJobT(j);
   }
   function ytAsk(r, job, q, n) {   // 붐빔·서버 오류·연결 끊김은 5초·15초 뒤 두 번 더 — 빨리 실패한 것만 (몇 분 걸린 실패를 되풀이하지 않는다) · 429 는 한 번 기다렸다 다시
+    if (YTJOB[r.id] !== job || !ytRec(r.id)) return Promise.resolve({ status: 0, text: 'cancel' });   // 취소 — 기다린 뒤에도 다시 보내지 않는다
     var t0 = Date.now();
     ytNote(r, q.clip ? '소리 10분을 듣는 중' : 'Gemini가 영상을 보는 중');
     return aiGenerate(ytBody(q), 'youtube', q.clip ? YT_WIN_MS : YT_AI_MS, AI_DEFAULT_MODEL, q.clip).then(function (res) {
       if (YTJOB[r.id] !== job) return res;   // 취소
       var st = res.status, took = Date.now() - t0, room = Date.now() < job.dl;
-      var again = st >= 500 ? took < YT_QUICK : st === 0 ? (!!q.clip || took < YT_AI_MS / 2) : false;   // 15초 연결 실패(SocketTimeoutException)는 다시, 10분 기다린 건 안 함
+      var again = st >= 500 ? took < YT_QUICK : st === 0 ? took < (q.clip ? YT_WIN_MS : YT_AI_MS) / 2 : false;   // 15초 연결 실패(SocketTimeoutException)는 다시, 10분 기다린 건 안 함
       if (again && room && n < YT_RETRY.length) {
         ytNote(r, (st ? '서버 오류 ' + st : '연결이 끊김') + ' — ' + Math.round(YT_RETRY[n] / 1000) + '초 뒤 다시');
         return ytWait(YT_RETRY[n]).then(function () { return ytAsk(r, job, q, n + 1); });
@@ -1945,8 +1948,8 @@
     if (last < 0) return [];
     try { var a = JSON.parse(t.slice(start, last + 1) + ']'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
   }
-  function ytTranscribe(r, watch, cont) {   // → Promise<문장 배열(원본)> — 잘리면 이어서, 못 읽으면 다시 · cont: { after, prev } 있던 문장 뒤부터 (이어서 정리하기)
-    var job = YTJOB[r.id] || {}, all = [], fps = 2, bad = 0, rounds = 0, early = 0, loc = true, seen = {};
+  function ytTranscribe(r, watch, cont, job0) {   // → Promise<문장 배열(원본)> — 잘리면 이어서, 못 읽으면 다시 · cont: { after, prev } 있던 문장 뒤부터 (이어서 정리하기)
+    var job = job0 || YTJOB[r.id] || {}, all = [], fps = 2, bad = 0, rounds = 0, early = 0, loc = true, seen = {};
     function endOf(x) { var t = ytSec(x.t); return t > 0 ? t : ytSec(x.s) || 0; }
     function key(e) { return ytNorm(String(e)).replace(/[^a-z0-9']+/g, ' ').trim(); }   // 대소문자·문장부호만 바꾼 되풀이도 같은 문장
     (cont && r.sents ? r.sents.slice(-10) : []).forEach(function (x) { seen[key(x.e)] = x.s; });   // 경계에서 앞 문장들을 되풀이한 답 거르기
@@ -1982,24 +1985,29 @@
         }
         bad = 0; job.dl = Date.now() + YT_STALL_MS;   // 답을 받았으니 마감을 다시 15분
         if (clip) {   // 창 소리의 처음을 0 으로 센 시간(부탁한 대로) → 영상 기준으로. 창이 앞쪽(10분 안)이면 둘이 겹쳐 구분할 수 없으니 부탁대로 본다
-          var rel = a <= YT_WIN + 5 || !items.some(function (x) { return x && ytSec(x.s) > YT_WIN + 5; });
+          // 창 기준이면 창 시작(a)보다 앞선 값이, 영상 기준이면 창 길이(600)를 넘는 값이 나온다 — 많은 쪽으로 (a 가 작아 둘이 겹치면 부탁대로 창 기준) (v2.24)
+          var lo = 0, hi = 0; items.forEach(function (x) { var v = x && ytSec(x.s); if (v < a - 5) lo++; else if (v > YT_WIN + 5) hi++; });
+          var rel = lo >= hi;
           if (rel) items.forEach(function (x) { if (!x) return; var s0 = ytSec(x.s), t0 = ytSec(x.t); if (isFinite(s0)) x.s = s0 + a; if (isFinite(t0) && t0 > 0) x.t = t0 + a; });
           items = items.filter(function (x) { return x && x.e && !(r.dur > 0 && ytSec(x.s) > r.dur + 5); }).sort(function (p, q2) { return (ytSec(p.s) || 0) - (ytSec(q2.s) || 0); });
         }
         // 겹침: 앞에서 받은 마지막 문장과 같은 문장이거나 그 시작보다 앞이면 버린다 (시작 시간을 못 읽은 문장은 두고 ytClean 이 맞춘다) · 바로 앞 문장들을 되풀이한 것도
-        var fresh = items.filter(function (x) {
+        var got = {}, fresh = items.filter(function (x) {   // seen 은 앞 라운드·있던 문장만 — 한 답 안에서 진짜로 되풀이한 말("Thank you.")은 둔다 (v2.24)
           if (!x || !x.e) return false;
           var k = key(x.e), s0 = ytSec(x.s);
           if (prev && (k === key(prev.e) || s0 <= ytSec(prev.s))) return false;
-          if (seen[k] != null && !(Math.abs(s0 - seen[k]) > 90)) return false;
-          seen[k] = s0; return true;
+          if (isFinite(s0) && seen[k] != null && Math.abs(s0 - seen[k]) <= 90) return false;
+          if (isFinite(s0)) got[k] = s0;
+          return true;
         });
+        for (var gk in got) seen[gk] = got[gk];
         all = all.concat(fresh);
         if (fresh.length && cont && cont.onPart) cont.onPart(fresh);   // 이어 받기: 받는 대로 붙이고 저장 (나중 창이 실패해도 남는다)
         if (clip) {
           if (!fresh.length && o.cut) return ytDone('part');
-          if (!o.cut && r.dur > 0 && clip.b >= r.dur) return ytDone(prev || fresh.length ? 'tail' : '');   // 영상 끝까지 들었다
           var lf = fresh[fresh.length - 1], nx = lf ? Math.max(endOf(lf), ytSec(lf.s) || 0) : 0;
+          // 영상 끝까지 들었다 — 단, 새 문장이 영상 끝보다 1분 넘게 앞에서 멈췄으면 모델이 일찍 끝낸 것일 수 있어 한 창 더 (3번까지) (v2.24)
+          if (!o.cut && r.dur > 0 && clip.b >= r.dur && !(fresh.length && nx < r.dur - 60 && ++early <= 3)) return ytDone(prev || fresh.length ? 'tail' : '');
           if (!(nx > (after || 0) + 0.5)) nx = clip.b - 5;   // 말이 없는 창(음악 등) → 다음 창으로
           if (rounds >= 40) return ytDone('part');
           return step(nx);
@@ -2049,7 +2057,7 @@
       r.sents = r.sents.concat(add); got += add.length; delete r.snap; save();
       if (YTV && YTV.id === r.id) YTV.undo = null;
       ytRefresh(r.id);
-    } }).then(function (out) {
+    } }, job).then(function (out) {
       if (YTJOB[r.id] !== job || !ytRec(r.id)) return;
       if (out.tail) r.tail = ytLastEnd(r);
       save(); ytSnap(r);
