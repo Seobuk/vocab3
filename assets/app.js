@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.26';
+  var APP_VERSION = '2.27';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -185,7 +185,9 @@
         r.start();
       } catch (e) { window.onSttError && window.onSttError('exception'); }
     },
-    keepOn: function (on) { try { if (isAndroid) AND.keepOn(BT, !!on); } catch (e) { } },   // 정리하는 동안 화면 켜 둠 (v2.23)
+    keepOn: function (on) { try { if (isAndroid) AND.keepOn(BT, !!on); } catch (e) { } },
+    appInfo: function () { try { return isAndroid ? JSON.parse(AND.appInfo(BT) || '{}') : {}; } catch (e) { return {}; } },   // v2.27 설치 출처
+    updateInstall: function (url) { try { if (isAndroid) { AND.updateInstall(BT, url); return true; } } catch (e) { } return false; },   // 정리하는 동안 화면 켜 둠 (v2.23)
     sttStop: function () { try { if (isAndroid) AND.sttStop(BT); else if (webStt) webStt.stop(); } catch (e) { } },
     sttCancel: function () { try { if (isAndroid) AND.sttCancel(BT); else if (webStt) { var w = webStt; webStt = null; w.abort(); } } catch (e) { } },
     // HTTPS JSON request → Promise<{status, text}> (status 0 = network error). Android does it natively (no CORS), browser uses fetch.
@@ -424,7 +426,7 @@
   var BAK_KEY = 'vocab3.bak.start';   // v2.23: 켤 때 읽은 상태 한 벌 (설정 → 데이터 → "켤 때 상태로")
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, ytHintN: 0, listSort: 'base' };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, ytHintN: 0, listSort: 'base', autoUpdate: true };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
@@ -3109,6 +3111,9 @@
       sw('themeRandom', '매일 테마 자동 변경', '새 단어가 1단계에 채워질 때마다 색 테마가 랜덤으로 바뀌어요', st.themeRandom) +
       '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="theme-shuffle">🎲 지금 다른 테마로</button></div>' +
       '</div>' +
+      (updOK() ? '<div class="section-title">앱 업데이트</div><div class="settings-group">' +
+        sw('autoUpdate', '앱을 열 때 새 버전 확인', 'GitHub 에 새 버전이 나오면 알려 주고, 누르면 받아서 바로 설치해요 (처음 한 번 "이 출처 허용"을 켜야 해요)', st.autoUpdate !== false) +
+        '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="upd-check">지금 확인 · 현재 v' + APP_VERSION + '</button></div></div>' : '') +
       '<div class="section-title">데이터</div><div class="settings-group">' +
       '<div class="btn-row"><button class="btn" data-action="backup-file">백업 파일 저장</button><button class="btn" data-action="restore-file">백업 파일 불러오기</button><button class="btn" data-action="restore-start">켤 때 상태로</button></div>' +
       '<div class="btn-row"><button class="btn" data-action="backup-share">텍스트로 공유</button><button class="btn" data-action="backup-copy">클립보드 복사</button><button class="btn" data-action="restore-paste">붙여넣기 복원</button></div>' +
@@ -3306,6 +3311,7 @@
       if (current().view === 'list') renderListBody();
     },
     'list-star': function () { listState.star = !listState.star; RENDER.list({}); },
+    'upd-check': function () { updCheck(true); },
     'list-sort': function (el) { var v = el.getAttribute('data-v'); if (v === 'rand') listState.rnd = {}; S.settings.listSort = v; save(); RENDER.list({}); },   // 랜덤을 다시 누르면 새로 섞음
     'list-ex': function (el) {   // 예문 한 번 톡 = 영어 읽기 · 두 번 톡(400ms) = 한글 해석 보이기/가리기 (v2.25)
       var id = el.getAttribute('data-id'), now = Date.now(), lt = listState.tap;
@@ -3714,9 +3720,46 @@
     else if (e.key === 'u' || e.key === 'Backspace') undo();
   });
 
+  /* ---------------- 앱 자체 업데이트 (v2.27, GitHub 배포 APK) ---------------- */
+  // 앱을 열거나 돌아올 때(30분에 한 번) GitHub 최신 릴리스를 보고, 더 새 버전이면 묻고 → Java 가 APK 를 받아 PackageInstaller 로 설치.
+  // Play 에서 설치한 앱은 확인하지 않는다 (스토어 정책 — AAB 에는 설치 권한도 없음). Obtainium 과 같이 써도 된다.
+  var UPD_API = 'https://api.github.com/repos/Seobuk/vocab3/releases/latest', UPD_EVERY = 30 * 60000, UPD = { busy: false, dl: false };
+  function verNum(v) { var m = String(v || '').replace(/^v/i, '').split('.'); return (+m[0] || 0) * 1000 + (+m[1] || 0); }   // "v2.27" → 2027 · ponytail: X.Y 까지 (Y < 1000)
+  function updOK() { if (!isAndroid) return false; var i = bridge.appInfo(); return !/^com\.android\.vending$|^com\.google\.android\.feedback$/.test(i.installer || ''); }
+  function updCheck(manual) {
+    if (!updOK() || UPD.busy || UPD.dl) { if (manual && !updOK()) toast('Play 스토어에서 설치한 앱은 스토어에서 업데이트해요'); return; }
+    if (!manual && (S.settings.autoUpdate === false || Date.now() - (S.settings.updAt || 0) < UPD_EVERY)) return;
+    S.settings.updAt = Date.now(); save();
+    UPD.busy = true;
+    bridge.aiCall(UPD_API, '', '', 15000).then(function (res) {
+      UPD.busy = false;
+      if (res.status !== 200) { if (manual) toast('업데이트를 확인하지 못했어요 — ' + (res.status === 0 ? aiErrorMessage(res) : 'GitHub 응답 ' + res.status + (res.status === 403 || res.status === 429 ? ' (요청이 많아요 — 잠시 후 다시)' : ''))); return; }   // aiErrorMessage 의 4xx 문구는 Gemini 용(모델·API 키)
+      var j = null; try { j = JSON.parse(res.text); } catch (e) { }
+      var tag = j && String(j.tag_name || ''), apk = j && (j.assets || []).filter(function (x) { return x && /\.apk$/i.test(x.name || '') && /^https:\/\/github\.com\/Seobuk\/vocab3\/releases\/download\//.test(x.browser_download_url || ''); })[0];
+      if (!tag || !apk || !(verNum(tag) > verNum(APP_VERSION))) { if (manual) toast('최신 버전이에요 (v' + APP_VERSION + ')'); return; }
+      var sk = S.settings.updLater;
+      if (!manual && sk && sk.tag === tag && Date.now() - sk.at < 24 * 3600000) return;   // "나중에"를 누른 버전은 하루 동안 다시 묻지 않는다
+      if (modalOpen) { S.settings.updAt = 0; save(); return; }   // 다른 확인 창(종료·백업 적용…)을 덮어 그 답을 잃지 않게 — 다음에 돌아올 때 다시 묻는다
+      var notes = String(j.body || '').split(/\r?\n/).map(function (l) { return l.replace(/^\s*[-*]\s*/, '· ').trim(); }).filter(function (l) { return l && !/^설치:/.test(l); }).slice(0, 6).join('\n');
+      ask('새 버전 ' + tag + '이 나왔어요 (지금 v' + APP_VERSION + ')' + (notes ? '\n\n' + notes : ''), [{ label: '나중에', value: '' }, { label: '업데이트', value: 'ok', cls: 'primary' }]).then(function (v) {
+        if (v !== 'ok') { S.settings.updLater = { tag: tag, at: Date.now() }; save(); return; }
+        saveNow();   // 설치하면 앱이 새로 뜬다 — 지금 상태를 먼저 저장
+        UPD.dl = true;
+        if (!bridge.updateInstall(apk.browser_download_url)) { UPD.dl = false; toast('업데이트를 시작하지 못했어요'); return; }
+        toast('새 버전 받는 중… (' + ((apk.size || 0) / 1048576).toFixed(1) + 'MB)');
+      });
+    });
+  }
+  window.onUpdate = function (st, a, b) {   // Java 알림: progress(받은 바이트, 전체) · perm · installing · fail(이유)
+    if (st === 'progress') { var t = +b || 0; toast('새 버전 받는 중… ' + (t > 0 ? Math.floor(+a * 100 / t) + '%' : Math.round(+a / 1048576) + 'MB')); return; }
+    if (st === 'perm') { toast('설정에서 "이 출처 허용"을 켜고 돌아오면 설치가 이어져요'); return; }
+    if (st === 'installing') { toast('설치 화면에서 "업데이트"를 눌러 주세요 — 끝나면 앱이 닫혀요, 다시 열어 주세요'); return; }
+    if (st === 'fail') { UPD.dl = false; toast(a === 'perm' ? '설치 허용이 꺼져 있어 업데이트하지 못했어요 — 설정 → 앱 업데이트에서 다시' : a === 'cancel' ? '업데이트를 취소했어요' : '업데이트하지 못했어요 — ' + (a || '')); }
+  };
+
   /* ---------------- lifecycle ---------------- */
   window.onTtsReady = function (ok) { TTS_OK = !!ok; if (!ok) toast('영어 TTS 음성을 찾지 못했어요. 기기 TTS 설정을 확인해 주세요'); };
-  window.onAppResume = function () { if (stale()) { location.reload(); return; } USE.paused = false; useTick(); if (current() && current().view === 'home') RENDER.home(); };
+  window.onAppResume = function () { if (stale()) { location.reload(); return; } USE.paused = false; useTick(); updCheck(false); if (current() && current().view === 'home') RENDER.home(); };
   window.onAppPause = function () { useTick(); USE.paused = true; USE.f = null; saveNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
   document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); else window.onAppResume(); });
   window.addEventListener('pagehide', saveNow);
@@ -3729,4 +3772,5 @@
   applyTheme();
   goTab('home');
   saveNow();
+  setTimeout(function () { updCheck(false); }, 1500);   // v2.27: 앱을 열면 새 버전 확인
 })();

@@ -1,6 +1,9 @@
 package kr.hyunuk.vocab3;
 
 import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.pm.PackageInstaller;
+import android.provider.Settings;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -291,6 +294,11 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (updWaitPerm) {   // "이 출처 허용" 설정에서 돌아옴 — 켰으면 설치를 잇고, 아니면 알림
+            updWaitPerm = false;
+            if (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls()) installUpdate();
+            else { updBusy = false; runJs("window.onUpdate && window.onUpdate('fail','perm')"); }
+        }
         runJs("window.onAppResume && window.onAppResume()");
         runJs("window.onAudioState && window.onAudioState(" + jsString(ReviewService.lastState()) + ")");
     }
@@ -539,6 +547,125 @@ public class MainActivity extends Activity {
 
     private void aiDone(String id, int status, String text) {
         runJs("window.onAiResult && window.onAiResult(" + jsString(id) + "," + status + "," + jsString(text) + ")");
+    }
+
+    /* ---- v2.27 앱 자체 업데이트: GitHub 릴리스의 APK 를 받아 PackageInstaller 로 (같은 키로 서명돼야 설치됨) ---- */
+    private static final String UPD_PREFIX = "https://github.com/Seobuk/vocab3/releases/download/";
+    private static final String ACTION_INSTALL = "kr.hyunuk.vocab3.INSTALL_STATUS";
+    private volatile boolean updBusy;
+    private boolean updWaitPerm;
+    private Intent updConfirm;   // 떠 있는 설치 확인 화면 — 홈 → 아이콘으로 돌아오면 singleTask 가 이 화면을 지우고 결과도 안 온다 → 다시 띄운다
+    private long updConfirmAt;
+
+    private java.io.File updFile() { return new java.io.File(getCacheDir(), "update.apk"); }
+
+    private void updEvent(String st, String a, long b) {
+        runJs("window.onUpdate && window.onUpdate(" + jsString(st) + "," + jsString(a) + "," + b + ")");
+    }
+
+    private void downloadUpdate(final String url) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                java.io.File f = updFile(), part = new java.io.File(getCacheDir(), "update.apk.part");
+                HttpURLConnection c = null;
+                try {
+                    c = (HttpURLConnection) new URL(url).openConnection();   // 릴리스 파일 주소는 objects.githubusercontent.com 으로 넘겨 준다 (https → https 는 저절로 따라감)
+                    c.setConnectTimeout(15000);
+                    c.setReadTimeout(60000);
+                    int st = c.getResponseCode();
+                    if (st != 200) throw new IOException("HTTP " + st);
+                    long total = c.getContentLength(), done = 0;
+                    InputStream in = c.getInputStream();
+                    OutputStream o = new java.io.FileOutputStream(part);
+                    byte[] buf = new byte[65536];
+                    int n, last = -1;
+                    while ((n = in.read(buf)) > 0) {
+                        o.write(buf, 0, n); done += n;
+                        int pct = total > 0 ? (int) (done * 100 / total) : -1;
+                        if (pct / 10 != last / 10) { last = pct; updEvent("progress", String.valueOf(done), total); }
+                    }
+                    o.close(); in.close();
+                    if (total > 0 && done != total) throw new IOException("short " + done + "/" + total);
+                    if (f.exists()) f.delete();
+                    if (!part.renameTo(f)) throw new IOException("rename");
+                    runOnUiThread(new Runnable() { @Override public void run() { installUpdate(); } });
+                } catch (Throwable e) {
+                    part.delete(); updBusy = false;
+                    updEvent("fail", e.getClass().getSimpleName() + ": " + (e.getMessage() == null ? "" : e.getMessage()), 0);
+                } finally {
+                    if (c != null) c.disconnect();
+                }
+            }
+        }, "vocab3-update").start();
+    }
+
+    private void installUpdate() {
+        if (isFinishing()) { updBusy = false; return; }   // 받는 사이 앱을 끝냈다 — 결과를 받을 화면이 없으니 설치 세션을 만들지 않는다
+        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {   // 처음 한 번: 이 앱의 "출처를 알 수 없는 앱 설치" 허용
+            updWaitPerm = true;
+            updEvent("perm", "", 0);
+            try { startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName()))); }
+            catch (Exception e) { updWaitPerm = false; updBusy = false; updEvent("fail", "perm", 0); }
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                PackageInstaller.Session s = null;
+                try {
+                    java.io.File f = updFile();
+                    PackageInstaller pi = getPackageManager().getPackageInstaller();
+                    PackageInstaller.SessionParams sp = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+                    sp.setAppPackageName(getPackageName());
+                    sp.setSize(f.length());
+                    s = pi.openSession(pi.createSession(sp));
+                    OutputStream o = s.openWrite("base.apk", 0, f.length());
+                    InputStream in = new java.io.FileInputStream(f);
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                    in.close(); s.fsync(o); o.close();
+                    Intent i = new Intent(MainActivity.this, MainActivity.class).setAction(ACTION_INSTALL);
+                    int fl = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);   // 시스템이 결과를 채워 넣으니 MUTABLE
+                    // target 35+ 는 PendingIntent 를 만든 쪽의 화면 띄우기 허용이 기본으로 꺼진다 — 명시해서 API 34 에서 검증된 경로(BAL_ALLOW_VISIBLE_WINDOW)로
+                    android.os.Bundle po = Build.VERSION.SDK_INT >= 34 ? android.app.ActivityOptions.makeBasic().setPendingIntentCreatorBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle() : null;
+                    s.commit(PendingIntent.getActivity(MainActivity.this, 7, i, fl, po).getIntentSender());
+                    f.delete();   // 세션에 다 옮겼다 — cache 에 1.5MB 를 남기지 않는다
+                    updEvent("installing", "", 0);
+                } catch (Throwable e) {
+                    if (s != null) s.abandon();
+                    updBusy = false;
+                    updEvent("fail", e.getClass().getSimpleName() + ": " + (e.getMessage() == null ? "" : e.getMessage()), 0);
+                } finally {
+                    if (s != null) s.close();
+                }
+            }
+        }, "vocab3-install").start();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent == null || !ACTION_INSTALL.equals(intent.getAction())) {
+            // 아이콘·알림으로 돌아옴 — 확인 화면이 떠 있었으면 singleTask 가 지웠다 → 같은 세션의 확인 화면을 다시.
+            // ponytail: 1초 안이면 방금 띄운 것(밀려 있던 결과와 아이콘 실행이 한꺼번에 온 경우) — 두 번 띄우지 않는다
+            if (updConfirm != null && android.os.SystemClock.uptimeMillis() - updConfirmAt > 1000) {
+                try { startActivity(updConfirm); updConfirmAt = android.os.SystemClock.uptimeMillis(); }
+                catch (Exception e) { updConfirm = null; updBusy = false; updEvent("fail", e.getClass().getSimpleName(), 0); }
+            }
+            return;
+        }
+        int st = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -999);
+        if (st == PackageInstaller.STATUS_PENDING_USER_ACTION) {   // 설치 확인 화면 ("업데이트" 버튼)
+            Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT);
+            if (confirm != null) { try { startActivity(confirm); updConfirm = confirm; updConfirmAt = android.os.SystemClock.uptimeMillis(); return; } catch (Exception ignored) { } }
+        }
+        updConfirm = null;
+        if (st == PackageInstaller.STATUS_SUCCESS) return;   // 곧 새 버전으로 바뀐다
+        updBusy = false;
+        String m = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+        updEvent("fail", st == PackageInstaller.STATUS_FAILURE_ABORTED ? "cancel" : (m == null ? "status " + st : m), 0);
     }
 
     private class Bridge {
@@ -929,6 +1056,30 @@ public class MainActivity extends Activity {
                     http(id, url, key, pre, mid, post);
                 }
             }, "vocab3-ai").start();
+        }
+
+        /** v2.27: 설치 출처(Play 면 자체 업데이트를 끈다) · 지금 버전 코드. */
+        @JavascriptInterface
+        public String appInfo(String t) {
+            if (!ok(t)) return null;
+            String inst = "";
+            try {
+                if (Build.VERSION.SDK_INT >= 30) inst = getPackageManager().getInstallSourceInfo(getPackageName()).getInstallingPackageName();
+                else inst = getPackageManager().getInstallerPackageName(getPackageName());
+            } catch (Throwable ignored) { }
+            long vc = 0;
+            try { vc = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; } catch (Throwable ignored) { }
+            try { return new org.json.JSONObject().put("installer", inst == null ? "" : inst).put("vc", vc).toString(); } catch (Exception e) { return "{}"; }
+        }
+
+        /** v2.27: 새 버전 APK 받기 → 설치. 이 저장소의 GitHub 릴리스 파일만 받는다. 진행은 window.onUpdate(st, a, b). */
+        @JavascriptInterface
+        public void updateInstall(String t, String url) {
+            if (!ok(t)) return;
+            if (url == null || !url.startsWith(UPD_PREFIX) || !url.endsWith(".apk")) { updEvent("fail", "bad url", 0); return; }
+            if (updBusy) return;
+            updBusy = true;
+            downloadUpdate(url);
         }
 
         /** 정리하는 동안 화면을 켜 둔다 — 화면이 꺼지면 몇 분짜리 요청이 끊겼다 (v2.23). */

@@ -137,7 +137,9 @@ ls -la "$OUT"
 
 if [ -f "$BUNDLETOOL" ]; then
   echo "[7/8] aapt2 link (proto) + bundletool build-bundle"
-  "$AAPT2" link --proto-format -o build/base_proto.apk -I "$RES_JAR" $COMPILE_SDK_FLAGS --manifest AndroidManifest.xml -A assets \
+  # Play 용 AAB 는 앱 자체 업데이트 권한(REQUEST_INSTALL_PACKAGES)을 뺀다 — 스토어 앱은 스스로 업데이트하면 안 된다 (앱도 Play 설치면 확인을 끈다)
+  grep -v 'REQUEST_INSTALL_PACKAGES' AndroidManifest.xml > build/AndroidManifest.play.xml
+  "$AAPT2" link --proto-format -o build/base_proto.apk -I "$RES_JAR" $COMPILE_SDK_FLAGS --manifest build/AndroidManifest.play.xml -A assets \
     --auto-add-overlay build/res.zip
   mkdir -p build/aab
   pyrun "$SDK_DIR/libs" <<'EOF'

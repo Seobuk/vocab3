@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.26 (versionCode 50).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.27 (versionCode 51).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -82,6 +82,10 @@
     고정 중(세로)엔 영상을 화면 폭 16:9(max-height 해제 — 45vh 가 폭을 줄이면 옆 틈으로 가린 문장이 눌렸다) + `.yt-list` scroll-padding-top 56.25vw — v2.4 의 "목록이 영상을 덮는" 동작을 끌 수 있게(사용자 요청, 기본 꺼짐). 가로에선 버튼 숨김.
   - 단어장(v2.25): 정렬 `S.settings.listSort`(base · wrong 많이 틀린 순 · wrongAsc · rand — 랜덤 열쇠 `listState.rnd` 는 누를 때만 새로), 졸업 탭에 담은 문장(`{sent: x}` 항목, `openSentBox`),
     오른쪽 `listSide`(단계 · ✗틀림 ✓맞음 · ▼어려움 ▲쉬움 · 마지막), 예문 `list-ex` 한 번 톡 = 읽기 · 두 번 톡(400ms) = 가린 한글(`.it-k.hid`) 보이기/가리기. 테스트 `tools/test_list.js`.
+  - 앱 자체 업데이트(v2.27, GitHub APK 만): 시작·onAppResume 에서 `updCheck`(30분에 한 번, `S.settings.updAt`) → api.github.com releases/latest →
+    `verNum`(X.Y 숫자) 비교 · 이 저장소 releases/download/ 의 .apk 만 → 묻기("나중에" = 그 버전 하루 안 물음 `updLater`) → Java `updateInstall`(주소 접두 검사, cache/update.apk 받기,
+    `onUpdate(progress|perm|installing|fail)`) → PackageInstaller 세션 + PendingIntent(onNewIntent 에서 확인 화면). "이 출처 허용"이 없으면 설정을 열고 onResume 에서 이어서.
+    Play 설치(installer com.android.vending)면 확인 안 함, build.sh 는 AAB 매니페스트에서 REQUEST_INSTALL_PACKAGES 를 뺀다. 테스트 `tools/test_update.js`.
   - 넓은 화면(v2.26, `min-width: 600px` — 폴드 안쪽·가로): 아래 창(#sheet)은 오른쪽 아래 380px 판(#ytFab 과 같은 14px 여백, 막 .22, 확인 창 땐 .45),
     학습 카드는 최대 820px. `.card > *` flex-shrink 0 — 넘치면 칸이 눌리지 않고 카드가 스크롤. 유튜브 문장·한글 줄 `ytSentTap`: 한 번 톡 = 재생, 두 번 톡 = 한글 보이기/가리기.
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
