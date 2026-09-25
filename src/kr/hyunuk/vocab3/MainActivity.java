@@ -61,6 +61,10 @@ public class MainActivity extends Activity {
 
     private static final int REQ_SAVE = 101;
     private static final int REQ_OPEN = 102;
+    private static final int REQ_SYNC_NEW = 103;    // v2.28 Google 드라이브 연동: 새 파일 만들기
+    private static final int REQ_SYNC_OPEN = 104;   //                           있는 파일 불러오기
+    private static final String SYNC_KEY = "sync.uri";
+    private final java.util.concurrent.ExecutorService syncExec = java.util.concurrent.Executors.newSingleThreadExecutor();   // 드라이브 파일 쓰기는 한 번에 하나씩
 
     private WebView web;
     private FrameLayout root;
@@ -469,9 +473,11 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             pendingSaveContent = null;
+            if (requestCode == REQ_SYNC_NEW || requestCode == REQ_SYNC_OPEN) syncEvent("cancel", "", "");
             return;
         }
         Uri uri = data.getData();
+        if (requestCode == REQ_SYNC_NEW || requestCode == REQ_SYNC_OPEN) { syncPicked(requestCode, uri, data.getFlags()); return; }
         if (requestCode == REQ_SAVE) {
             String content = pendingSaveContent;
             pendingSaveContent = null;
@@ -543,6 +549,46 @@ public class MainActivity extends Activity {
             if (c != null) c.disconnect();
         }
         aiDone(id, status, text);
+    }
+
+    /* ---- v2.28 Google 드라이브 연동: 사용자가 고른 드라이브 파일(SAF 문서) 하나에 학습 기록을 자동 저장 — 로그인 없이 폰의 드라이브 앱이 올린다 ---- */
+    private void syncEvent(String st, String a, String b) {
+        runJs("window.onSync && window.onSync(" + jsString(st) + "," + jsString(a) + "," + jsString(b) + ")");
+    }
+
+    private String syncName(Uri u) {
+        android.database.Cursor c = null;
+        try {
+            c = getContentResolver().query(u, new String[] { android.provider.OpenableColumns.DISPLAY_NAME }, null, null, null);
+            if (c != null && c.moveToFirst()) return c.getString(0);
+        } catch (Throwable ignored) {
+        } finally {
+            if (c != null) c.close();
+        }
+        return "";
+    }
+
+    private void syncPicked(int req, Uri uri, int flags) {
+        int want = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+        try { getContentResolver().takePersistableUriPermission(uri, want & flags); }   // 앱을 다시 켜도 이 파일에 쓸 수 있게
+        catch (Throwable e) { syncEvent("error", "쓰기 권한을 받지 못했어요", ""); return; }
+        if ((flags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) { syncEvent("error", "이 파일에는 쓸 수 없어요", ""); return; }
+        prefs.edit().putString(SYNC_KEY, uri.toString()).apply();
+        final String name = syncName(uri);
+        if (req == REQ_SYNC_NEW) { syncEvent("linked", name, ""); return; }
+        final Uri u = uri;
+        syncExec.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    InputStream is = getContentResolver().openInputStream(u);
+                    String text = readAll(is);
+                    syncEvent("opened", text, name);
+                } catch (Throwable e) {
+                    syncEvent("error", "파일을 읽지 못했어요", "");
+                }
+            }
+        });
     }
 
     private void aiDone(String id, int status, String text) {
@@ -1056,6 +1102,84 @@ public class MainActivity extends Activity {
                     http(id, url, key, pre, mid, post);
                 }
             }, "vocab3-ai").start();
+        }
+
+        /** v2.28 드라이브 연동 상태: {"uri":…, "name":…} (연동 안 했으면 "{}"). */
+        @JavascriptInterface
+        public String syncInfo(String t) {
+            if (!ok(t)) return null;
+            String s = prefs.getString(SYNC_KEY, null);
+            if (s == null) return "{}";
+            boolean held = false;   // 새 폰에 자동 백업으로 따라온 주소는 권한이 없다 — 그땐 연동 안 한 것으로
+            for (android.content.UriPermission up : getContentResolver().getPersistedUriPermissions()) if (up.getUri().toString().equals(s) && up.isWritePermission()) held = true;
+            if (!held) { prefs.edit().remove(SYNC_KEY).apply(); return "{}"; }
+            try { return new org.json.JSONObject().put("uri", s).put("name", syncName(Uri.parse(s))).toString(); } catch (Exception e) { return "{}"; }
+        }
+
+        /** 드라이브에 새 연동 파일 만들기 (파일 고르는 화면에서 Google 드라이브를 고른다). */
+        @JavascriptInterface
+        public void syncLink(String t, final String name) {
+            if (!ok(t)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("application/json");
+                    i.putExtra(Intent.EXTRA_TITLE, name);
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    try { startActivityForResult(i, REQ_SYNC_NEW); } catch (Exception e) { syncEvent("error", "파일 고르는 화면을 열지 못했어요", ""); }
+                }
+            });
+        }
+
+        /** 새 폰: 드라이브의 연동 파일 불러오기 → 이후 그 파일에 계속 저장. */
+        @JavascriptInterface
+        public void syncOpen(String t) {
+            if (!ok(t)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("*/*");
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    try { startActivityForResult(i, REQ_SYNC_OPEN); } catch (Exception e) { syncEvent("error", "파일 고르는 화면을 열지 못했어요", ""); }
+                }
+            });
+        }
+
+        /** 연동 파일에 학습 기록 쓰기 (백그라운드, 한 번에 하나). 결과: onSync('written', 바이트) 또는 ('error', 이유). */
+        @JavascriptInterface
+        public void syncWrite(String t, final String json) {
+            if (!ok(t) || !bt.equals(sLive)) return;   // 옛 페이지는 옛 데이터로 드라이브를 덮지 못한다 (v2.23 저장 주인과 같게)
+            final String s = prefs.getString(SYNC_KEY, null);
+            if (s == null || json == null) return;
+            syncExec.execute(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        byte[] b = json.getBytes(StandardCharsets.UTF_8);
+                        OutputStream os = getContentResolver().openOutputStream(Uri.parse(s), "wt");
+                        if (os == null) throw new IOException("no stream");
+                        os.write(b); os.flush(); os.close();
+                        syncEvent("written", String.valueOf(b.length), "");
+                    } catch (Throwable e) {
+                        syncEvent("error", e.getClass().getSimpleName() + ": " + (e.getMessage() == null ? "" : e.getMessage()), "");
+                    }
+                }
+            });
+        }
+
+        /** 연동 끊기 (드라이브의 파일은 그대로 둔다). */
+        @JavascriptInterface
+        public void syncUnlink(String t) {
+            if (!ok(t)) return;
+            String s = prefs.getString(SYNC_KEY, null);
+            if (s != null) {
+                try { getContentResolver().releasePersistableUriPermission(Uri.parse(s), Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Throwable ignored) { }
+                prefs.edit().remove(SYNC_KEY).apply();
+            }
         }
 
         /** v2.27: 설치 출처(Play 면 자체 업데이트를 끈다) · 지금 버전 코드. */

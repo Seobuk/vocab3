@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.27';
+  var APP_VERSION = '2.28';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -186,6 +186,11 @@
       } catch (e) { window.onSttError && window.onSttError('exception'); }
     },
     keepOn: function (on) { try { if (isAndroid) AND.keepOn(BT, !!on); } catch (e) { } },
+    syncInfo: function () { try { return isAndroid ? JSON.parse(AND.syncInfo(BT) || '{}') : {}; } catch (e) { return {}; } },   // v2.28 드라이브 연동
+    syncLink: function (name) { try { if (isAndroid) AND.syncLink(BT, name); } catch (e) { } },
+    syncOpen: function () { try { if (isAndroid) AND.syncOpen(BT); } catch (e) { } },
+    syncWrite: function (json) { try { if (isAndroid) AND.syncWrite(BT, json); } catch (e) { } },
+    syncUnlink: function () { try { if (isAndroid) AND.syncUnlink(BT); } catch (e) { } },
     appInfo: function () { try { return isAndroid ? JSON.parse(AND.appInfo(BT) || '{}') : {}; } catch (e) { return {}; } },   // v2.27 설치 출처
     updateInstall: function (url) { try { if (isAndroid) { AND.updateInstall(BT, url); return true; } } catch (e) { } return false; },   // 정리하는 동안 화면 켜 둠 (v2.23)
     sttStop: function () { try { if (isAndroid) AND.sttStop(BT); else if (webStt) webStt.stop(); } catch (e) { } },
@@ -514,9 +519,9 @@
   var saveTimer = null;
   function save() {
     if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () { saveTimer = null; bridge.save(JSON.stringify(S)); }, 60);
+    saveTimer = setTimeout(function () { saveTimer = null; bridge.save(JSON.stringify(S)); SYNC.dirty = true; }, 60);
   }
-  function saveNow() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } bridge.save(JSON.stringify(S)); }
+  function saveNow() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } bridge.save(JSON.stringify(S)); SYNC.dirty = true; }
 
   function byId(id) { for (var i = 0; i < S.words.length; i++) if (S.words[i].id === id) return S.words[i]; return null; }
   function counts() {
@@ -3114,6 +3119,7 @@
       (updOK() ? '<div class="section-title">앱 업데이트</div><div class="settings-group">' +
         sw('autoUpdate', '앱을 열 때 새 버전 확인', 'GitHub 에 새 버전이 나오면 알려 주고, 누르면 받아서 바로 설치해요 (처음 한 번 "이 출처 허용"을 켜야 해요)', st.autoUpdate !== false) +
         '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="upd-check">지금 확인 · 현재 v' + APP_VERSION + '</button></div></div>' : '') +
+      (isAndroid ? '<div class="section-title">Google 드라이브 연동</div><div class="settings-group sync-g">' + syncHTML() + '</div>' : '') +
       '<div class="section-title">데이터</div><div class="settings-group">' +
       '<div class="btn-row"><button class="btn" data-action="backup-file">백업 파일 저장</button><button class="btn" data-action="restore-file">백업 파일 불러오기</button><button class="btn" data-action="restore-start">켤 때 상태로</button></div>' +
       '<div class="btn-row"><button class="btn" data-action="backup-share">텍스트로 공유</button><button class="btn" data-action="backup-copy">클립보드 복사</button><button class="btn" data-action="restore-paste">붙여넣기 복원</button></div>' +
@@ -3312,6 +3318,10 @@
     },
     'list-star': function () { listState.star = !listState.star; RENDER.list({}); },
     'upd-check': function () { updCheck(true); },
+    'sync-new': function () { bridge.syncLink('vocab3-sync.json'); },
+    'sync-open': function () { bridge.syncOpen(); },
+    'sync-now': function () { syncNow(true); toast('드라이브에 저장하는 중…'); },
+    'sync-unlink': function () { confirm2('드라이브 연동을 끊을까요?\n(드라이브의 파일은 그대로 남아요)', '끊기', true).then(function (ok) { if (!ok) return; bridge.syncUnlink(); SYNC.err = ''; syncRefresh(); toast('연동을 끊었어요'); }); },
     'list-sort': function (el) { var v = el.getAttribute('data-v'); if (v === 'rand') listState.rnd = {}; S.settings.listSort = v; save(); RENDER.list({}); },   // 랜덤을 다시 누르면 새로 섞음
     'list-ex': function (el) {   // 예문 한 번 톡 = 영어 읽기 · 두 번 톡(400ms) = 한글 해석 보이기/가리기 (v2.25)
       var id = el.getAttribute('data-id'), now = Date.now(), lt = listState.tap;
@@ -3720,6 +3730,52 @@
     else if (e.key === 'u' || e.key === 'Backspace') undo();
   });
 
+  /* ---------------- Google 드라이브 연동 (v2.28) ---------------- */
+  // 폰을 바꿔도 이어지게: 사용자가 고른 Google 드라이브 파일 하나(SAF 문서, 로그인 없이 폰의 드라이브 앱이 올림)에 학습 기록(S, Gemini 키 제외)을 자동 저장.
+  // 저장 시점: 앱이 내려갈 때 + 켜져 있는 동안 5분마다 (바뀐 게 있을 때만). 새 폰: "드라이브에서 불러오기" → 덮어쓰기/병합 → 그 파일에 이어서 저장.
+  // ponytail: 두 폰을 번갈아 쓰면 나중에 저장한 쪽이 이긴다 (합치지 않음) — 동시에 쓰는 폰이 생기면 날짜 비교·병합을 넣을 것
+  var SYNC = { dirty: false, busy: false, at: 0, err: '' }, SYNC_EVERY = 5 * 60000, SYNC_AT_KEY = 'vocab3.sync.at';
+  function syncLinked() { var i = bridge.syncInfo(); return i && i.uri ? i : null; }
+  function syncHTML() {
+    var i = syncLinked(), at = SYNC.at || +(bridge.loadRaw(SYNC_AT_KEY) || 0);
+    if (!i) return '<div class="tip-s small muted">폰을 바꿔도 이어지게 — 학습 기록을 Google 드라이브의 파일 하나에 자동으로 저장해요 (로그인 없이 폰의 드라이브 앱으로). Gemini 키는 올리지 않아요.</div>' +
+      '<div class="btn-row" style="border-bottom:0"><button class="btn primary" data-action="sync-new">드라이브에 연동하기</button><button class="btn" data-action="sync-open">드라이브에서 불러오기</button></div>';
+    return '<div class="switch-row"><div><div class="sw-t">연동됨 · ' + esc(i.name || '드라이브 파일') + '</div><div class="sw-s">' + (SYNC.err ? '⚠ ' + esc(SYNC.err) : at ? '마지막 저장 ' + agoText(at) : '아직 저장 전') + ' · 앱이 내려갈 때와 5분마다 자동 저장</div></div></div>' +
+      '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="sync-now">지금 저장</button><button class="btn danger" data-action="sync-unlink">연동 끊기</button></div>';
+  }
+  function syncRefresh() { var g = $('.sync-g'); if (g) g.innerHTML = syncHTML(); }
+  function syncNow(force) {
+    if (!isAndroid || SYNC.busy || !(force || SYNC.dirty) || !syncLinked() || stale()) return;
+    var j = backupJSON(); SYNC.dirty = false;
+    if (!force && j === SYNC.last) return;   // 바뀐 게 없으면 안 올린다 (앱을 내릴 때마다 saveNow 가 불려 dirty 만으론 모자람)
+    SYNC.busy = true; SYNC.last = j;
+    bridge.syncWrite(j);
+  }
+  window.onSync = function (st, a, b) {   // Java: linked(이름) · opened(내용, 이름) · written(바이트) · error(이유) · cancel
+    if (st === 'linked') { toast('드라이브 연동 — ' + (a || '파일') + ' 에 저장할게요'); syncNow(true); syncRefresh(); return; }
+    if (st === 'written') { SYNC.busy = false; SYNC.err = ''; SYNC.at = Date.now(); bridge.saveRaw(SYNC_AT_KEY, String(SYNC.at)); syncRefresh(); return; }
+    if (st === 'error') { SYNC.busy = false; SYNC.dirty = true; SYNC.last = null; SYNC.err = a || '저장 실패'; toast('드라이브 연동 — ' + SYNC.err); syncRefresh(); return; }
+    if (st === 'cancel') return;
+    if (st === 'opened') {
+      var data = null; try { data = JSON.parse(a); } catch (e) { }
+      if (!data || !Array.isArray(data.words)) { bridge.syncUnlink(); toast('3단계 단어장 백업 파일이 아니에요'); syncRefresh(); return; }
+      var grad = data.words.filter(function (w) { return w && w.stage === 4; }).length, yt = (data.yt || []).length;
+      ask('드라이브의 기록으로 이 폰을 맞출까요?\n' + (b || '') + ' — 단어 ' + data.words.length + '개 (졸업 ' + grad + ') · 유튜브 ' + yt + '개\n\n덮어쓰기: 이 폰 데이터를 드라이브 기록으로 바꿔요\n병합: 없는 단어만 더해요\n그 뒤로는 이 파일에 자동 저장해요', [
+        { label: '취소', value: '' }, { label: '병합', value: 'merge' }, { label: '덮어쓰기', value: 'replace', cls: 'primary' }
+      ]).then(function (v) {
+        if (!v) { bridge.syncUnlink(); toast('불러오기를 취소했어요 (연동 안 함)'); syncRefresh(); return; }   // 취소하면 연동도 풀어 이 폰의 빈 기록이 드라이브를 덮지 않게
+        if (v === 'replace') { S = migrate(data); ytPruneMedia(); toast('드라이브 기록을 불러왔어요'); }
+        else {
+          var have = {}, n = 0; S.words.forEach(function (w) { have[w.id] = true; have['w:' + w.w.toLowerCase()] = true; });
+          data.words.forEach(function (w) { if (!w || have[w.id] || have['w:' + String(w.w).toLowerCase()]) return; S.words.push(mkWord(w)); n++; });
+          toast(n + '개 단어를 병합했어요');
+        }
+        saveNow(); applyTheme(); syncNow(true); goTab('home');
+      });
+    }
+  };
+  setInterval(function () { if (SYNC.dirty && Date.now() - (SYNC.at || 0) > SYNC_EVERY) syncNow(); }, 60000);
+
   /* ---------------- 앱 자체 업데이트 (v2.27, GitHub 배포 APK) ---------------- */
   // 앱을 열거나 돌아올 때(30분에 한 번) GitHub 최신 릴리스를 보고, 더 새 버전이면 묻고 → Java 가 APK 를 받아 PackageInstaller 로 설치.
   // Play 에서 설치한 앱은 확인하지 않는다 (스토어 정책 — AAB 에는 설치 권한도 없음). Obtainium 과 같이 써도 된다.
@@ -3760,7 +3816,7 @@
   /* ---------------- lifecycle ---------------- */
   window.onTtsReady = function (ok) { TTS_OK = !!ok; if (!ok) toast('영어 TTS 음성을 찾지 못했어요. 기기 TTS 설정을 확인해 주세요'); };
   window.onAppResume = function () { if (stale()) { location.reload(); return; } USE.paused = false; useTick(); updCheck(false); if (current() && current().view === 'home') RENDER.home(); };
-  window.onAppPause = function () { useTick(); USE.paused = true; USE.f = null; saveNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
+  window.onAppPause = function () { useTick(); USE.paused = true; USE.f = null; saveNow(); syncNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
   document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); else window.onAppResume(); });
   window.addEventListener('pagehide', saveNow);
 
