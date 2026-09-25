@@ -689,9 +689,6 @@ body { word-break: keep-all; overflow-wrap: break-word; }
 .card-ghost { display: none; }
 .streak { background: none; box-shadow: none; padding: 0; color: var(--muted); font-weight: 600; font-size: 14px; }
 .ko-pill { box-shadow: none; }
-#listBody { gap: 0; background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
-#listBody .item { border-radius: 0; box-shadow: none; border-bottom: 1px solid var(--line); }
-#listBody .item:last-child { border-bottom: 0; }
 /* 그라데이션·글로우 빼기 */
 .btn.ai { background: var(--primary); }
 .summary .record { background: var(--primary); color: var(--on-primary); box-shadow: none; }
@@ -724,9 +721,8 @@ body { word-break: keep-all; overflow-wrap: break-word; }
 /* 바뀌는 숫자는 고정폭 */
 .sum-grid b, .review-btn .rb-n, .tile b, .streak, .yi-s { font-variant-numeric: tabular-nums; }
 /* 문장 선택창: 같은 알약 7개 → 목록 */
-.yt-menu { gap: 0; margin-top: 10px; }
-.yt-menu .btn { background: transparent; border-radius: 0; padding: 15px 4px; font-weight: 600; border-bottom: 1px solid var(--line); }
-.yt-menu .btn:last-child { border-bottom: 0; }
+.yt-menu { gap: 4px; margin-top: 10px; }
+.yt-menu .btn { background: transparent; border-radius: 16px; padding: 14px 14px; font-weight: 600; }
 /* 시간 수정은 가로 화면만 (v2.11 사용자 요청) — 세로는 예전 그대로(📌, 편집기 없음) */
 @media (orientation: portrait) { #view-ytv .yt-edb, #view-ytv.yt-editing .yt-side { display: none; } }
 @media (orientation: landscape) {
@@ -734,3 +730,24 @@ body { word-break: keep-all; overflow-wrap: break-word; }
   #view-ytv.yt-editing .yt-body { padding-bottom: 24px; }
   #view-ytv.yt-editing .yt-list { scroll-padding-bottom: 16px; }
 }
+/* ===== v2.23 둥글게 (사용자: "너무 네모네") — 버튼은 알약, 아이콘은 연한 원 안 굵은 선, 카드는 더 둥글게 ===== */
+.btn, .btn.big, .navrow .btn, .judge .btn { border-radius: 999px; }
+.today, .quick .q, .review-btn, .item, .tile, .sum-grid div, .settings-group, .player, .yt-item, .modal { border-radius: 22px; }
+.card { border-radius: 28px; }
+.reveal, .sheet .sh-e, .player .p-e, .tip, .yt-old, .yt-undo { border-radius: 18px; }
+.seg, .search, .stage-select button, .pick button, .ai-row input { border-radius: 999px; }
+.seg button { border-radius: 999px; }
+.topbar .icon-btn, .spk, .yi-del { border-radius: 50%; }
+.yt-open img { border-radius: 14px; }
+#toast { border-radius: 20px; }
+.quick .q-ic { width: 48px; height: 48px; border-radius: 50%; background: var(--primary-soft); align-items: center; justify-content: center; }
+.quick .q-ic svg { width: 24px; height: 24px; stroke-width: 2.4; }
+.yt-pinb svg, .yt-edb svg { width: 22px; height: 22px; stroke-width: 2.4; }
+/* 시간 수정 도크도 둥글게 */
+.yed-wave { border-radius: 14px; }
+.yed-seg { border-radius: 999px; }
+.yed-k { border-radius: 999px; padding: 0 14px; }
+.yed-n:nth-child(1), .yed-n:nth-child(4) { border-radius: 999px 0 0 999px; }
+.yed-n:nth-child(2), .yed-n:nth-child(5) { border-radius: 0 999px 999px 0; }
+.yed-now, .yed-go { border-radius: 999px; }
+.yed-i { border-radius: 999px; }

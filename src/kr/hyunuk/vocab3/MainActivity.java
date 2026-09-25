@@ -25,6 +25,8 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
+import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -185,6 +187,10 @@ public class MainActivity extends Activity {
     // 브리지는 유튜브 iframe(과 그 안의 광고 프레임)에도 주입된다 → 우리 index.html 에만 심은 토큰이 있어야 동작
     private final String bt = new BigInteger(130, new SecureRandom()).toString(32);
     private boolean ok(String t) { return bt.equals(t); }
+    // v2.23: 지금 화면에 뜬 페이지의 토큰 — 새 WebView 가 index.html 을 받아 가는 순간 바뀐다. 그 전 페이지(안 없어진 옛 WebView)의 저장은 무시.
+    // onCreate 에서 바꾸지 않는 건 일부러: 재생성 때 옛 페이지의 마지막 onAppPause 저장은 새 onCreate 보다 늦게 도착한다.
+    private static volatile String sLive;
+    private SharedPreferences store(String key) { return key.startsWith("vocab3.bak") ? getSharedPreferences("vocab3.bak", MODE_PRIVATE) : prefs; }   // 되돌리기용 한 벌은 따로 (매 저장마다 파일이 두 배가 되지 않게)
 
     private WebResourceResponse asset(Uri u, boolean mainFrame) {
         String p = u.getPath();
@@ -194,6 +200,7 @@ public class MainActivity extends Activity {
             if (p.equals("/index.html") && !mainFrame) throw new IOException("not main frame");
             InputStream is = getAssets().open(p.substring(1));
             if (p.equals("/index.html")) {
+                sLive = bt;   // v2.23: 이제 이 페이지만 저장할 수 있다
                 // 토큰 스크립트는 실행되자마자 스스로 지운다 (나중에 뜨는 스크립트가 DOM 에서 읽지 못하게)
                 String html = readAll(is).replace("<head>", "<head><script>window.__bt=\"" + bt + "\";document.currentScript.remove()</script>");
                 is = new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8));
@@ -287,6 +294,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        // v2.23: 옛 WebView 를 꼭 없앤다 — 안 없애면 그 페이지 JS(useTick 1분 저장·AI 콜백)가 프로세스가 죽을 때까지 돌며 옛 S 를 저장했다.
+        // ponytail: 설정 변경 재생성 땐 옛 페이지의 마지막 onAppPause 저장(≤1분 사용 시간)이 destroy 에 밀릴 수 있다 — 수정은 60ms 안에 이미 저장돼 있음
+        if (web != null) { root.removeView(web); web.destroy(); web = null; }
         if (off != null) off.close();   // 받던 것 멈추고 .part 지움, 파형 작업도 멈춤
         try { if (stt != null) { stt.destroy(); stt = null; } } catch (Exception ignored) { }
         if (tts != null) {
@@ -480,24 +490,72 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Gemini 등 HTTPS 요청 (백그라운드 스레드에서). body = pre + mid + post (pre 가 없으면 GET). 어떤 실패든 onAiResult 는 꼭 부른다. */
+    private void http(String id, String url, String key, byte[] pre, byte[] mid, byte[] post) {
+        int status = 0;
+        String text = "";
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(url).openConnection();
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(600000);   // 유튜브 영상 받아쓰기(생각 켜기)는 몇 분 걸린다; 기능마다 JS 쪽이 자기 제한 시간을 따로 건다
+            c.setRequestProperty("Accept", "application/json");
+            if (key != null && key.length() > 0) c.setRequestProperty("x-goog-api-key", key);
+            if (pre != null) {
+                c.setRequestMethod("POST");
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                c.setFixedLengthStreamingMode(pre.length + (mid == null ? 0 : mid.length) + (post == null ? 0 : post.length));   // 본문을 한 번 더 버퍼에 담지 않고, 조용히 다시 보내지도 않게
+                OutputStream os = c.getOutputStream();
+                os.write(pre);
+                if (mid != null) os.write(mid);
+                if (post != null) os.write(post);
+                os.close();
+            } else {
+                c.setRequestMethod("GET");
+            }
+            status = c.getResponseCode();
+            InputStream is = status >= 400 ? c.getErrorStream() : c.getInputStream();
+            if (is != null) {
+                BufferedReader r = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                char[] buf = new char[8192];
+                int n;
+                while ((n = r.read(buf)) > 0) sb.append(buf, 0, n);
+                r.close();
+                text = sb.toString();
+            }
+        } catch (Throwable e) {   // OutOfMemoryError 등도 — 답을 안 주면 JS 가 제한 시간까지 기다린다
+            status = 0;
+            text = e.getClass().getSimpleName() + ": " + (e.getMessage() == null ? "" : e.getMessage());
+        } finally {
+            if (c != null) c.disconnect();
+        }
+        aiDone(id, status, text);
+    }
+
+    private void aiDone(String id, int status, String text) {
+        runJs("window.onAiResult && window.onAiResult(" + jsString(id) + "," + status + "," + jsString(text) + ")");
+    }
+
     private class Bridge {
 
         @JavascriptInterface
         public String load(String t, String key) {
             if (!ok(t)) return null;   // 토큰 없는 호출(유튜브 iframe·광고 프레임)은 무시
-            return prefs.getString(key, null);
+            return store(key).getString(key, null);
         }
 
         @JavascriptInterface
         public void save(String t, String key, String value) {
-            if (!ok(t)) return;
-            prefs.edit().putString(key, value).apply();
+            if (!ok(t) || !bt.equals(sLive)) return;   // v2.23: 옛 페이지는 옛 S 로 덮지 못한다
+            store(key).edit().putString(key, value).apply();
         }
 
         @JavascriptInterface
         public void remove(String t, String key) {
-            if (!ok(t)) return;
-            prefs.edit().remove(key).apply();
+            if (!ok(t) || !bt.equals(sLive)) return;
+            store(key).edit().remove(key).apply();
         }
 
         @JavascriptInterface
@@ -827,45 +885,54 @@ public class MainActivity extends Activity {
             new Thread(new Runnable() {
                 @Override
                 public void run() {
-                    int status = 0;
-                    String text = "";
-                    HttpURLConnection c = null;
-                    try {
-                        c = (HttpURLConnection) new URL(url).openConnection();
-                        c.setConnectTimeout(15000);
-                        c.setReadTimeout(600000);   // 유튜브 영상 받아쓰기(생각 켜기)는 몇 분 걸린다; 기능마다 JS 쪽이 자기 제한 시간을 따로 건다
-                        c.setRequestProperty("Accept", "application/json");
-                        if (key != null && key.length() > 0) c.setRequestProperty("x-goog-api-key", key);
-                        if (body != null && body.length() > 0) {
-                            c.setRequestMethod("POST");
-                            c.setDoOutput(true);
-                            c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-                            OutputStream os = c.getOutputStream();
-                            os.write(body.getBytes(StandardCharsets.UTF_8));
-                            os.close();
-                        } else {
-                            c.setRequestMethod("GET");
-                        }
-                        status = c.getResponseCode();
-                        InputStream is = status >= 400 ? c.getErrorStream() : c.getInputStream();
-                        if (is != null) {
-                            BufferedReader r = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-                            StringBuilder sb = new StringBuilder();
-                            char[] buf = new char[8192];
-                            int n;
-                            while ((n = r.read(buf)) > 0) sb.append(buf, 0, n);
-                            r.close();
-                            text = sb.toString();
-                        }
-                    } catch (Exception e) {
-                        status = 0;
-                        text = e.getClass().getSimpleName() + ": " + (e.getMessage() == null ? "" : e.getMessage());
-                    } finally {
-                        if (c != null) c.disconnect();
-                    }
-                    runJs("window.onAiResult && window.onAiResult(" + jsString(id) + "," + status + "," + jsString(text) + ")");
+                    byte[] b = body == null || body.length() == 0 ? null : body.getBytes(StandardCharsets.UTF_8);
+                    http(id, url, key, b, null, null);
                 }
             }, "vocab3-ai").start();
+        }
+
+        /**
+         * v2.23: body 안의 "@CLIP@" 자리에 받은 영상 vid 의 소리 [a, b)초(AAC ADTS)를 base64 로 넣어 보낸다 — 12MB 안팎이라 문자열로 만들지 않고 흘려 쓴다.
+         * 결과는 onAiResult: 파일 끝을 넘으면 -416, 파일을 못 읽으면 -1 (JS 는 유튜브 링크로 바꿔 보낸다).
+         */
+        @JavascriptInterface
+        public void aiClip(String t, final String id, final String url, final String key, final String body, final String vid, final double a, final double b) {
+            if (!ok(t)) return;
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    byte[] pre, mid, post;
+                    try {
+                        java.io.File f = off.media(vid);
+                        if (f == null) throw new java.io.FileNotFoundException(vid);
+                        byte[] aac = Offline.adts(f.getPath(), a, b);
+                        if (aac == null) { aiDone(id, -416, "end"); return; }
+                        String mark = "\"@CLIP@\"";
+                        int i = body.indexOf(mark);
+                        if (i < 0) throw new IOException("no @CLIP@");
+                        pre = (body.substring(0, i) + "\"").getBytes(StandardCharsets.UTF_8);
+                        post = ("\"" + body.substring(i + mark.length())).getBytes(StandardCharsets.UTF_8);
+                        mid = Base64.encode(aac, Base64.NO_WRAP);
+                    } catch (Throwable e) {
+                        aiDone(id, -1, e.getClass().getSimpleName() + ": " + (e.getMessage() == null ? "" : e.getMessage()));
+                        return;
+                    }
+                    http(id, url, key, pre, mid, post);
+                }
+            }, "vocab3-ai").start();
+        }
+
+        /** 정리하는 동안 화면을 켜 둔다 — 화면이 꺼지면 몇 분짜리 요청이 끊겼다 (v2.23). */
+        @JavascriptInterface
+        public void keepOn(String t, final boolean on) {
+            if (!ok(t)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+            });
         }
 
         /* ---- v2.14 오프라인 영상 (Offline.java). 결과: window.onYtDl(vid, st, a, b) · window.onMediaEnv(vid) ---- */

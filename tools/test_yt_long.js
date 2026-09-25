@@ -17,7 +17,7 @@ const body = (txt, fin) => JSON.stringify({ candidates: [{ content: { parts: [{ 
       window.__calls.push({ url, body: JSON.parse(opt.body) });
       const r = window.__seq.shift() || [200, JSON.stringify({ candidates: [{ content: { parts: [{ text: '[]' }] }, finishReason: 'STOP' }] })];
       if (r[0] === 0) return Promise.reject(new Error(r[1]));   // 연결 실패 (status 0)
-      return new Promise(ok => setTimeout(() => ok({ status: r[0], text: () => Promise.resolve(r[1]) }), window.__delay || 0));   // __delay: 실제처럼 답이 늦게 (그사이 플레이어가 영상 길이를 알려 준다)
+      return new Promise(ok => setTimeout(() => ok({ status: r[0], text: () => Promise.resolve(r[1]) }), r[2] != null ? r[2] : window.__delay || 0));   // r[2]: 이 답만의 지연   // __delay: 실제처럼 답이 늦게 (그사이 플레이어가 영상 길이를 알려 준다)
     };
     window.YT = { Player: function (el, o) { setTimeout(() => o.events.onReady({}), 0); this.seekTo = () => {}; this.playVideo = () => {}; this.pauseVideo = () => {}; this.getCurrentTime = () => 0; this.getPlayerState = () => -1; this.getDuration = () => window.__dur || 0; this.destroy = () => {}; } };
   });
@@ -25,7 +25,7 @@ const body = (txt, fin) => JSON.stringify({ candidates: [{ content: { parts: [{ 
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
   await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); });
   await p.reload(); await p.waitForTimeout(400);
-  await p.evaluate(() => window.__vocab.ytRetry([30, 30]));
+  await p.evaluate(() => window.__vocab.ytRetry([30, 30], null, 0));   // 429 는 기다리지 않고 (retryDelay 없을 때)
   const add = async vid => {
     await p.evaluate(() => window.__vocab.go('yt')); await p.waitForTimeout(150);
     await p.click('#view-yt [data-action="yt-add"]'); await p.waitForTimeout(300);
@@ -133,9 +133,9 @@ const body = (txt, fin) => JSON.stringify({ candidates: [{ content: { parts: [{ 
   await p.evaluate(() => { const r = window.__vocab.state().yt.find(r => r.vid === 'LONGVIDEO15'); r.dur = 600; window.__vocab.save(); window.__vocab.go('ytv', { id: r.id }); }); await p.waitForTimeout(300);
   const P6 = P1.concat([S('00:10.0', '00:12.0', 'This is the fourth sentence here.'), S('08:45.0', '08:50.0', 'This is the redo final sentence.')]);
   const lim = [429, '{"error":{"message":"quota"}}'];
-  await p.evaluate(([a, l]) => { window.__calls = []; window.__seq = [[200, a], l, l]; }, [body(JSON.stringify(P6), 'STOP'), lim]);
+  await p.evaluate(([a, l]) => { window.__calls = []; window.__seq = [[200, a], l, l, l]; }, [body(JSON.stringify(P6), 'STOP'), lim]);
   await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(1200);
-  eq('다시 정리: 끝 확인만 429 → 새 5문장 사용 · 요청 3번 · "이어서 정리하기" 안내', (await rec('LONGVIDEO15')).sents.length + ' ' + await p.evaluate(() => window.__calls.length) + ' ' + /뒷부분 일부는.*이어서 정리하기/.test(await p.textContent('#toast')), '5 3 true');
+  eq('다시 정리: 끝 확인만 429(한 번 기다려 다시 · 1초 1장도) → 새 5문장 사용 · 요청 4번 · "이어서 정리하기" 안내', (await rec('LONGVIDEO15')).sents.length + ' ' + await p.evaluate(() => window.__calls.length) + ' ' + /뒷부분 일부는.*이어서 정리하기/.test(await p.textContent('#toast')), '5 4 true');
   // --- v2.21: 이어 받은 답이 마지막 문장을 대소문자·문장부호만 바꿔 되풀이해도 한 번만 ---
   const P7 = [S('00:07.4', '00:09.0', 'this is the third sentence here!'), S('00:10.0', '00:12.0', 'This is the fourth sentence here.')];
   await p.evaluate(([a, c]) => { window.__calls = []; window.__seq = [[200, a], [200, c]]; }, [body(JSON.stringify(P1), 'MAX_TOKENS'), body(JSON.stringify(P7), 'STOP')]);
@@ -145,22 +145,40 @@ const body = (txt, fin) => JSON.stringify({ candidates: [{ content: { parts: [{ 
   await p.evaluate(([a]) => { window.__calls = []; window.__seq = [[0, 'java.net.SocketTimeoutException: failed to connect to generativelanguage.googleapis.com after 15000ms'], [200, a]]; }, [body(JSON.stringify(P1), 'STOP')]);
   await add('LONGVIDEO17'); await p.waitForTimeout(900);
   eq('연결 시간 초과 뒤 자동 재시도 → 3문장 (요청 2번)', (await rec('LONGVIDEO17')).sents.length + ' ' + await p.evaluate(() => window.__calls.length), '3 2');
-  // --- v2.21: 이어 받기는 뒷부분만 잘라 보냄(startOffset) · 구간 기준 시간이 오면 영상 기준으로 ---
+  // --- v2.23: 유튜브 링크 이어 받기는 자르지 않음(startOffset 은 서버가 소리를 안 잘라 뺌) · 400 이면 1초 1장으로 한 번만 ---
   const PA = [S('01:40.0', '01:45.0', 'This is the sentence near two minutes.'), S('01:50.0', '02:00.0', 'This is the sentence at two minutes.')];
-  await p.evaluate(([a, c]) => { window.__calls = []; window.__seq = [[200, a], [200, c]]; }, [body(JSON.stringify(PA), 'MAX_TOKENS'), body(JSON.stringify([S('00:05.0', '00:08.0', 'This is a clipped relative sentence.')]), 'STOP')]);
+  await p.evaluate(([a, c]) => { window.__calls = []; window.__seq = [[200, a], [200, c]]; }, [body(JSON.stringify(PA), 'MAX_TOKENS'), body(JSON.stringify([S('02:05.0', '02:08.0', 'This is an absolute time sentence.')]), 'STOP')]);
   await add('LONGVIDEO18'); await p.waitForTimeout(900);
-  eq('둘째 요청은 1:58 부터만 · 첫 요청은 통째', await p.evaluate(() => JSON.stringify(window.__calls.map(c => c.body.contents[0].parts[0].videoMetadata))), JSON.stringify([{ fps: 2 }, { fps: 2, startOffset: '118s' }]));
-  eq('구간 기준 00:05 → 영상 기준 02:03', (await rec('LONGVIDEO18')).sents.map(x => x.s).join(), '100,110,123');
-  eq('이어 받기 요청에 "전체 영상 기준 시간" 안내', /FULL video timeline/.test(await userText(1)), true);
-  await p.evaluate(([a, c, bad]) => { window.__calls = []; window.__seq = [[200, a], bad, bad, [200, c]]; }, [body(JSON.stringify(PA), 'MAX_TOKENS'), body(JSON.stringify([S('02:05.0', '02:08.0', 'This is an absolute time sentence.')]), 'STOP'), [400, '{"error":{"message":"Invalid argument"}}']]);
+  eq('링크 이어 받기: 자르지 않음 · 영상 기준 시간 그대로', await p.evaluate(() => JSON.stringify(window.__calls.map(c => c.body.contents[0].parts[0].videoMetadata))) + ' ' + (await rec('LONGVIDEO18')).sents.map(x => x.s).join() + ' ' + /FULL video timeline/.test(await userText(1)), JSON.stringify([{ fps: 2 }, { fps: 2 }]) + ' 100,110,125 false');
+  await p.evaluate(([a, bad]) => { window.__calls = []; window.__seq = [[200, a], bad, bad]; }, [body(JSON.stringify(PA), 'MAX_TOKENS'), [400, '{"error":{"message":"Invalid argument"}}']]);
   await add('LONGVIDEO19'); await p.waitForTimeout(900);
-  eq('자르기를 못 받으면(400) 1초 1장 → 그래도 안 되면 통째로 (요청 4번)', await p.evaluate(() => JSON.stringify(window.__calls.map(c => c.body.contents[0].parts[0].videoMetadata || null))) + ' ' + (await rec('LONGVIDEO19')).sents.map(x => x.s).join(), JSON.stringify([{ fps: 2 }, { fps: 2, startOffset: '118s' }, { startOffset: '118s' }, null]) + ' 100,110,125');
-  // --- v2.21: 오래 걸리면 "N분째" ---
-  await p.evaluate(() => { window.__delay = 5000; window.__seq = []; });
+  eq('400 이면 1초 1장으로 한 번 · 통째 폴백 없음 · 받은 2문장은 남음', await p.evaluate(() => JSON.stringify(window.__calls.map(c => c.body.contents[0].parts[0].videoMetadata || null))) + ' ' + (await rec('LONGVIDEO19')).sents.length, JSON.stringify([{ fps: 2 }, { fps: 2 }, null]) + ' 2');
+  // --- v2.23: 이어서 정리 — 0초부터 지난 시간, 받는 대로(라운드마다) 붙음, 취소 ---
   await p.evaluate(() => { const r = window.__vocab.state().yt.find(r => r.vid === 'LONGVIDEO19'); r.dur = 900; delete r.tail; window.__vocab.save(); window.__vocab.go('ytv', { id: r.id }); }); await p.waitForTimeout(300);
-  await p.click('.yt-old [data-action="yt-more"]'); await p.waitForTimeout(200);
-  eq('이어서 정리하는 중 표시에 시간 칸', await p.$$eval('#ytJobT', x => x.length), 1);
-  await p.waitForTimeout(5500); await p.evaluate(() => { window.__delay = 0; });
+  const PB = [S('02:10.0', '02:14.0', 'This is the first continued sentence.'), S('02:20.0', '02:24.0', 'This is the second continued sentence.')];
+  const PC = [S('14:00.0', '14:05.0', 'This is the very last continued sentence.')];
+  await p.evaluate(([a, c]) => { window.__calls = []; window.__seq = [[200, a, 50], [200, c, 1500]]; }, [body(JSON.stringify(PB), 'MAX_TOKENS'), body(JSON.stringify(PC), 'STOP')]);
+  await p.click('.yt-old [data-action="yt-more"]'); await p.waitForTimeout(700);
+  eq('이어서 정리 중: 시간 칸 0:0x · 첫 라운드 문장은 벌써 붙음 · 아래 링크 숨김 · 목록 "정리 중…"', (/^ · 0:0\d/.test(await p.textContent('#ytJobT'))) + ' ' + (await rec('LONGVIDEO19')).sents.length + ' ' + await p.$$eval('.yt-redo [data-action="yt-more"]', x => x.length), 'true 4 0');
+  await p.click('.yt-old [data-action="yt-stop"]').catch(() => {}); await p.waitForTimeout(100);
+  eq('취소 → 토스트 · 배너 없음', /멈췄어요/.test(await p.textContent('#toast')) + ' ' + await p.$$eval('.yt-old', x => x.filter(e => /정리하는 중/.test(e.textContent)).length), 'true 0');
+  await p.waitForTimeout(1800);
+  eq('취소 뒤 늦게 온 답은 버림 (4문장 그대로)', (await rec('LONGVIDEO19')).sents.length, 4);
+  // --- v2.23: 오래 걸린 500 은 다시 보내지 않고 ⚠ 배너 + 다시 이어서 ---
+  await p.evaluate(() => window.__vocab.ytRetry([30, 30], 200, 0));
+  await p.evaluate(() => { window.__calls = []; window.__seq = [[500, '{"error":{"message":"internal"}}', 400]]; });
+  await p.click('.yt-redo [data-action="yt-more"]'); await p.waitForTimeout(900);
+  eq('느린 500: 요청 1번 · ⚠ 배너에 다시 이어서 · 문장 그대로', await p.evaluate(() => window.__calls.length) + ' ' + await p.$$eval('.yt-old', x => x.filter(e => /⚠/.test(e.textContent) && e.querySelector('[data-action="yt-more"]')).length) + ' ' + (await rec('LONGVIDEO19')).sents.length, '1 1 4');
+  await p.evaluate(() => { window.__calls = []; window.__seq = [[500, '{}'], [500, '{}'], [500, '{}'], [500, '{}']]; });
+  await p.click('.yt-old [data-action="yt-more"]'); await p.waitForTimeout(900);
+  eq('빠른 500: 자동으로 두 번 더 (aiGenerate 는 503 만 다시 → 요청 3번)', await p.evaluate(() => window.__calls.length), 3);
+  // --- v2.23: 429 는 retryDelay 만큼 기다렸다 한 번 더 · 기다리는 동안 안내 ---
+  await p.evaluate(() => window.__vocab.ytRetry([30, 30], null, 0));
+  await p.evaluate(([a]) => { window.__calls = []; window.__seq = [[429, '{"error":{"details":[{"retryDelay":"1s"}]}}'], [200, a]]; }, [body(JSON.stringify(PC), 'STOP')]);
+  await p.click('.yt-old [data-action="yt-more"]'); await p.waitForTimeout(400);
+  eq('429 retryDelay 1초 기다리는 중 안내', /요청 한도 — 1초 뒤 다시/.test(await p.textContent('#ytJobT')), true);
+  await p.waitForTimeout(1500);
+  eq('기다린 뒤 다시 → 붙음 (요청 2번, 둘 다 1초 2장)', await p.evaluate(() => JSON.stringify(window.__calls.map(c => c.body.contents[0].parts[0].videoMetadata))) + ' ' + (await rec('LONGVIDEO19')).sents.length, JSON.stringify([{ fps: 2 }, { fps: 2 }]) + ' 5');
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();
 })();

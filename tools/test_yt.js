@@ -231,9 +231,9 @@ const SENTS = [
   eq('새로 정리한 영상엔 다시 정리 안내 없음 (tv 3)', await p.$$eval('.yt-old', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').tv), '0 3');
   // --- 거절되면 한 번 더 (v2.9): 생각 설정 거부(400) → 생각 빼고, 한도(429) → 1초 1장으로 ---
   const c0 = await p.evaluate(() => window.__calls.length);
-  await p.evaluate(() => { window.__gemFail = [[400, 'Thinking level is not supported for this model.'], [429, 'Resource has been exhausted (e.g. check quota).']]; });
+  await p.evaluate(() => { window.__vocab.ytRetry([5000, 15000], null, 0); window.__gemFail = [[400, 'Thinking level is not supported for this model.'], [429, 'Resource has been exhausted (e.g. check quota).']]; });   // v2.23: 429 는 기다렸다(테스트 0초) 같은 요청으로
   await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(600);
-  eq('거절 두 번 뒤 세 번째에 성공: [생각·2장] → [생각 빼고·2장] → [생각·1장]', JSON.stringify(await p.evaluate(c0 => window.__calls.slice(c0).filter(c => c.body).map(c => [!!c.body.generationConfig.thinkingConfig, c.body.contents[0].parts[0].videoMetadata ? c.body.contents[0].parts[0].videoMetadata.fps : 1]), c0)), '[[true,2],[false,2],[true,1]]');
+  eq('거절 두 번 뒤 세 번째에 성공: [생각·2장] → [생각 빼고·2장] → 한도는 기다렸다 [생각·2장]', JSON.stringify(await p.evaluate(c0 => window.__calls.slice(c0).filter(c => c.body).map(c => [!!c.body.generationConfig.thinkingConfig, c.body.contents[0].parts[0].videoMetadata ? c.body.contents[0].parts[0].videoMetadata.fps : 1]), c0)), '[[true,2],[false,2],[true,2]]');
   eq('성공하면 문장 그대로 · 실패 안내 없음', await p.$$eval('#ytList .ys', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').tv), '3 3');
   const c1 = await p.evaluate(() => window.__calls.length);
   await p.evaluate(() => { window.__gemFail = [[400, 'API key not valid. Please pass a valid API key.']]; });

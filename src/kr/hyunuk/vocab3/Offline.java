@@ -405,6 +405,71 @@ final class Offline {
     }
 
     /** 오디오 트랙을 디코드해 20ms(50/초) 마다 모노 RMS → dBFS → clamp(round(dBFS+100), 0, 100) 한 바이트. */
+    /**
+     * v2.23: 받은 파일의 소리 [a, b)초를 AAC ADTS 바이트로 — 다시 인코딩하지 않고 샘플을 그대로 잘라 7바이트 머리만 붙인다.
+     * 긴 영상 정리는 이 소리를 10분씩 Gemini 에 보낸다 (유튜브 링크는 구간을 잘라도 소리는 영상 전체가 들어가 몇 분씩 걸렸다).
+     * a 가 파일 끝 뒤면 null. 소리가 AAC 가 아니면 IOException.
+     */
+    static byte[] adts(String path, double a, double b) throws IOException {
+        MediaExtractor ex = new MediaExtractor();
+        try {
+            ex.setDataSource(path);
+            MediaFormat fmt = null;
+            for (int i = 0; i < ex.getTrackCount() && fmt == null; i++) {
+                MediaFormat f = ex.getTrackFormat(i);
+                String mime = f.getString(MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("audio/")) { ex.selectTrack(i); fmt = f; }
+            }
+            if (fmt == null) throw new IOException("no audio track");
+            if (!"audio/mp4a-latm".equals(fmt.getString(MediaFormat.KEY_MIME))) throw new IOException("not aac");
+            int rate = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE), chn = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+            int prof = 1, fi = freqIndex(rate), ch = Math.max(1, Math.min(7, chn));
+            ByteBuffer csd = fmt.containsKey("csd-0") ? fmt.getByteBuffer("csd-0") : null;
+            if (csd != null && csd.remaining() >= 2) {   // AudioSpecificConfig: 객체 5비트 · 주파수 4비트 · 채널 4비트
+                int c0 = csd.get(csd.position()) & 0xFF, c1 = csd.get(csd.position() + 1) & 0xFF;
+                int aot = c0 >> 3, f2 = ((c0 & 7) << 1) | (c1 >> 7), c2 = (c1 >> 3) & 15;
+                if (aot >= 1 && aot <= 4) prof = aot - 1;
+                if (f2 <= 12) fi = f2;
+                if (c2 >= 1 && c2 <= 7) ch = c2;
+            }
+            long aUs = (long) (a * 1e6), bUs = (long) (b * 1e6);
+            ex.seekTo(Math.max(0, aUs), MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+            ByteBuffer buf = ByteBuffer.allocate(1 << 16);
+            ByteArrayOutputStream out = new ByteArrayOutputStream(1 << 21);
+            byte[] h = new byte[7], smp = new byte[1 << 12];
+            while (true) {
+                if (Thread.interrupted()) throw new IOException("interrupted");
+                buf.clear();
+                int n = ex.readSampleData(buf, 0);
+                if (n < 0) break;
+                long ts = ex.getSampleTime();
+                if (ts >= bUs) break;
+                if (ts >= aUs - 50000 && n > 0) {
+                    int len = n + 7;
+                    h[0] = (byte) 0xFF; h[1] = (byte) 0xF1;   // 동기 · MPEG-4 · CRC 없음
+                    h[2] = (byte) ((prof << 6) | (fi << 2) | (ch >> 2));
+                    h[3] = (byte) (((ch & 3) << 6) | (len >> 11));
+                    h[4] = (byte) ((len >> 3) & 0xFF);
+                    h[5] = (byte) (((len & 7) << 5) | 0x1F);
+                    h[6] = (byte) 0xFC;
+                    if (smp.length < n) smp = new byte[n];
+                    buf.limit(n); buf.position(0); buf.get(smp, 0, n);
+                    out.write(h, 0, 7); out.write(smp, 0, n);
+                }
+                ex.advance();
+            }
+            return out.size() == 0 ? null : out.toByteArray();
+        } finally {
+            ex.release();
+        }
+    }
+
+    private static int freqIndex(int rate) {
+        int[] r = { 96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350 };
+        for (int i = 0; i < r.length; i++) if (r[i] == rate) return i;
+        return 4;
+    }
+
     static byte[] envelope(String path) throws IOException {
         MediaExtractor ex = new MediaExtractor();
         MediaCodec dec = null;
