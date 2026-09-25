@@ -52,6 +52,8 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.screenshot({ path: OUT + '/330-usage.png', fullPage: true });
   await p.click('#view-stats .bar-col[data-d="2026-09-20"]'); await p.clock.runFor(200);
   eq('다른 날 막대를 누르면 그날 기능별', await p.textContent('#useDay .cb-title') + ' | ' + await p.$$eval('#useDay .srow .sl', x => x.map(e => e.textContent).join(',')), '9월 20일 기능별 10분 | 단어 학습');
+  await p.click('#view-stats .bar-col[data-d="2026-09-22"]'); await p.clock.runFor(200);
+  eq('기록 없는 날을 누르면 그날 · 없다는 안내', await p.textContent('#useDay .cb-title') + ' | ' + await p.textContent('#useDay .empty'), '9월 22일 기능별 0분 | 이날은 기록이 없어요');
   eq('저장됨', await p.evaluate(() => { window.__vocab.save(); return JSON.parse(localStorage.getItem('vocab3.state.v1')).usage['2026-09-25'].c.sent; }), 2);
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();

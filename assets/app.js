@@ -1227,7 +1227,7 @@
       var key = dateKey(d), v = (U[key] || {}).t || 0;
       bars.push({ d: d, k: key, v: v }); if (v > max) max = v; if (i < 7) w7 += v;
     }
-    var sel = useSel && U[useSel] !== undefined || useSel === dateKey(today) ? useSel : dateKey(today);
+    var sel = useSel || dateKey(today);   // 기록 없는 날도 고를 수 있게 ("이날은 기록이 없어요")
     if (!bars.some(function (b) { return b.k === sel; })) sel = dateKey(today);
     var maxIdx = 0; bars.forEach(function (b, i) { if (b.v > bars[maxIdx].v) maxIdx = i; });
     var barsHtml = bars.map(function (b, i) {
@@ -1433,7 +1433,7 @@
   // userText null → 첫 인사(오프닝) 요청
   function talkTurn(userText) {
     if (!TALK || TALK.busy) return;
-    if (userText !== null) { TALK.msgs.push({ role: 'user', text: userText }); useCount('talk'); }
+    if (userText !== null) TALK.msgs.push({ role: 'user', text: userText });
     else TALK.msgs.push({ role: 'user', text: 'Start the conversation with a natural opening line for the scenario. No feedback yet.', hidden: true });
     var myTalk = TALK, myReq = ++TALK.req;
     KO = { src: '', busy: false };
@@ -1461,7 +1461,7 @@
       if (last && last.role === 'user' && !last.hidden) {
         last.fix = String(out.fix || '').trim(); last.note = String(out.note || '').trim();
         if (last.fix && last.fix.toLowerCase() === last.text.trim().toLowerCase()) last.fix = '';
-        TALK.turns++;
+        TALK.turns++; useCount('talk');   // 답을 받았을 때만 센다 (다시 보내기로 두 번 세지 않게)
         markUsed(last.text, Array.isArray(out.used) ? out.used : []);
       }
       TALK.say = Array.isArray(out.say) ? out.say.filter(function (s) { return s && s.e; }).slice(0, 2) : [];
