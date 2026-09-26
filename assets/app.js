@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.32';
+  var APP_VERSION = '2.33';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -652,7 +652,7 @@
     sent: { need: '#sentArea .sent-card', steps: [
       { sel: '#sentArea .sent-card', t: '영어 문장 공부', b: '졸업한 단어의 예문과 유튜브에서 담은 문장이 나와요. 세 장에 한 번은 처음 보는 문장이나 아직 안 담은 유튜브 문장이 섞여요.' },
       { sel: '#sentArea .sent-card', t: '말해 보고 톡', b: '우리말을 보고 영어로 먼저 말해 봐요. 카드를 톡 하면 가린 영어가 보이며 읽어 주고, 또 톡 하면 다시 읽어요.' },
-      { sel: '.judge', t: '쉬움 · 어려움', b: '"어려움"을 누르거나 아래로 밀면 그 문장이 더 자주, "쉬움"이나 위로 밀면 가끔 나와요. 단어 단계는 안 바뀌어요.' }
+      { sel: '.judge', t: '밀어서 고르고 넘기기', b: '위로 밀거나 "쉬움"을 누르면 가끔, 아래로 밀거나 "어려움"을 누르면 더 자주 나와요. 왼쪽으로 밀면 고르지 않고 다음 문장, 오른쪽으로 밀면 이전 문장.' }
     ] },
     stats: { steps: [
       { sel: '.home-head + .tiles', t: '학습 기록', b: '연속 학습은 단어 카드에서 "외웠다"나 "아직"을 한 번이라도 고른 날이 며칠째 이어지는지예요. 외움률은 그중 "외웠다"의 비율이에요.' },
@@ -1219,9 +1219,9 @@
   /* ================= 영어 문장 공부 (v2.12) =================
      졸업한 단어의 예문: 한글 → (탭) 가려 둔 영어가 보이며 읽어 줌 → ▲ 쉬움 / ▼ 어려움. 끝없이 계속 꺼낸다.
      가중치 sw(1~20, 처음 3): 어려움 +2 · 쉬움 −1 — 클수록 자주 나온다. se/sh = 쉬움·어려움 누적 횟수, sa = 마지막으로 본 때 */
-  var SENT = null;   // { id: 지금 문장(단어 id), n, recent: [최근 id], undo: [], token }
+  var SENT = null;   // { id: 지금 문장(단어 id), n, recent: [최근 id], undo: [], token, back/fwd: 옆으로 넘긴 문장(v2.33), sugs: 보여 준 제안 }
   function sentPool() { return S.words.filter(function (w) { return w.stage === 4 && w.e && w.k; }).concat(S.sentBox); }   // + v2.17 유튜브에서 담은 문장
-  function sentItem(id) { if (!id) return null; var w = byId(id); if (w) return w; for (var i = 0; i < S.sentBox.length; i++) if (S.sentBox[i].id === id) return S.sentBox[i]; if (SENT && SENT.sug && SENT.sug.id === id) return SENT.sug; return null; }
+  function sentItem(id) { if (!id) return null; var w = byId(id); if (w) return w; for (var i = 0; i < S.sentBox.length; i++) if (S.sentBox[i].id === id) return S.sentBox[i]; if (SENT && SENT.sugs[id]) return SENT.sugs[id]; return null; }
   // v2.30 "새 문장 섞기": 세 장마다 한 번은 한 번도 안 다룬 문장 — 처음 보는 졸업 예문·담은 문장, 또는 정리한 유튜브 문장 중 아직 안 담은 것(제안).
   // 제안 문장은 쉬움/어려움을 누르면 문장 공부에 담긴다. ponytail: 세 장에 한 장 고정 — 비율을 바꾸고 싶으면 SENT_FRESH
   var SENT_FRESH = 3;
@@ -1243,7 +1243,7 @@
       if (SENT.picks % SENT_FRESH === 0) {
         var fresh = sentPool().filter(function (w) { return !w.sa && skip.indexOf(w.id) < 0; }), sug = sentSug().filter(function (w) { return skip.indexOf(w.id) < 0; });
         var from = fresh.length && sug.length ? (Math.random() < 0.5 ? fresh : sug) : fresh.length ? fresh : sug;   // 처음 보는 문장과 유튜브 제안을 반반
-        if (from.length) { var f = from[Math.floor(Math.random() * from.length)]; if (f.sug) SENT.sug = f; return f; }
+        if (from.length) { var f = from[Math.floor(Math.random() * from.length)]; if (f.sug) SENT.sugs[f.id] = f; return f; }
       }
     }
     var pool = sentPool(), c = pool.filter(function (w) { return skip.indexOf(w.id) < 0; });
@@ -1256,11 +1256,11 @@
   function sentNext() {
     var k = Math.min(3, Math.floor(sentPool().length / 2)), w = sentPick(k > 0 ? SENT.recent.slice(-k) : []);   // 방금 본 3문장은 바로 다시 안 나오게 — 후보는 늘 2개 이상 남겨 가중치가 먹게 (문장이 적을 때 같은 순서로만 돌던 것)
     SENT.id = w ? w.id : null;
-    if (w) { SENT.recent.push(w.id); if (SENT.recent.length > 20) SENT.recent.shift(); }
+    if (w) { delete SENT.done[w.id]; SENT.recent.push(w.id); if (SENT.recent.length > 20) SENT.recent.shift(); }   // 새로 뽑힌 문장은 새 판정
   }
   function sentStart() {
     if (!sentPool().length && !sentSug().length) { toast('졸업한 단어 예문이나 유튜브에서 담은 문장이 아직 없어요'); return; }
-    SENT = { id: null, n: 0, recent: [], undo: [], token: Date.now() };
+    SENT = { id: null, n: 0, recent: [], undo: [], token: Date.now(), back: [], fwd: [], sugs: {}, done: {} };   // done: 이번에 판정한 문장 → 그 되돌리기 기록
     sentNext(); go('sent');
   }
   RENDER.sent = function () {
@@ -1287,7 +1287,7 @@
     if (!w) { area.innerHTML = '<div class="empty">졸업한 단어 예문이나 유튜브에서 담은 문장이 아직 없어요</div>'; return; }
     var box = !byId(w.id), sg = !!w.sug;   // 유튜브에서 담은 문장 · 제안(아직 안 담음, v2.30)
     var card = document.createElement('div');
-    card.className = 'card sent-card' + (anim === 'judge' ? ' enter' : anim === 'prev' ? ' enter-prev' : '');
+    card.className = 'card sent-card' + (anim === 'judge' ? ' enter' : anim === 'next' ? ' enter-next' : anim === 'prev' ? ' enter-prev' : '');
     card.innerHTML = '<div class="card-top">' + (sg ? '<span class="tag theme">새 문장 제안</span>' : box ? '<span class="tag theme">📺 유튜브</span>' : w.t ? '<span class="tag theme">' + esc(w.t) + '</span>' : '') +
       (sg ? '' : !w.sa ? '<span class="tag new">처음</span>' : '<span class="tag pos">어려움 ' + (w.sh || 0) + ' · 쉬움 ' + (w.se || 0) + '</span>') + '</div>' +
       '<div class="plain"><div class="label">우리말</div><div class="ko-big">' + esc(w.k) + '</div></div>' +
@@ -1304,28 +1304,49 @@
     if (r.getAttribute('data-step') === '0') { r.setAttribute('data-step', '1'); bridge.vibrate(6); }
     speak(w.e, 'en');
   }
-  function sentBind(card) {   // 위·아래로만 민다 (학습 카드 bindDrag 의 세로 부분)
+  // v2.33 옆으로 넘기기 (사용자 요청 — 학습 카드처럼): 왼쪽 = 다음 문장(판정 없이), 오른쪽 = 이전 문장. 넘긴 길은 back/fwd 에 (앞으로 다시 가면 같은 문장)
+  function sentPrune() { SENT.back = SENT.back.filter(sentItem); SENT.fwd = SENT.fwd.filter(sentItem); return SENT.back.length; }   // 뺀·지운 문장은 넘긴 길에서도 뺀다
+  function sentGo(step) {
+    sentPrune();
+    if (step < 0 && !SENT.back.length) { toast('첫 문장이에요'); return false; }
+    if (step < 0) { SENT.fwd.push(SENT.id); SENT.id = SENT.back.pop(); }
+    else { SENT.back.push(SENT.id); if (SENT.fwd.length) SENT.id = SENT.fwd.pop(); else sentNext(); }
+    if (SENT.back.length > 50) SENT.back.shift();
+    bridge.stop(); sentMount(step < 0 ? 'prev' : 'next');
+    return true;
+  }
+  function sentBind(card) {   // 위·아래 = 쉬움·어려움, 옆 = 다음·이전 (학습 카드 bindDrag 처럼 처음 움직인 쪽으로 축 고정)
     var d = null, sup = false, yes = $('.stamp.yes', card), no = $('.stamp.no', card);
     function stamps(dy) { yes.style.opacity = clamp(-dy / 70, 0, 1); no.style.opacity = clamp(dy / 70, 0, 1); }
     function reset() { card.style.transition = 'transform .25s ease-out'; card.style.transform = ''; stamps(0); }
     card.addEventListener('pointerdown', function (e) {
       if (flying || e.target.closest('button') || (e.pointerType === 'mouse' && e.button !== 0)) return;   // 날아가는 카드는 다시 못 잡게
-      d = { x: e.clientX, y: e.clientY, dy: 0, t: Date.now(), moved: false, id: e.pointerId };
+      d = { x: e.clientX, y: e.clientY, dx: 0, dy: 0, t: Date.now(), moved: false, axis: null, id: e.pointerId };
       try { card.setPointerCapture(e.pointerId); } catch (err) { }
       card.style.transition = 'none';
     });
     card.addEventListener('pointermove', function (e) {
       if (!d || e.pointerId !== d.id) return;
-      d.dy = e.clientY - d.y;
-      if (!d.moved && (Math.abs(d.dy) > 8 || Math.abs(e.clientX - d.x) > 8)) d.moved = true;
-      if (d.moved) { card.style.transform = 'translate(0,' + d.dy + 'px)'; stamps(d.dy); }
+      d.dx = e.clientX - d.x; d.dy = e.clientY - d.y;
+      if (!d.axis && (Math.abs(d.dx) > 8 || Math.abs(d.dy) > 8)) { d.axis = Math.abs(d.dx) > Math.abs(d.dy) ? 'x' : 'y'; d.moved = true; }
+      if (d.axis === 'x') { card.style.transform = 'translate(' + d.dx + 'px,0) rotate(' + (d.dx / 30) + 'deg)'; stamps(0); }
+      else if (d.axis === 'y') { card.style.transform = 'translate(0,' + d.dy + 'px)'; stamps(d.dy); }
     });
     card.addEventListener('pointerup', function (e) {
       if (!d || e.pointerId !== d.id) return;
       var q = d; d = null;
       if (!q.moved) { reset(); return; }   // 탭은 click 에서 (TalkBack·키보드 클릭도 되게)
       sup = true; setTimeout(function () { sup = false; }, 60);   // 민 뒤에 오는 click 은 탭 아님
-      var th = Math.min(110, card.offsetHeight * 0.25), v = q.dy / Math.max(1, Date.now() - q.t);
+      var dt = Math.max(1, Date.now() - q.t);
+      if (q.axis === 'x') {
+        var thx = Math.min(120, card.offsetWidth * 0.3), vx = q.dx / dt, step = q.dx < 0 ? 1 : -1;
+        if (Math.abs(q.dx) > thx || (Math.abs(vx) > 0.6 && Math.abs(q.dx) > 30)) {
+          if (step > 0 || sentPrune()) { flyOut(card, step > 0 ? 'left' : 'right', function () { sentGo(step); }); return; }
+          toast('첫 문장이에요');
+        }
+        reset(); return;
+      }
+      var th = Math.min(110, card.offsetHeight * 0.25), v = q.dy / dt;
       if (Math.abs(q.dy) > th || (Math.abs(v) > 0.6 && Math.abs(q.dy) > 30)) { var easy = q.dy < 0; flyOut(card, easy ? 'up' : 'down', function () { sentJudge(easy); }); return; }
       reset();
     });
@@ -1337,24 +1358,38 @@
     var w = sentItem(SENT.id); if (!w) return;
     var sug = w.sug ? w : null;
     if (sug) {   // 제안 문장 → 문장 공부에 담는다 (v2.30)
-      w = { id: uid(), e: sug.e, k: sug.k, vid: sug.vid, title: sug.title, s: sug.s, at: Date.now() };
-      S.sentBox.push(w); SENT.sug = null; SENT.id = w.id;
-      var ri = SENT.recent.lastIndexOf(sug.id); if (ri >= 0) SENT.recent[ri] = w.id;
+      var sid = sug.id;
+      w = S.sentBox.filter(function (x) { return x.vid === sug.vid && x.e === sug.e; })[0];
+      if (w) sug = null;   // 넘겼다 돌아온 제안인데 그새 담겼으면 그 문장으로 (두 번 안 담음)
+      else { w = { id: uid(), e: sug.e, k: sug.k, vid: sug.vid, title: sug.title, s: sug.s, at: Date.now() }; S.sentBox.push(w); }
+      SENT.id = w.id;
+      var ri = SENT.recent.lastIndexOf(sid); if (ri >= 0) SENT.recent[ri] = w.id;
+      SENT.back = SENT.back.map(function (x) { return x === sid ? w.id : x; });   // 넘긴 길의 같은 제안도 담은 문장으로
     }
-    SENT.undo.push({ id: w.id, sw: w.sw, se: w.se, sh: w.sh, sa: w.sa, sug: sug });
+    var pi = SENT.undo.lastIndexOf(SENT.done[w.id]), pu = pi >= 0 ? SENT.undo[pi] : null;
+    if (pu) {   // 옆으로 넘겨 돌아온, 이미 판정한 문장 → 다시 고르면 바꾸기 (학습 카드 judge 처럼 두 번 안 셈)
+      SENT.undo.splice(pi, 1);
+      ['sw', 'se', 'sh', 'sa'].forEach(function (k) { if (pu[k] === undefined) delete w[k]; else w[k] = pu[k]; });
+      SENT.n--; useCount('sent', -1); sug = sug || pu.sug;
+    }
+    SENT.undo.push(SENT.done[w.id] = { id: w.id, sw: w.sw, se: w.se, sh: w.sh, sa: w.sa, sug: sug });
     if (easy) { w.sw = Math.max(1, sentW(w) - 1); w.se = (w.se || 0) + 1; }
     else { w.sw = Math.min(20, sentW(w) + 2); w.sh = (w.sh || 0) + 1; }
     w.sa = Date.now(); SENT.n++; useCount('sent');
     save(); bridge.stop();
+    if (SENT.recent[SENT.recent.length - 1] !== w.id) { SENT.recent.push(w.id); if (SENT.recent.length > 20) SENT.recent.shift(); }   // 넘겨서 온 문장도 '방금 본' 것으로 (바로 다시 안 나오게)
+    SENT.back.push(w.id); SENT.fwd = [];   // 판정한 문장도 오른쪽으로 밀면 다시 볼 수 있게
     sentNext(); sentMount('judge');
   }
   function sentUndo() {
     var u = SENT && SENT.undo.pop(), w = u && sentItem(u.id); if (!w) return;
+    var h = SENT.back.concat([SENT.id], SENT.fwd.slice().reverse()), bi = h.lastIndexOf(u.id); if (bi >= 0) SENT.back = h.slice(0, bi);   // v2.33: 넘긴 길(이전·지금·다음)에서 되돌린 문장 앞까지만 이전 길로
+    SENT.fwd = [];
     ['sw', 'se', 'sh', 'sa'].forEach(function (k) { if (u[k] === undefined) delete w[k]; else w[k] = u[k]; });
     if (u.sug) {   // 제안을 담은 걸 되돌림 → 다시 뺀다
       S.sentBox = S.sentBox.filter(function (x) { return x.id !== u.id; });
       var ri = SENT.recent.lastIndexOf(u.id); if (ri >= 0) SENT.recent[ri] = u.sug.id;
-      SENT.sug = u.sug; u = { id: u.sug.id };
+      SENT.sugs[u.sug.id] = u.sug; u = { id: u.sug.id };
     }
     var j = SENT.recent.lastIndexOf(u.id); if (j >= 0) SENT.recent.length = j + 1;   // 되돌린 뒤 보던 (판정 안 한) 카드는 최근 목록에서 뺀다
     SENT.n = Math.max(0, SENT.n - 1); SENT.id = u.id; useCount('sent', -1);

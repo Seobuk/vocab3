@@ -134,6 +134,59 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   eq('제안 판정 → 담김 (어려움 1)', await p.evaluate(() => { const b = window.__vocab.state().sentBox; return b.length + ' ' + (b[0] && b[0].sh); }), '1 1');
   await p.click('[data-action="sent-undo"]'); await p.waitForTimeout(300);
   eq('되돌리기 → 담은 게 빠지고 제안 카드로 돌아옴', (await p.evaluate(() => window.__vocab.state().sentBox.length)) + ' ' + /새 문장 제안/.test(await p.textContent('#sentArea .card-top')), '0 true');
+
+  // --- v2.33 옆으로 넘기기: 왼쪽 = 다음(판정 없이) · 오른쪽 = 이전 · 다시 왼쪽 = 같은 다음 · 판정한 문장도 오른쪽으로 다시 ---
+  await p.evaluate(() => window.__appBack()); await p.waitForTimeout(250);
+  await p.click('.review-btn[data-action="sent"]'); await p.waitForTimeout(300);
+  const ko = () => p.textContent('#sentArea .ko-big');
+  const swipe = async dx => { const c = await p.$eval('#sentArea .card', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }); await p.mouse.move(c.x, c.y); await p.mouse.down(); for (let i = 1; i <= 12; i++) { await p.mouse.move(c.x + i * dx / 12, c.y + i); await p.waitForTimeout(16); } await p.mouse.up(); await p.waitForTimeout(450); };
+  const st0 = await p.evaluate(() => JSON.stringify(window.__vocab.state().words.map(w => [w.sw, w.se, w.sh])) + '|' + window.__vocab.state().sentBox.length);
+  const k0 = await ko();
+  await swipe(200);
+  eq('첫 문장에서 오른쪽 = 그대로 (첫 문장이에요)', (await ko()) === k0 && /첫 문장/.test(await p.textContent('#toast')), true);
+  await swipe(-200); const k1 = await ko();
+  eq('왼쪽 = 다음 문장 · 판정 안 됨 (가중치·담기·문장 수 그대로)', (k1 !== k0) + ' ' + ((await p.evaluate(() => JSON.stringify(window.__vocab.state().words.map(w => [w.sw, w.se, w.sh])) + '|' + window.__vocab.state().sentBox.length)) === st0) + ' ' + (await p.textContent('#sentCount')), 'true true 0문장');
+  await swipe(-200); const k2 = await ko();
+  await swipe(200); eq('오른쪽 = 이전 문장', await ko(), k1);
+  await swipe(200); eq('오른쪽 한 번 더 = 그 전', await ko(), k0);
+  await swipe(-200); await swipe(-200); eq('다시 왼쪽 두 번 = 넘겼던 같은 문장', await ko(), k2);
+  await p.click('[data-action="sent-judge"][data-easy="1"]'); await p.waitForTimeout(350);
+  const k3 = await ko();
+  await swipe(200); eq('판정한 문장도 오른쪽으로 다시 볼 수 있음', await ko(), k2);
+  await swipe(-200); eq('다시 왼쪽 = 판정 뒤 나온 문장', await ko(), k3);
+  // 제안 문장: 넘겼다 돌아와도 보이고, 판정하면 한 번만 담김
+  await p.evaluate(() => window.__appBack()); await p.waitForTimeout(250);
+  await p.evaluate(() => { const s = window.__vocab.state(); s.sentBox = []; window.__vocab.save(); });
+  await p.click('.review-btn[data-action="sent"]'); await p.waitForTimeout(300);
+  let t2 = 0; while (t2++ < 12 && !(await p.evaluate(() => /새 문장 제안/.test(document.querySelector('#sentArea .card-top').textContent)))) await swipe(-200);
+  const sk = await ko();
+  eq('옆으로 넘기다 제안 문장이 나옴', /새 문장 제안/.test(await p.textContent('#sentArea .card-top')), true);
+  await swipe(-200); await swipe(200);
+  eq('제안 문장을 넘겼다 돌아와도 그대로 보임', (await ko()) + ' ' + /새 문장 제안/.test(await p.textContent('#sentArea .card-top')), sk + ' true');
+  await p.click('[data-action="sent-judge"][data-easy="1"]'); await p.waitForTimeout(350);
+  await swipe(200); await p.click('[data-action="sent-judge"][data-easy="1"]'); await p.waitForTimeout(350);
+  eq('돌아가 한 번 더 판정해도 한 번만 담김', await p.evaluate(k => window.__vocab.state().sentBox.filter(x => x.k === k).length, sk), 1);
+  // 다시 판정 = 바꾸기 (두 번 안 셈) · 되돌리면 처음으로 · 넘겨서 온 문장을 판정해도 바로 다시 안 나옴 · 되돌려도 이전 길 유지
+  await p.evaluate(() => window.__appBack()); await p.waitForTimeout(250);
+  await p.evaluate(() => { const s = window.__vocab.state(); s.yt = []; s.sentBox = []; s.words.forEach(w => { if (w.stage === 4) { w.sa = 1; delete w.sw; delete w.se; delete w.sh; } }); window.__vocab.save(); });
+  await p.click('.review-btn[data-action="sent"]'); await p.waitForTimeout(300);
+  const kx = await ko(), fx = () => p.evaluate(k => { const w = window.__vocab.state().words.find(x => x.k === k); return [w.sw, w.se, w.sh].join(','); }, kx);
+  await p.click('[data-action="sent-judge"][data-easy="1"]'); await p.waitForTimeout(350);
+  await swipe(200); await p.click('[data-action="sent-judge"][data-easy="0"]'); await p.waitForTimeout(350);
+  eq('쉬움 → 돌아가 어려움 = 바꾸기 (sw 5 · 쉬움 0 · 어려움 1 · 1문장)', (await fx()) + ' ' + (await p.textContent('#sentCount')), '5,,1 1문장');
+  await p.click('[data-action="sent-undo"]'); await p.waitForTimeout(350);
+  eq('되돌리기 → 처음 그대로 · 0문장', (await fx()) + ' ' + (await ko() === kx) + ' ' + (await p.textContent('#sentCount')), ',, true 0문장');
+  let rep2 = 0;
+  for (let t = 0; t < 6; t++) {
+    const k0b = await ko();
+    for (let i = 0; i < 4; i++) await swipe(-200);
+    for (let i = 0; i < 4; i++) await swipe(200);
+    const kb = await ko();
+    await p.click('[data-action="sent-judge"][data-easy="0"]'); await p.waitForTimeout(350);
+    if ((await ko()) === kb) rep2++;
+    if (t === 1) { /* 둘째 판: 앞 판에서 판정한 문장이 이전 길에 있다 */ await swipe(200); await p.click('[data-action="sent-undo"]'); await p.waitForTimeout(350); await swipe(200); eq('앞 문장으로 넘어간 뒤 되돌려도 그 앞 문장이 이전 길에 남음', (await ko()) !== kb && !(await p.$eval('#toast', t => t.classList.contains('show') && /첫 문장/.test(t.textContent))), true); await swipe(-200); }
+  }
+  eq('넘겨서 온 문장을 판정해도 바로 다시 안 나옴 (6번)', rep2, 0);
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();
 })();
