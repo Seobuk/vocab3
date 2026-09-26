@@ -1,5 +1,7 @@
 # 3단계 단어장 (Vocab3)
 
+**소개 페이지: https://seobuk.github.io/vocab3/** · [최신 APK 받기](https://github.com/Seobuk/vocab3/releases/latest) · [개인정보처리방침](https://seobuk.github.io/vocab3/privacy.html)
+
 예문까지 말할 수 있을 때만 다음 단계로 넘기는 **3단계 단어장 시스템** 기반 영어 단어 학습 안드로이드 앱입니다.
 회원가입·광고 없이 오프라인으로 동작합니다 (선택 기능인 AI 예문 생성을 쓸 때만 본인 Gemini API 키로 Google API에 접속).
 

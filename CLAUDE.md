@@ -99,7 +99,9 @@
     학습 카드는 최대 820px. `.card > *` flex-shrink 0 — 넘치면 칸이 눌리지 않고 카드가 스크롤. 유튜브 문장·한글 줄 `ytSentTap`: 한 번 톡 = 재생, 두 번 톡 = 한글 보이기/가리기.
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
 - `tools/test_*.js`, `tools/shots.js` — Playwright UI 테스트 (Gemini·음성인식은 stub). 스크린샷 `build/shots/`.
-- `store/` — Play 등록 문구·개인정보처리방침(권한·외부 전송이 바뀌면 같이 갱신). `docs/screenshots/` README 용.
+- `docs/` — GitHub Pages 랜딩페이지 https://seobuk.github.io/vocab3/ (main 브랜치 /docs, 빌드 없음: index.html · style.css · main.js(GSAP ScrollTrigger·Pretendard·Phosphor 는 jsDelivr) · assets/),
+  **개인정보처리방침 원본 = `docs/privacy.html`** (권한·외부 전송이 바뀌면 여기를 갱신 — store/privacy_policy.html 은 이 주소로 넘기기만 함). 기능이 크게 바뀌면 랜딩 문구·스크린샷(docs/assets/shots)도.
+  `docs/screenshots/` 는 README 용. `store/` — Play 등록 문구.
 
 ## 디자인 (v2.22 — Taste Skill · Anthropic frontend-design · UI/UX Pro Max · Vercel Web Interface Guidelines 리뷰)
 - 강조색은 테마 `--primary` 하나: 그라데이션·색 번짐 그림자·Tailwind 고정색(파랑·초록·빨강) 쓰지 않는다. 연한 판(`--primary-soft`) 위 글자는 `--primary-ink`(테마 `ink`, 대비 4.5:1+).
