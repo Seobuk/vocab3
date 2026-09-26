@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.29';
+  var APP_VERSION = '2.30';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -819,9 +819,9 @@
     var stamps = '<div class="stamp yes pos-t">' + (SES.stage === 3 ? '졸업' : '외웠다') + '</div><div class="stamp no pos-b">아직</div>';
     if (st.mode === 'en') {
       return top +
-        '<div class="card-word"><div class="w">' + esc(w.w) + '</div>' + spk('w') + '</div>' +
+        '<div class="card-word" data-say="w"><div class="w">' + esc(w.w) + '</div></div>' +   // v2.30: 스피커 대신 단어를 톡 = 읽기
         '<div class="reveal" data-reveal="m" data-max="1" data-step="' + (st.hideMeaning ? 0 : 1) + '"><div class="label">뜻</div><div class="content"><div class="m">' + esc(w.m) + '</div></div><div class="cover">뜻 보기</div></div>' +
-        '<div class="reveal" data-reveal="e" data-max="' + (w.k ? 2 : 1) + '" data-step="' + (st.hideExample ? 0 : (w.k ? 2 : 1)) + '"><div class="label">예문</div><div class="content"><div class="en"><span>' + esc(w.e || '—') + '</span>' + spk('e', true) + '</div>' +
+        '<div class="reveal" data-reveal="e" data-max="' + (w.k ? 2 : 1) + '" data-step="' + (st.hideExample ? 0 : (w.k ? 2 : 1)) + '"><div class="label">예문</div><div class="content"><div class="en"><span>' + esc(w.e || '—') + '</span></div>' +
         (w.k ? '<div class="ko">' + esc(w.k) + '</div>' : '') +
         '</div><div class="cover">예문을 먼저 떠올린 뒤 탭</div></div>' +
         stamps;
@@ -830,7 +830,7 @@
       '<div class="card-word"><div class="w ko">' + esc(w.m) + '</div></div>' +
       '<div class="reveal" data-reveal="w" data-max="1" data-step="' + (st.hideMeaning ? 0 : 1) + '"><div class="label">영어 단어</div><div class="content"><div class="en"><span>' + esc(w.w) + '</span>' + spk('w', true) + '</div></div><div class="cover">영어로 말해 본 뒤 탭</div></div>' +
       '<div class="plain"><div class="label">예문 (우리말)</div><div class="ko-big">' + esc(w.k || '(해석 없음)') + '</div></div>' +
-      '<div class="reveal" data-reveal="e" data-max="1" data-step="' + (st.hideExample ? 0 : 1) + '"><div class="label">영어 예문</div><div class="content"><div class="en"><span>' + esc(w.e || '—') + '</span>' + spk('e', true) + '</div></div><div class="cover">영어 예문을 말해 본 뒤 탭</div></div>' +
+      '<div class="reveal" data-reveal="e" data-max="1" data-step="' + (st.hideExample ? 0 : 1) + '"><div class="label">영어 예문</div><div class="content"><div class="en"><span>' + esc(w.e || '—') + '</span></div></div><div class="cover">영어 예문을 말해 본 뒤 탭</div></div>' +
       stamps;
   }
 
@@ -882,6 +882,24 @@
     return false;
   }
 
+  // v2.30 학습 카드는 모두 같은 규칙 (유튜브·단어장과 같게, 사용자 요청): 한 번 톡 = 영어 읽기 · 두 번 톡(400ms) = 한글 보이기/가리기.
+  //   단어 → 읽기 · 뜻 칸 → 한 번 = 단어 읽기, 두 번 = 뜻 보이기/가리기 · 예문 칸 → 가려져 있으면 한 번 = 영어 보기+읽기, 보이면 한 번 = 다시 읽기, 두 번 = 해석 보이기/가리기
+  //   (한→영 모드의 영어 단어·영어 예문 칸 → 한 번 = 보이기+읽기, 보이면 다시 읽기)
+  var revealTap = null;
+  function tapReveal(r) {
+    var kind = r.getAttribute('data-reveal'), step = Number(r.getAttribute('data-step') || 0), max = Number(r.getAttribute('data-max') || 1), w = currentWord();
+    var now = Date.now(), lt = revealTap, dbl = lt && lt.r === r && now - lt.at < 400;
+    revealTap = dbl ? null : { r: r, at: now };
+    var say = function (t) { if (t) speak(t, 'en'); };
+    if (kind === 'm') {   // 뜻(한글)
+      if (dbl) { r.setAttribute('data-step', step ? '0' : '1'); bridge.vibrate(6); } else say(w && w.w);
+      return;
+    }
+    var en = kind === 'e' ? w && w.e : w && w.w;   // 예문 · 한→영 모드의 영어 단어
+    if (!step) { r.setAttribute('data-step', '1'); bridge.vibrate(6); say(en); revealTap = null; return; }   // 가려진 영어 → 보이며 읽기 (두 번 톡으로 치지 않게 기록 지움)
+    if (dbl) { if (max >= 2) { r.setAttribute('data-step', step >= 2 ? '1' : '2'); bridge.vibrate(6); } return; }
+    say(en);
+  }
   var suppressClick = false;
   var LONG_PRESS_MS = 480;
   function bindDrag(card) {
@@ -948,8 +966,9 @@
       }
       reset();
       if (!d.moved && d.target && d.target.closest) {
-        var r = d.target.closest('.reveal');
-        if (r) { cycleReveal(r); suppressClick = true; setTimeout(function () { suppressClick = false; }, 60); }
+        var r = d.target.closest('.reveal'), cw = !r && d.target.closest('[data-say="w"]');
+        if (r) { tapReveal(r); suppressClick = true; setTimeout(function () { suppressClick = false; }, 60); }
+        else if (cw) { var cwd = currentWord(); if (cwd) speak(cwd.w, 'en'); suppressClick = true; setTimeout(function () { suppressClick = false; }, 60); }
       }
     }
     card.addEventListener('pointerup', up);
@@ -959,7 +978,8 @@
       if (suppressClick) { e.stopPropagation(); return; }
       if (e.target.closest('button')) return;
       var r = e.target.closest('.reveal');
-      if (r) cycleReveal(r);
+      if (r) tapReveal(r);
+      else if (e.target.closest('[data-say="w"]')) { var cw = currentWord(); if (cw) speak(cw.w, 'en'); }
     });
   }
   var flying = false;
@@ -1024,10 +1044,31 @@
      가중치 sw(1~20, 처음 3): 어려움 +2 · 쉬움 −1 — 클수록 자주 나온다. se/sh = 쉬움·어려움 누적 횟수, sa = 마지막으로 본 때 */
   var SENT = null;   // { id: 지금 문장(단어 id), n, recent: [최근 id], undo: [], token }
   function sentPool() { return S.words.filter(function (w) { return w.stage === 4 && w.e && w.k; }).concat(S.sentBox); }   // + v2.17 유튜브에서 담은 문장
-  function sentItem(id) { if (!id) return null; var w = byId(id); if (w) return w; for (var i = 0; i < S.sentBox.length; i++) if (S.sentBox[i].id === id) return S.sentBox[i]; return null; }
+  function sentItem(id) { if (!id) return null; var w = byId(id); if (w) return w; for (var i = 0; i < S.sentBox.length; i++) if (S.sentBox[i].id === id) return S.sentBox[i]; if (SENT && SENT.sug && SENT.sug.id === id) return SENT.sug; return null; }
+  // v2.30 "새 문장 섞기": 세 장마다 한 번은 한 번도 안 다룬 문장 — 처음 보는 졸업 예문·담은 문장, 또는 정리한 유튜브 문장 중 아직 안 담은 것(제안).
+  // 제안 문장은 쉬움/어려움을 누르면 문장 공부에 담긴다. ponytail: 세 장에 한 장 고정 — 비율을 바꾸고 싶으면 SENT_FRESH
+  var SENT_FRESH = 3;
+  function sentSug() {   // 유튜브 영상 문장 중 아직 문장 공부에 안 담은 것 (한글 있음 · 쪼갠 조각 아님 · 4~30 단어)
+    var out = [];
+    (S.yt || []).forEach(function (r) {
+      (r.sents || []).forEach(function (x, i) {
+        var n = ytWords(x.e);
+        if (x.k && !x.kp && n >= 4 && n <= 30 && !sentBoxHas(r.vid, x.e)) out.push({ id: 'sg:' + r.vid + ':' + i, e: x.e, k: x.k, vid: r.vid, title: r.title || '', s: ytStart(x), sug: 1 });
+      });
+    });
+    return out;
+  }
   function sentBoxHas(vid, e) { for (var i = 0; i < S.sentBox.length; i++) if (S.sentBox[i].vid === vid && S.sentBox[i].e === e) return true; return false; }
   function sentW(w) { return typeof w.sw === 'number' ? w.sw : 3; }
-  function sentPick(skip) {   // 가중치 비례 무작위 · skip(방금 본 것)은 빼고
+  function sentPick(skip) {   // 가중치 비례 무작위 · skip(방금 본 것)은 빼고 · 세 장마다 한 번은 새 문장 (v2.30)
+    if (SENT) {
+      SENT.picks = (SENT.picks || 0) + 1;
+      if (SENT.picks % SENT_FRESH === 0) {
+        var fresh = sentPool().filter(function (w) { return !w.sa && skip.indexOf(w.id) < 0; }), sug = sentSug().filter(function (w) { return skip.indexOf(w.id) < 0; });
+        var from = fresh.length && sug.length ? (Math.random() < 0.5 ? fresh : sug) : fresh.length ? fresh : sug;   // 처음 보는 문장과 유튜브 제안을 반반
+        if (from.length) { var f = from[Math.floor(Math.random() * from.length)]; if (f.sug) SENT.sug = f; return f; }
+      }
+    }
     var pool = sentPool(), c = pool.filter(function (w) { return skip.indexOf(w.id) < 0; });
     if (!c.length) c = pool;
     var tot = 0; c.forEach(function (w) { tot += sentW(w); });
@@ -1041,7 +1082,7 @@
     if (w) { SENT.recent.push(w.id); if (SENT.recent.length > 20) SENT.recent.shift(); }
   }
   function sentStart() {
-    if (!sentPool().length) { toast('졸업한 단어 예문이나 유튜브에서 담은 문장이 아직 없어요'); return; }
+    if (!sentPool().length && !sentSug().length) { toast('졸업한 단어 예문이나 유튜브에서 담은 문장이 아직 없어요'); return; }
     SENT = { id: null, n: 0, recent: [], undo: [], token: Date.now() };
     sentNext(); go('sent');
   }
@@ -1068,15 +1109,15 @@
     $('#sentCount').innerHTML = SENT.n + '<small>문장</small>';
     $('#sentUndo').disabled = !SENT.undo.length;
     if (!w) { area.innerHTML = '<div class="empty">졸업한 단어 예문이나 유튜브에서 담은 문장이 아직 없어요</div>'; return; }
-    var box = !byId(w.id);   // 유튜브에서 담은 문장
+    var box = !byId(w.id), sg = !!w.sug;   // 유튜브에서 담은 문장 · 제안(아직 안 담음, v2.30)
     var card = document.createElement('div');
     card.className = 'card sent-card' + (anim === 'judge' ? ' enter' : anim === 'prev' ? ' enter-prev' : '');
-    card.innerHTML = '<div class="card-top">' + (box ? '<span class="tag theme">📺 유튜브</span>' : w.t ? '<span class="tag theme">' + esc(w.t) + '</span>' : '') +
-      '<span class="tag pos">어려움 ' + (w.sh || 0) + ' · 쉬움 ' + (w.se || 0) + '</span></div>' +
+    card.innerHTML = '<div class="card-top">' + (sg ? '<span class="tag theme">새 문장 제안</span>' : box ? '<span class="tag theme">📺 유튜브</span>' : w.t ? '<span class="tag theme">' + esc(w.t) + '</span>' : '') +
+      (sg ? '' : !w.sa ? '<span class="tag new">처음</span>' : '<span class="tag pos">어려움 ' + (w.sh || 0) + ' · 쉬움 ' + (w.se || 0) + '</span>') + '</div>' +
       '<div class="plain"><div class="label">우리말</div><div class="ko-big">' + esc(w.k) + '</div></div>' +
       '<div class="reveal" data-reveal="e" data-max="1" data-step="0"><div class="label">영어</div><div class="content">' +
       '<div class="en"><span>' + esc(w.e) + '</span><button class="spk sm" data-action="sent-speak" aria-label="다시 듣기">' + ICON_SPK + '</button></div>' +
-      (box ? '<div class="sent-w">📺 ' + esc(w.title || '유튜브') + ' <button class="sent-drop" data-action="sent-drop">빼기</button></div>' : '<div class="sent-w">' + esc(w.w) + ' · ' + esc(w.m) + '</div>') +
+      (sg ? '<div class="sent-w">📺 ' + esc(w.title || '유튜브') + ' · 쉬움/어려움을 누르면 문장 공부에 담겨요</div>' : box ? '<div class="sent-w">📺 ' + esc(w.title || '유튜브') + ' <button class="sent-drop" data-action="sent-drop">빼기</button></div>' : '<div class="sent-w">' + esc(w.w) + ' · ' + esc(w.m) + '</div>') +
       '</div><div class="cover">영어로 말해 본 뒤 탭</div></div>' +
       '<div class="stamp yes pos-t">쉬움</div><div class="stamp no pos-b">어려움</div>';
     area.appendChild(card);
@@ -1118,7 +1159,13 @@
   }
   function sentJudge(easy) {
     var w = sentItem(SENT.id); if (!w) return;
-    SENT.undo.push({ id: w.id, sw: w.sw, se: w.se, sh: w.sh, sa: w.sa });
+    var sug = w.sug ? w : null;
+    if (sug) {   // 제안 문장 → 문장 공부에 담는다 (v2.30)
+      w = { id: uid(), e: sug.e, k: sug.k, vid: sug.vid, title: sug.title, s: sug.s, at: Date.now() };
+      S.sentBox.push(w); SENT.sug = null; SENT.id = w.id;
+      var ri = SENT.recent.lastIndexOf(sug.id); if (ri >= 0) SENT.recent[ri] = w.id;
+    }
+    SENT.undo.push({ id: w.id, sw: w.sw, se: w.se, sh: w.sh, sa: w.sa, sug: sug });
     if (easy) { w.sw = Math.max(1, sentW(w) - 1); w.se = (w.se || 0) + 1; }
     else { w.sw = Math.min(20, sentW(w) + 2); w.sh = (w.sh || 0) + 1; }
     w.sa = Date.now(); SENT.n++; useCount('sent');
@@ -1128,6 +1175,11 @@
   function sentUndo() {
     var u = SENT && SENT.undo.pop(), w = u && sentItem(u.id); if (!w) return;
     ['sw', 'se', 'sh', 'sa'].forEach(function (k) { if (u[k] === undefined) delete w[k]; else w[k] = u[k]; });
+    if (u.sug) {   // 제안을 담은 걸 되돌림 → 다시 뺀다
+      S.sentBox = S.sentBox.filter(function (x) { return x.id !== u.id; });
+      var ri = SENT.recent.lastIndexOf(u.id); if (ri >= 0) SENT.recent[ri] = u.sug.id;
+      SENT.sug = u.sug; u = { id: u.sug.id };
+    }
     var j = SENT.recent.lastIndexOf(u.id); if (j >= 0) SENT.recent.length = j + 1;   // 되돌린 뒤 보던 (판정 안 한) 카드는 최근 목록에서 뺀다
     SENT.n = Math.max(0, SENT.n - 1); SENT.id = u.id; useCount('sent', -1);
     save(); bridge.stop(); sentMount('prev');
@@ -2177,7 +2229,7 @@
         : j.moreErr ? '<div class="yt-old">⚠ ' + esc(j.moreErr) + ' · <b data-action="yt-more">다시 이어서</b></div>' : ytShort(r) ? '<div class="yt-old">⏱ ' + esc(ytMMSS(ytLastEnd(r))) + '까지만 정리됐어요 (영상 ' + fmtSec(r.dur) + ') · <b data-action="yt-more">이어서 정리하기</b></div>' : '') +
         (r.tv === 3 ? '' : '<div class="yt-old">문장 시간을 더 정확하게 맞추도록 바꿨어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
         (YTV.undo && YTV.undo.id === r.id ? '<div class="yt-undo">' + (YTV.undo.kind === 'merge' ? '⤓ 문장을 합쳤어요' : '✂ 문장을 쪼갰어요') + ' · <b data-action="yt-undo">되돌리기</b></div>' : '') +
-        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장' + ((S.settings.ytHintN || 0) <= 3 ? ' · 문장을 누르면 그 부분부터 재생 · 두 번 톡 = 한글 보기 (단어를 두 번 톡 = 뜻) · 꾹 누르면 문장 공부·복사·합치기·쪼개기' : '') + '</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
+        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장' + ((S.settings.ytHintN || 0) <= 3 ? ' · 단어를 누르면 거기부터 재생 · 두 번 톡 = 한글 보기 (단어를 두 번 톡 = 뜻) · 꾹 누르면 문장 공부·복사·합치기·쪼개기' : '') + '</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
         '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b>' + (ytTailDone(r) || j.more ? '' : '<br>뒷부분이 빠졌으면 <b data-action="yt-more">이어서 정리하기</b>') + '</div>');   // v2.20: 영상 길이를 몰라도 늘 있게 (v2.21: 뒤엔 말이 없다고 확인되면 뺌)
     ytSideRender();
   }
@@ -2653,7 +2705,7 @@
     }
     return a;
   }
-  function ytPlaySent(i, keepCard) {   // keepCard: 두 번 톡의 첫 톡 — 다른 줄 카드를 닫으면 줄이 밀려 둘째 톡이 다른 단어에 맞는다
+  function ytPlaySent(i, keepCard, at) {   // keepCard: 두 번 톡의 첫 톡 — 다른 줄 카드를 닫으면 줄이 밀려 둘째 톡이 다른 단어에 맞는다 · at: 문장 중간 단어부터 (v2.30)
     var r = YTV && ytRec(YTV.id), x = r && r.sents && r.sents[i]; if (!x) return;
     var prev = YTV.act; YTV.act = i;
     if (!keepCard && YTV.card && YTV.card.i !== i) { var ci = YTV.card.i; YTV.card = null; ytRow(ci); }
@@ -2661,10 +2713,26 @@
     ytRow(i);
     if (YTV.edit) ytSideRender();   // 왼쪽 아래 수정 패널이 이 문장으로
     var rb = $('[data-action="yt-replay"]'); if (rb) rb.disabled = false;
-    if (YTV.perr) { bridge.openUrl('https://youtu.be/' + r.vid + '?t=' + Math.floor(x.s)); return; }
+    if (YTV.perr) { bridge.openUrl('https://youtu.be/' + r.vid + '?t=' + Math.floor(at != null ? at : x.s)); return; }
     if (!YTP || !YTV.ready) { YTV.pending = i; return; }
     var g = ytRange(r, i); useCount('yt');
-    ytPlayRange(g.from, g.end, S.settings.ytPause);
+    ytPlayRange(at != null && at > g.from && at < g.end - 0.3 ? at : g.from, g.end, S.settings.ytPause);   // 문장마다 멈춤이면 중간부터 들어도 문장 끝에서 멈춤
+  }
+  // v2.30: 문장 중간 단어부터 재생 — Gemini 는 단어 시간을 안 주니 말소리 구간(시작~끝)을 글자 수 비율로 나눠 짐작하고,
+  // 받은 영상(파형 있음)이면 그 근처(0.3초 앞 ~ 0.15초 뒤)의 가장 조용한 틈(단어 사이)으로 옮긴다. 첫 단어면 null (문장 처음부터)
+  function ytWordTime(r, i, k) {
+    var x = r.sents[i], toks = ytTokens(x.e), g = ytRange(r, i), a = ytStart(x), before = 0, total = 0, j;
+    var b = x.me && x.t != null ? x.t : x.ve != null ? x.ve : x.t != null ? x.t : g.end;
+    if (!(k > 1) || !(b > a + 0.5)) return null;
+    for (j = 1; j < toks.length; j += 2) { var w = toks[j].length + 1; if (j < k) before += w; total += w; }   // +1: 단어 사이 틈
+    if (!(before > 0) || !(total > 0)) return null;
+    var t = a + (b - a) * before / total, e = ytEnv(r);
+    if (e) {   // ponytail: 파형 틈 찾기는 ±0.3초 창 안 가장 작은 값 — 말이 빨라 틈이 없으면 짐작값 근처가 된다
+      var F = 0.02, f0 = Math.max(0, Math.floor((t - 0.3) / F)), f1 = Math.min(e.length - 1, Math.ceil((t + 0.15) / F)), fb = -1;
+      for (j = f0; j <= f1; j++) if (fb < 0 || e[j] < e[fb]) fb = j;
+      if (fb >= 0) t = (fb + 0.5) * F;
+    } else t -= 0.15;   // 파형이 없으면 조금 앞에서 (단어 머리가 잘리지 않게)
+    return Math.max(g.from, Math.round(t * 100) / 100);
   }
   function ytRange(r, i) {   // 문장 i 를 재생할 구간 { from, end }
     var x = r.sents[i], next = r.sents[i + 1], end;
@@ -3131,7 +3199,7 @@
       '<b>1단계 새 단어장</b> — 매일 새 단어 ' + st.dailyGoal + '개와 예문을 익혀요. 단어와 예문이 자연스럽게 나오면 오른쪽으로 넘겨 2단계로.<br>' +
       '<b>2단계 외운 단어장</b> — 외운 단어를 주기적으로 복습해요. 확실하면 3단계로, 흔들리면 1단계로 되돌려요.<br>' +
       '<b>3단계 완전 암기장</b> — 최종 점검을 통과한 단어는 졸업(보관)하고, 언제든 삭제할 수 있어요.<br>' +
-      '<span class="muted small">팁: 예문 칸은 탭할 때마다 영어 → 해석 → 가림 순서로 바뀌어요. 뜻만 외우지 말고 예문을 소리 내어 말해 보세요. 한→영 모드가 출력 훈련에 좋아요.</span>' +
+      '<span class="muted small">팁: 학습 카드는 한 번 톡 = 영어 읽기, 두 번 톡 = 한글(뜻·해석) 보이기/가리기. 가려진 영어 예문은 한 번 톡으로 보여요. 뜻만 외우지 말고 예문을 소리 내어 말해 보세요. 한→영 모드가 출력 훈련에 좋아요.</span>' +
       '</div>' +
       '<div class="center muted small">3단계 단어장 v' + APP_VERSION + ' · 단어 ' + S.words.length + '개 · TTS ' + (bridge.ttsReady() ? '사용 가능' : '준비 중/사용 불가') + '</div>' +
       '</div>';
@@ -3533,7 +3601,8 @@
       if (YTV.perr && YTV.act === i) { ytWord(i, k); return; }   // 앱 안 재생이 막힌 영상 — 다시 재생할 게 없으니 한 번 톡 = 뜻 (톡마다 유튜브 앱이 열리지 않게)
       if (lt && lt.i === i && lt.k === k && now - lt.at < 400) { YTV.tap = null; ytWord(i, k); return; }
       var tp = YTV.tap = { i: i, k: k, at: now };
-      ytPlaySent(i, true);
+      var rr = ytRec(YTV.id);
+      ytPlaySent(i, true, rr ? ytWordTime(rr, i, k) : null);   // v2.30: 한 번 톡 = 누른 단어부터 (첫 단어면 문장 처음부터)
       setTimeout(function () { if (YTV && YTV.tap === tp && YTV.card && YTV.card.i !== i) { var ci = YTV.card.i; YTV.card = null; ytRow(ci); } }, 420);   // 둘째 톡이 없으면 그때 다른 줄 카드를 닫는다
     },
     'yt-m-study': function (el) {

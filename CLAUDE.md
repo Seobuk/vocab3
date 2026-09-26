@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.29 (versionCode 53).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.30 (versionCode 54).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -82,6 +82,10 @@
     고정 중(세로)엔 영상을 화면 폭 16:9(max-height 해제 — 45vh 가 폭을 줄이면 옆 틈으로 가린 문장이 눌렸다) + `.yt-list` scroll-padding-top 56.25vw — v2.4 의 "목록이 영상을 덮는" 동작을 끌 수 있게(사용자 요청, 기본 꺼짐). 가로에선 버튼 숨김.
   - 단어장(v2.25): 정렬 `S.settings.listSort`(base · wrong 많이 틀린 순 · wrongAsc · rand — 랜덤 열쇠 `listState.rnd` 는 누를 때만 새로), 졸업 탭에 담은 문장(`{sent: x}` 항목, `openSentBox`),
     오른쪽 `listSide`(단계 · ✗틀림 ✓맞음 · ▼어려움 ▲쉬움 · 마지막), 예문 `list-ex` 한 번 톡 = 읽기 · 두 번 톡(400ms) = 가린 한글(`.it-k.hid`) 보이기/가리기. 테스트 `tools/test_list.js`.
+  - v2.30 톡 규칙(사용자 요청 — 앱 전체 같게): 한 번 톡 = 영어 읽기/재생 · 두 번 톡(400ms) = 한글 보이기/가리기. 학습 카드 `tapReveal`(단어 `data-say` 톡 = 읽기,
+    뜻 칸 한 번 = 단어 읽기·두 번 = 뜻, 예문 가려져 있으면 한 번 = 영어+읽기·보이면 한 번 = 다시 읽기·두 번 = 해석), 카드의 스피커 버튼은 없앰.
+    유튜브 단어 한 번 톡 = 그 단어부터 재생(`ytWordTime`: 말소리 구간을 글자 수 비율로 나눠 짐작 − 0.15초, 받은 영상은 ±0.3초 안 파형 가장 조용한 틈으로; 첫 단어면 문장 처음).
+    문장 공부 새 문장 섞기: `SENT_FRESH`(3)장마다 한 번은 처음 보는 문장(sa 없음) 또는 유튜브 제안(`sentSug`, 안 담은 4~30단어 문장, 판정하면 sentBox 에 담김·되돌리면 빠짐). 테스트 `tools/test_cardtap.js`.
   - Google 드라이브 연동(v2.28): 로그인 없이 SAF — Java `syncLink`(ACTION_CREATE_DOCUMENT)·`syncOpen`(ACTION_OPEN_DOCUMENT) → takePersistableUriPermission,
     prefs `sync.uri`(권한이 없어지면 syncInfo 가 지움 — 자동 백업으로 새 폰에 따라온 주소), `syncWrite`(단일 스레드, sLive 가드). JS `syncNow`: 앱을 내릴 때 + 5분마다,
     사용 시간(S.usage)만 바뀐 건 안 씀, 쓰는 중 편집은 끝난 뒤 이어 씀, 실패하면 5분 뒤 다시. 두 폰 번갈아 쓰면 나중 저장이 이김. 테스트 `tools/test_sync.js`.

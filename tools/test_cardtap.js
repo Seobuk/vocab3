@@ -1,0 +1,45 @@
+// v2.30 학습 카드 예문: 가려져 있으면 탭 = 영어 보기(+읽기) · 보이면 한 번 톡 = 다시 읽기 · 두 번 톡 = 한글 해석 보이기/가리기 · 예문 옆 스피커 없음
+const { chromium } = require('playwright');
+const path = require('path');
+const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok  ' : 'FAIL') + ' ' + name + ': ' + got + (String(got) === String(want) ? '' : ' (기대: ' + want + ')'));
+(async () => {
+  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.addInitScript(() => {
+    window.__spoken = [];
+    Object.defineProperty(window, 'speechSynthesis', { value: { speak: u => window.__spoken.push(u.text), cancel: () => {}, getVoices: () => [] } });
+  });
+  await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
+  await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
+  await p.evaluate(() => { const s = window.__vocab.state(); s.settings.hideExample = true; s.settings.autoSpeak = false; window.__vocab.save(); });
+  await p.click('.today [data-action="start"]'); await p.waitForTimeout(500);
+  const ex = '#cardArea .reveal[data-reveal="e"]';
+  const step = () => p.getAttribute(ex, 'data-step');
+  const spoken = () => p.evaluate(() => window.__spoken.length);
+  const e = await p.evaluate(() => { const c = document.querySelector('#cardArea .reveal[data-reveal="e"] .en span'); return c && c.textContent; });
+  eq('카드에 스피커 없음 (예문·단어 모두)', (await p.$$eval('#cardArea .card .spk', x => x.length)), '0');
+  const w0 = await p.evaluate(() => document.querySelector('#cardArea .card-word .w').textContent);
+  const m = '#cardArea .reveal[data-reveal="m"]';
+  await p.click('#cardArea .card-word .w'); await p.waitForTimeout(500);
+  eq('단어 톡 = 단어 읽기', await p.evaluate(() => window.__spoken.slice(-1)[0]), w0);
+  const mStep0 = await p.getAttribute(m, 'data-step');
+  await p.click(m); await p.waitForTimeout(500);
+  eq('뜻 칸 한 번 톡 = 단어 읽기 · 뜻은 그대로', (await p.evaluate(() => window.__spoken.slice(-1)[0])) + ' ' + ((await p.getAttribute(m, 'data-step')) === mStep0), w0 + ' true');
+  await p.dblclick(m); await p.waitForTimeout(200);
+  eq('뜻 칸 두 번 톡 = 뜻 보이기/가리기', (await p.getAttribute(m, 'data-step')) !== mStep0, true);
+  await p.waitForTimeout(500); await p.dblclick(m); await p.waitForTimeout(200);
+  eq('다시 두 번 톡 = 원래대로', await p.getAttribute(m, 'data-step'), mStep0);
+  await p.waitForTimeout(500);
+  eq('처음엔 예문 가림', await step(), '0');
+  await p.click(ex); await p.waitForTimeout(500);
+  eq('가려져 있을 때 탭 = 영어 보기 (한글은 가림)', await step(), '1');
+  const n0 = await spoken();
+  await p.click(ex); await p.waitForTimeout(500);
+  eq('한 번 톡 = 예문 다시 읽기 · 한글은 그대로 가림', ((await spoken()) - n0) + ' ' + (await p.evaluate(() => window.__spoken.slice(-1)[0])) + ' ' + (await step()), '1 ' + e + ' 1');
+  await p.dblclick(ex); await p.waitForTimeout(200);
+  eq('두 번 톡 = 한글 보임', await step(), '2');
+  await p.waitForTimeout(500); await p.dblclick(ex); await p.waitForTimeout(200);
+  eq('다시 두 번 톡 = 한글 가림 (영어는 그대로)', await step(), '1');
+  eq('페이지 오류 없음', JSON.stringify(errs), '[]');
+  await b.close();
+})();

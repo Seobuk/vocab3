@@ -120,7 +120,7 @@ const SENTS = [
   await p.evaluate(() => window.__vocab.go('home')); await p.waitForTimeout(200);
   eq('홈: 문장 공부 = 담은 문장 1', await p.$eval('.review-btn[data-action="sent"]', e => e.querySelector('.rb-n').textContent + ' ' + e.disabled), '1 false');
   await p.click('.review-btn[data-action="sent"]'); await p.waitForTimeout(300);
-  eq('카드: 한글 먼저 · 📺 유튜브 · 영상 제목 · 빼기', await p.textContent('#sentArea .ko-big') + ' | ' + await p.textContent('#sentArea .card-top') + ' | ' + await p.textContent('#sentArea .sent-w'), '안녕하세요 여러분. | 📺 유튜브어려움 0 · 쉬움 0 | 📺 Menu Talk 빼기');
+  eq('카드: 한글 먼저 · 📺 유튜브 · 영상 제목 · 빼기', await p.textContent('#sentArea .ko-big') + ' | ' + await p.textContent('#sentArea .card-top') + ' | ' + await p.textContent('#sentArea .sent-w'), '안녕하세요 여러분. | 📺 유튜브처음 | 📺 Menu Talk 빼기');
   await p.click('[data-action="sent-judge"][data-easy="0"]'); await p.waitForTimeout(400);
   eq('어려움 → 담은 문장에 가중치', JSON.stringify(await p.evaluate(() => [window.__vocab.state().sentBox[0].sw, window.__vocab.state().sentBox[0].sh])), '[5,1]');
   await p.evaluate(() => window.__vocab.reload()); await p.waitForTimeout(300);

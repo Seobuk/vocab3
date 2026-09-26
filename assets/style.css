@@ -154,6 +154,7 @@ h1, h2, h3, p { margin: 0; }
 .card-top { display: flex; gap: 6px; align-items: center; }
 .tag { font-size: 11.5px; font-weight: 700; color: var(--muted); background: var(--surface2); padding: 3px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; }
 .tag.theme { color: var(--primary); background: var(--primary-soft); }
+.tag.new { color: var(--on-primary); background: var(--primary); }   /* v2.30 문장 공부: 처음 보는 문장 */
 .card-word { display: flex; align-items: flex-start; gap: 8px; }
 .card-word .w { font-size: 32px; font-weight: 700; letter-spacing: -.4px; line-height: 1.2; flex: 1; word-break: break-word; }
 .card-word .w.ko { font-size: 26px; }

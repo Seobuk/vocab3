@@ -18,7 +18,7 @@ fs.mkdirSync(OUT, { recursive: true });
 
   await shot('01', 'home');
   await page.click('[data-action="start"][data-stage="1"]'); await shot('02', 'card_front');
-  await page.click('.reveal[data-reveal="m"]'); await page.click('.reveal[data-reveal="e"]'); await page.click('.reveal[data-reveal="e"]');
+  await page.dblclick('.reveal[data-reveal="m"]'); await page.click('.reveal[data-reveal="e"]'); await page.click('.reveal[data-reveal="e"]');
   await shot('03', 'card_revealed');
   // drag a bit to show the stamp
   const card = await page.$('#cardArea .card'); const box = await card.boundingBox();

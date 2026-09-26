@@ -143,11 +143,20 @@ const SENTS = [
   await p.waitForTimeout(500); await p.dblclick('#ys1 .ko-line'); await p.waitForTimeout(500);
   const skW = (await yt('seek')).length;
 
+  // --- v2.30: 문장 중간 단어를 한 번 톡 = 그 단어부터 (글자 수 비율로 짐작, 첫 단어면 문장 처음부터) ---
+  const skF = (await yt('seek')).length;
+  await p.click('#ys1 .yw[data-t="1"]'); await p.waitForTimeout(500);
+  const s1 = (await yt('seek')).slice(-1)[0].t;
+  await p.click('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(500);
+  const s13 = (await yt('seek')).slice(-1)[0].t;
+  eq('첫 단어 = 문장 처음(2.9) · 중간 단어 = 더 뒤 (문장 안)', ((await yt('seek')).length - skF) + ' ' + s1 + ' ' + (s13 > s1 + 1 && s13 < 7), '2 2.9 true');
+  await p.waitForTimeout(500);
+  const skW2 = (await yt('seek')).length;
   // --- 재생한 문장의 단어: 익힐 표현은 바로 뜻 ---
   await p.dblclick('#ys1 .yw[data-t="5"]'); await p.waitForTimeout(150);   // v2.18: 두 번 톡 = 뜻
   eq('표현 카드', await p.textContent('#ys1 .ycard .yc-h b') + ' = ' + await p.textContent('#ys1 .ycard .yc-m'), 'dig into = 파고들다');
   eq('표현은 Gemini 안 부름', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)).length), 0);
-  eq('두 번 톡: 첫 톡이 문장을 한 번 다시 재생, 둘째 톡은 뜻만', (await yt('seek')).length - skW, 1);
+  eq('두 번 톡: 첫 톡이 문장을 한 번 다시 재생, 둘째 톡은 뜻만', (await yt('seek')).length - skW2, 1);
   await p.screenshot({ path: OUT + '/302-yt-word.png' });
   await p.click('#ys1 [data-action="yt-add-word"][data-stage="1"]'); await p.waitForTimeout(150);
   const added = await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'dig into'); return w && [w.stage, w.m, w.e, w.k, w.t, w.dailyDate ? 'd' : ''].join('|'); });
@@ -178,7 +187,7 @@ const SENTS = [
   await p.click('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(700);
   eq('한 번 톡 = 다시 재생 · 뜻 카드 안 열림', ((await yt('seek')).length - sk1) + ' ' + await p.$$eval('.ycard', x => x.length), '1 0');
   // --- 재생 안 한 문장의 단어는 먼저 재생 ---
-  await p.click('#ys2 .yw[data-t="3"]'); await p.waitForTimeout(150);
+  await p.click('#ys2 .yw[data-t="1"]'); await p.waitForTimeout(150);   // 첫 단어 = 문장 처음부터 (v2.30: 중간 단어는 그 단어부터)
   eq('다른 문장 단어 → 그 문장 재생', (await yt('seek')).slice(-1)[0].t, 7.5);
   eq('카드는 안 열림', await p.$$eval('.ycard', x => x.length), 0);
 

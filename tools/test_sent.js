@@ -74,7 +74,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
 
   // --- 가중치 비례: 20 vs 1×5 → 약 80% ---
   const freq = await p.evaluate(ids => {
-    const s = window.__vocab.state(); s.words.slice(0, 6).forEach((w, i) => { w.sw = i === 0 ? 20 : 1; });
+    const s = window.__vocab.state(); s.words.slice(0, 6).forEach((w, i) => { w.sw = i === 0 ? 20 : 1; w.sa = w.sa || 1; });   // 모두 한 번 본 것으로 — 새 문장 섞기(v2.30)는 아래에서 따로
     let n = 0; for (let i = 0; i < 4000; i++) if (window.__vocab.sentPick([]).id === ids[0]) n++;
     return n / 4000;
   }, ids);
@@ -102,6 +102,38 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   eq('되돌리기 → 다시 판정하면 다른 문장 (방금 문장 반복 안 함)', (await cur()).id !== a0, true);
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(300);
   eq('닫으면 홈', await p.evaluate(() => document.querySelector('.view.active').id), 'view-home');
+  // --- v2.30 새 문장 섞기: 세 장마다 한 번은 한 번도 안 본 문장 · 유튜브 문장 제안 → 판정하면 담김 · 되돌리면 빠짐 ---
+  await p.evaluate(() => {
+    const s = window.__vocab.state();
+    s.words.slice(0, 6).forEach((w, i) => { w.stage = 4; w.sa = i < 3 ? 1 : undefined; if (w.sa === undefined) delete w.sa; });
+    s.sentBox = [];
+    s.yt = [{ id: 'y1', vid: 'SUGGEST0001', title: 'Coffee Chat', date: '2026-09-26', addedAt: 1, tv: 3, mb: 1, sents: [
+      { s: 1, t: 4, e: 'I usually grab a coffee before work.', k: '저는 보통 출근 전에 커피를 사요.', x: [] },
+      { s: 5, t: 8, e: 'Yes.', k: '네.', x: [] },
+      { s: 9, t: 13, e: 'It helps me wake up and focus.', k: '잠을 깨고 집중하는 데 도움이 돼요.', x: [] }
+    ] }];
+    window.__vocab.save();
+  });
+  await p.evaluate(() => window.__vocab.reload()); await p.waitForTimeout(200);
+  await p.click('.review-btn[data-action="sent"]'); await p.waitForTimeout(300);
+  const seen = [];
+  for (let i = 0; i < 12; i++) {
+    seen.push(await p.evaluate(() => { const t = document.querySelector('#sentArea .card-top').textContent; return /새 문장 제안/.test(t) ? 'sug' : /처음/.test(t) ? 'new' : 'old'; }));
+    await p.click('[data-action="sent-judge"][data-easy="1"]'); await p.waitForTimeout(250);
+  }
+  eq('새 문장이 남아 있는 동안 세 장마다 한 번은 새 문장(처음·제안) · 모두 합쳐 5장', [2, 5].every(i => seen[i] !== 'old') + ' ' + seen.filter(x => x !== 'old').length, 'true 5');
+  eq('제안 문장은 판정하면 문장 공부에 담김 (짧은 "Yes."는 제안 안 함)', await p.evaluate(() => window.__vocab.state().sentBox.map(x => x.e).filter(e => e === 'Yes.').length + ' ' + (window.__vocab.state().sentBox.length > 0)), '0 true');
+  // 제안 카드가 나올 때까지 넘겨서 → 판정 → 되돌리기 → 다시 빠짐
+  await p.evaluate(() => { const s = window.__vocab.state(); s.sentBox = []; s.words.forEach(w => { if (w.stage === 4) w.sa = 1; }); window.__vocab.save(); });
+  await p.evaluate(() => window.__appBack()); await p.waitForTimeout(250);
+  await p.click('.review-btn[data-action="sent"]'); await p.waitForTimeout(300);
+  let tries = 0;
+  while (tries++ < 9 && !(await p.evaluate(() => /새 문장 제안/.test(document.querySelector('#sentArea .card-top').textContent)))) { await p.click('[data-action="sent-judge"][data-easy="1"]'); await p.waitForTimeout(250); }
+  eq('모두 본 뒤엔 유튜브 제안이 나옴 (카드에 영상 제목)', /Coffee Chat/.test(await p.textContent('#sentArea')), true);
+  await p.click('[data-action="sent-judge"][data-easy="0"]'); await p.waitForTimeout(300);
+  eq('제안 판정 → 담김 (어려움 1)', await p.evaluate(() => { const b = window.__vocab.state().sentBox; return b.length + ' ' + (b[0] && b[0].sh); }), '1 1');
+  await p.click('[data-action="sent-undo"]'); await p.waitForTimeout(300);
+  eq('되돌리기 → 담은 게 빠지고 제안 카드로 돌아옴', (await p.evaluate(() => window.__vocab.state().sentBox.length)) + ' ' + /새 문장 제안/.test(await p.textContent('#sentArea .card-top')), '0 true');
   eq('페이지 오류 없음', JSON.stringify(errs), '[]');
   await b.close();
 })();
