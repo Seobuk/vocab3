@@ -21,16 +21,20 @@
   const showIntro = () => root.classList.remove('intro');
   if (!window.gsap || !window.ScrollTrigger) { showIntro(); return; }
   gsap.registerPlugin(ScrollTrigger);
+  ScrollTrigger.config({ ignoreMobileResize: true });   // toolbar show/hide is not a layout change
 
   const mm = gsap.matchMedia();
   mm.add({
     desk: '(min-width: 1024px)',
     narrow: '(max-width: 1023.98px)',
     phone: '(max-width: 767.98px)',
-    motion: '(prefers-reduced-motion: no-preference)',
-    tall: '(min-height: 640px)'   // the pinned method board needs a full-height frame; shorter screens keep the static list
+    motion: '(prefers-reduced-motion: no-preference)'
   }, (ctx) => {
-    const { desk, phone, motion, tall } = ctx.conditions;
+    const { desk, phone, motion } = ctx.conditions;
+    /* The pinned method board needs a full-height frame; shorter screens keep the static list.
+       Measured once per build, NOT as a matchMedia condition: a mobile browser's toolbar shows/hides on every tap,
+       the height crossed 640px, matchMedia rebuilt the pin and the page jumped to the top (user report). */
+    const tall = innerHeight >= 640;
     if (!motion) { showIntro(); return; }
     root.classList.add('motion');
     const off = [];
