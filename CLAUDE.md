@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.31 (versionCode 55).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.32 (versionCode 56).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -97,6 +97,14 @@
     Play 설치(installer com.android.vending)면 확인 안 함, build.sh 는 AAB 매니페스트에서 REQUEST_INSTALL_PACKAGES 를 뺀다. 테스트 `tools/test_update.js`.
   - 넓은 화면(v2.26, `min-width: 600px` — 폴드 안쪽·가로): 아래 창(#sheet)은 오른쪽 아래 380px 판(#ytFab 과 같은 14px 여백, 막 .22, 확인 창 땐 .45),
     학습 카드는 최대 820px. `.card > *` flex-shrink 0 — 넘치면 칸이 눌리지 않고 카드가 스크롤. 유튜브 문장·한글 줄 `ytSentTap`: 한 번 톡 = 재생, 두 번 톡 = 한글 보이기/가리기.
+  - **기능 안내(v2.32, 사용자 요청)**: 새로 설치하면 화면마다 처음 들어갈 때 한 번 코치마크 — `TOURS[화면] = {need?, steps:[{sel, t, b, opt?}]}`, `tourMaybe`(render 뒤 450ms ·
+    closeModal/closeSheet·renderChat·ytRenderBody·RENDER.list/edit·renderAudio 끝에서도 — need 가 나중에 채워지는 화면), `tourStep`/`tourPlace`(구멍 = 큰 box-shadow + 2px 테마색 테, 말풍선 아래→위→옆(가로)→겹침,
+    탭 막대 위까지, 250ms 마다 다시 맞춤, 회전하면 가로/세로 전용 opt 단계를 다시 고름), `tourEnd(seen)`(#app 자식 inert, 빈 막 0.4초 — 두 번 톡 뚫림 방지, 스크롤 제자리).
+    본 화면 `S.settings.tour[화면]=1`. **기존 사용자 판별**: migrate 가 기본값 채우기 전에 settings.tour 가 없으면 지금 TOURS 전부 본 것으로 → tour 는 defaultSettings 에 넣지 말 것
+    (새 화면 안내를 추가하면 기존 사용자에게도 그 화면만 뜬다). 안 띄우는 때: 확인 창·아래 창·말하는 중(STT/KO)·손가락이 눌린 중·키 넣으러 온 길(params.scroll)·입력 중·stale.
+    뒤로 = 닫고 본 것으로, ask/openSheet = 접고 다음에. 설정 → 사용법 → "기능 안내 다시 보기"(tour-reset → 홈). 전체 초기화는 안내 기록 유지. #toast z-index 24(안내 25 아래).
+    Playwright(navigator.webdriver)에선 `window.__tourTest` 일 때만 — 테스트 `tools/test_tour.js`(화면마다 걷기·스크린샷 build/shots/tour/). 결과 화면(summary)은 축하 연출을 가려서 안내 없음.
+    안내가 생기면서 화면 속 사용법 문구(홈 팁 카드·학습 카드 아래 제스처 줄·유튜브 .yt-hint·설정 사용법 카드 등)는 뺐다(사용자 요청) — 새 설명은 문구 대신 TOURS 에.
 - `assets/words.js` — 기본 단어 200개 `[단어, 품사, 뜻, 예문, 해석, 테마]`.
 - `tools/test_*.js`, `tools/shots.js` — Playwright UI 테스트 (Gemini·음성인식은 stub). 스크린샷 `build/shots/`.
 - `docs/` — GitHub Pages 랜딩페이지 https://seobuk.github.io/vocab3/ (main 브랜치 /docs, 빌드 없음: index.html · style.css · main.js(GSAP ScrollTrigger·Pretendard·Phosphor 는 jsDelivr) · assets/),

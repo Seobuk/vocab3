@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.31';
+  var APP_VERSION = '2.32';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -432,13 +432,13 @@
   var BAK_KEY = 'vocab3.bak.start';   // v2.23: 켤 때 읽은 상태 한 벌 (설정 → 데이터 → "켤 때 상태로")
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, tipDismissed: false, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, ytHintN: 0, listSort: 'base', autoUpdate: true };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, listSort: 'base', autoUpdate: true };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
   }
   function defaultState() {
-    var st = defaultSettings(); st.audio = defaultAudio(); st.talk = defaultTalk();
+    var st = defaultSettings(); st.audio = defaultAudio(); st.talk = defaultTalk(); st.tour = {};   // v2.32 기능 안내: 새로 설치하면 빈 기록 → 화면마다 처음 한 번
     return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now(), yt: [], usage: {}, sentBox: [] };
   }
   function mkWord(o) {
@@ -462,6 +462,7 @@
   function migrate(s) {
     var d = defaultSettings();
     s.settings = s.settings || {};
+    if (!s.settings.tour || typeof s.settings.tour !== 'object' || Array.isArray(s.settings.tour)) { s.settings.tour = {}; for (var tv in TOURS) s.settings.tour[tv] = 1; }   // v2.32: 안내 기록이 없는 저장 = 기존 사용자 → 안 띄움 (설정 → 사용법 → 다시 보기) · 나중에 생긴 화면 안내는 뜬다
     for (var k in d) if (!(k in s.settings)) s.settings[k] = d[k];
     delete s.settings.ytVad;   // v2.9: v2.8 '소리로 문장 끝 맞추기' 실험을 뺐다 (문장의 as/asg/ae 는 아래 ytClean 이 버린다)
     var dt = defaultTalk(), tk = s.settings.talk || {};
@@ -586,6 +587,7 @@
     render();
   }
   function back() {
+    if (TOUR) { tourEnd(true); return; }
     if (modalOpen) { closeModal(null); return; }
     if (sheetOpen) { closeSheet(); return; }
     var cur = current(), prev = stack[stack.length - 2];
@@ -608,12 +610,194 @@
       var t = b.getAttribute('data-tab');
       b.classList.toggle('on', t === cur.view || (t === 'edit' && cur.view === 'import'));
     });
+    if (TOUR && TOUR.v !== cur.view) tourEnd(false);
     RENDER[cur.view](cur.params);
     var el = $('#view-' + cur.view);
     if (el) el.scrollTop = 0;
     updateBack();
+    tourMaybe();
   }
   window.__appBack = back;
+
+  /* ---------------- 기능 안내 (v2.32, 사용자 요청) ---------------- */
+  // 새로 설치한 뒤 각 화면에 처음 들어가면 한 번: 요소를 하나씩 밝히고 말풍선으로 설명 (건너뛰기 · 다음). 본 화면은 S.settings.tour[화면] = 1.
+  // step { sel: 그 화면 안에서 찾을 선택자(#tabbar·#ytFab 은 밖) · null = 가운데 말풍선, t: 제목, b: 설명, opt: 없으면 건너뜀 }. need: 이게 보여야 시작 (없으면 나중에).
+  // 테스트(Playwright = navigator.webdriver)는 window.__tourTest 를 켠 것만. 결과 화면(summary)은 축하 연출을 가려서 안내 없음.
+  // 주의: TOURS 는 맨 아래 loadState() 보다 위에 있어야 하고(migrate 가 씀), tour 는 defaultSettings() 에 넣지 않는다 (기존 사용자 판별).
+  var TOURS = {
+    home: { steps: [
+      { sel: '.today', t: '오늘의 학습', b: '매일 대기 단어에서 하루 목표(처음엔 20개)만큼 1단계로 채워 줘요. "학습 시작"을 누르면 카드로 외워요.' },
+      { sel: '.review-btn[data-stage="2"]', t: '외우면 한 단계씩', b: '카드에서 "외웠다"를 고르면 2단계, 또 외우면 3단계로 올라가고 3단계를 통과하면 졸업해요. "아직"이면 그 단계에 남아요.' },
+      { sel: '.review-btn[data-action="sent"]', t: '졸업하면 문장 공부', b: '졸업한 단어의 예문과 유튜브에서 담은 문장을 우리말만 보고 영어로 말해 봐요. 졸업한 단어나 담은 문장이 생기면 열려요.' },
+      { sel: '.quick', t: '회화 · 유튜브 · 듣기', b: '회화 연습은 AI와 영어로 대화해요. 유튜브는 링크를 넣으면 문장마다 나눠 줘요. 듣기 복습은 화면을 꺼도 계속 읽어 줘요.' },
+      { sel: '#tabbar [data-tab="settings"]', t: 'AI 기능은 키가 필요해요', b: '회화 · 유튜브 · AI 채우기는 Gemini API 키가 있어야 돼요. 설정의 "키 발급 페이지 (무료)"에서 받아 넣어요.' }
+    ] },
+    study: { steps: [
+      { sel: '#cardArea .reveal[data-reveal="m"]', t: '뜻 보기 · 단어 읽기', b: '뜻 칸을 톡 하면 뜻이 보였다 가려져요. 위의 영어 단어를 톡 하면 읽어 줘요.' },
+      { sel: '#cardArea .reveal[data-reveal="e"]', t: '예문 · 해석', b: '가려진 예문을 톡 하면 영어가 보이며 읽어 줘요. 그다음 한 번 톡 = 다시 읽기, 두 번 톡 = 해석 보이기/가리기. 꾹 누르면 예문을 고쳐요.' },
+      { sel: '#cardArea .card', t: '밀어서 고르기', b: '위로 밀면 "외웠다", 아래로 밀면 "아직"이에요. 왼쪽으로 밀면 다음 카드, 오른쪽으로 밀면 이전 카드로 가요. 잘못 골랐으면 "되돌리기".' },
+      { sel: '#chipMode', t: '한→영 연습', b: '톡 하면 한→영으로 바뀌어요. 우리말을 보고 영어로 먼저 말해 본 뒤, 가린 칸을 톡 하면 영어가 보이며 읽어 줘요.' },
+      { sel: '#cardArea .star', t: '★ 중요 단어', b: '★을 톡 하면 중요 단어로 표시돼요. 홈의 "★ 중요"에 모이고, 회화 연습 미션 단어로 먼저 나와요.' }
+    ] },
+    list: { need: '#listBody .item', steps: [
+      { sel: '#listBody .it-head', t: '단어 자세히 보기', b: '단어 줄을 톡 하면 창이 열려요. 아는 단어는 "단계 이동"에서 졸업으로 옮기고, 중요 표시·예문 고치기·수정·삭제도 여기서 해요.', opt: 1 },
+      { sel: '#listBody .it-ex', t: '예문 듣기 · 해석', b: '예문을 한 번 톡 하면 읽어 줘요. 두 번 톡 하면 흐리게 가린 해석이 보였다 가려져요.', opt: 1 },
+      { sel: '.search', t: '검색 · ★ · 예문', b: '단어·뜻·예문으로 찾을 수 있어요. ★을 누르면 중요 단어만, "예문"을 누르면 예문 줄을 숨기거나 다시 보여 줘요.' }
+    ] },
+    edit: { need: '#imp', steps: [
+      { sel: '#imp', t: '목록 그대로 붙여넣기', b: '한 줄에 한 단어씩 적거나 복사한 목록을 그대로 붙여 넣어요. 번호·글머리표는 알아서 떼고, 이미 있는 단어는 건너뛰어요.' },
+      { sel: '.settings-group > .switch-row:first-child', t: '1단계 또는 대기', b: '"1단계"는 오늘 학습에 바로 들어가요. "대기"는 대기 단어장 맨 뒤에 붙어 날마다 차례로 1단계로 넘어와요.' },
+      { sel: '.settings-group > .switch-row:last-child', t: 'AI로 뜻 채우기', b: '켜면 비어 있는 뜻·예문·해석을 AI가 채워요. 꺼져 있으면 뜻을 안 적은 줄은 건너뛰어요. 키가 없으면 설정에서 먼저 넣어요.' }
+    ] },
+    sent: { need: '#sentArea .sent-card', steps: [
+      { sel: '#sentArea .sent-card', t: '영어 문장 공부', b: '졸업한 단어의 예문과 유튜브에서 담은 문장이 나와요. 세 장에 한 번은 처음 보는 문장이나 아직 안 담은 유튜브 문장이 섞여요.' },
+      { sel: '#sentArea .sent-card', t: '말해 보고 톡', b: '우리말을 보고 영어로 먼저 말해 봐요. 카드를 톡 하면 가린 영어가 보이며 읽어 주고, 또 톡 하면 다시 읽어요.' },
+      { sel: '.judge', t: '쉬움 · 어려움', b: '"어려움"을 누르거나 아래로 밀면 그 문장이 더 자주, "쉬움"이나 위로 밀면 가끔 나와요. 단어 단계는 안 바뀌어요.' }
+    ] },
+    stats: { steps: [
+      { sel: '.home-head + .tiles', t: '학습 기록', b: '연속 학습은 단어 카드에서 "외웠다"나 "아직"을 한 번이라도 고른 날이 며칠째 이어지는지예요. 외움률은 그중 "외웠다"의 비율이에요.' },
+      { sel: '.tiles + .tiles + .card-box', t: '날짜별 사용 시간', b: '막대를 톡 하면 그날 기능별로 몇 분 썼는지 아래에 나와요. 앱이 화면에 떠 있는 시간만 세요.' },
+      { sel: '.wrap > .card-box:last-child', t: '자주 틀린 단어', b: '"아직"을 많이 고른 단어가 5개까지 모여요. 단어를 톡 하면 단계를 옮기거나 중요 단어로 표시할 수 있어요.' }
+    ] },
+    audio: { need: '.seg', steps: [
+      { sel: '.seg', t: '들을 단어장', b: '들을 단계를 골라요. 숫자는 그 단계의 단어 수예요. "1~3단계"를 고르면 세 단계를 한꺼번에 들려줘요.' },
+      { sel: '.card-box .switch-row + .switch-row', t: '읽는 방식', b: '지금 읽어 주는 순서예요. "변경"을 누르면 읽는 횟수·쉬는 시간·예문 속도·해석 읽기·반복을 바꿔요.' },
+      { sel: '[data-action="audio-start"]', t: '화면을 꺼도 계속', b: '재생을 시작하면 화면을 끄거나 다른 앱을 켜도 계속 읽어 줘요. 알림을 허용하면 잠금 화면에서 이전·일시정지·다음·정지를 눌러요.' }
+    ] },
+    talk: { steps: [
+      { sel: '.scen-grid', t: '상황 고르기', b: '고른 상황에서 AI가 점원이나 동료 같은 상대역을 맡아요. "자유 주제"를 고르면 원하는 상황을 직접 적어요.' },
+      { sel: '.mission-box', t: '미션 단어', b: '대화 중에 써 볼 단어예요. 단어를 톡 하면 뜻과 예문이 나오고, 대화에서 쓰면 체크 표시가 붙어요.' },
+      { sel: '.tip', t: 'Gemini 키가 필요해요', b: '회화는 Gemini API 키(무료)가 있어야 돼요. 밑줄 친 "설정에서 입력"을 톡 하면 키를 넣는 곳으로 가요.', opt: 1 },
+      { sel: '[data-action="talk-start"]', t: '대화 시작', b: '누르면 AI가 먼저 영어로 말을 걸고 읽어 줘요. 마이크로 말하거나 입력창에 적어서 답해요.' }
+    ] },
+    chat: { need: '.msg.ai .spk', steps: [
+      { sel: '.msg.ai', t: '번역 · 다시 듣기', b: 'AI 말 아래 흐린 글이 한글 번역이에요. 톡 하면 선명해지고 다시 톡 하면 흐려져요. 스피커를 톡 하면 다시 읽어 줘요.' },
+      { sel: '.say-bar', t: '할 말 예시', b: '뭐라고 답할지 막히면 예시를 톡 하세요. 입력창에 들어가고 한 번 읽어 줘요. 아래 "할 말" 버튼으로 켜고 꺼요.', opt: 1 },
+      { sel: '#micBtn', t: '영어로 말하기', b: '마이크를 톡 하고 말한 뒤 ■를 톡 하세요. 중간에 쉬어도 안 끊겨요. 입력창의 문장을 확인하고 보내요.' },
+      { sel: '#koBtn', t: '한국어로 말하기', b: '영어가 안 떠오르면 여기를 톡 하고 한국어로 말한 뒤 "다 말했어요"를 톡 하세요. 영어로 옮겨 입력창에 넣고 읽어 줘요.' },
+      { sel: '.topbar [data-action="talk-end"]', t: '교정과 리포트', b: '어색한 문장은 말풍선 아래에 고친 문장이 나와요. 한 번 이상 답한 뒤 "끝내기"를 누르면 교정과 기억할 표현을 모은 리포트가 나와요.' }
+    ] },
+    yt: { steps: [
+      { sel: '.empty', t: '유튜브 쉐도잉', b: '영상의 영어를 문장마다 나눠 한글 해석과 함께 보여 줘요. 문장을 톡 하면 그 부분만 나오고 멈춰서 바로 따라 말할 수 있어요.', opt: 1 },
+      { sel: '.tip', t: 'Gemini 키 먼저', b: '문장 정리는 내 Gemini API 키로 해요. 밑줄 친 "설정에서 입력"을 톡 하면 키를 넣는 곳으로 가요.', opt: 1 },
+      { sel: '.btn.big[data-action="yt-add"]', t: '영상 추가', b: '유튜브 링크를 붙여 넣고 "정리하기"를 누르면 1~5분 뒤 문장이 나와요. 안드로이드 13 이상이면 영상도 폰에 받아 인터넷 없이 봐요.', opt: 1 }
+    ] },
+    ytv: { need: '#ytList .ys', steps: [
+      { sel: '#ytList .ys', t: '문장 듣기 · 해석', b: '흐린 한글 줄을 톡 하면 그 문장이 처음부터 나오고, 두 번 톡 하면 해석이 보여요. 문장을 꾹 누르면 문장 공부에 넣기·합치기·쪼개기 메뉴가 떠요.' },
+      { sel: '#ytList .ys .yw:nth-of-type(2)', t: '단어부터 듣기 · 뜻', b: '영어 단어를 톡 하면 그 단어부터 나와요. 두 번 톡 하면 뜻이 뜨고, 단어장에 없는 단어면 1단계나 대기에 넣을 수 있어요.' },
+      { sel: '#ytBox[data-action="yt-tap"]', t: '영상 화면 톡', b: '받은 영상은 톡 하면 멈추고 다시 톡 하면 이어서 나와요. 왼쪽·오른쪽을 두 번 톡 하면 앞·뒤 문장으로 가요.', opt: 1 },
+      { sel: '#ytFab', t: '문장마다 멈춤', b: '"문장마다"가 켜져 있으면 문장 끝에서 멈추고, 끄면 영상이 이어서 나와요. "한 번 더"는 방금 들은 문장을 다시 들려줘요.', opt: 1 },
+      { sel: '.yt-pinb', t: '영상 고정', b: '누르면 목록을 올려도 영상이 가려지지 않아요. 다시 누르면 목록이 영상을 덮어 문장을 더 많이 볼 수 있어요.', opt: 1 },
+      { sel: '.yt-edb', t: '문장 시간 고치기', b: '시계를 누르면 아래에 구간 막대가 떠요. 누른 문장의 시작·끝을 끌거나 ±0.1·0.5초, "지금"으로 옮기고 "완료"를 눌러요.', opt: 1 }
+    ] },
+    settings: { steps: [
+      { sel: '#ai-settings + .settings-group', t: 'Gemini 키 넣기', b: '회화 연습·유튜브 문장 정리·AI 채우기는 무료 Gemini 키가 있어야 돼요. "키 발급 페이지"에서 키를 만들어 맨 위 칸에 붙여 넣어요.' },
+      { sel: '.sync-g', t: '드라이브에 자동 저장', b: '"드라이브에 연동하기"로 저장할 곳을 고르면 앱을 내릴 때와 5분마다 학습 기록이 저장돼요. 새 폰에선 "드라이브에서 불러오기".', opt: 1 },
+      { sel: '[data-action="restore-start"]', t: '실수로 지웠을 때', b: '잘못 지우거나 고쳤다면 앱을 다시 켜기 전에 "켤 때 상태로"를 누르고 "덮어쓰기"를 골라요. 이번에 켰을 때 기록으로 돌아가요.' },
+      { sel: '[data-action="tour-reset"]', t: '안내 다시 보기', b: '누르면 화면마다 처음 들어갈 때처럼 기능 안내가 다시 나와요.' }
+    ] }
+  };
+  // TOUR { v: 화면, k: 지금 단계(TOURS 안 번호), n: 보여 준 단계 수, top: 시작할 때 스크롤 }
+  var TOUR = null, tourTimer = null, tourIv = null, PDOWN = 0;
+  document.addEventListener('pointerdown', function () { PDOWN = 1; }, true);
+  document.addEventListener('pointerup', function () { PDOWN = 0; }, true);   // ponytail: 잃어버린 pointerup 은 다음 톡이 풀어 준다
+  document.addEventListener('pointercancel', function () { PDOWN = 0; }, true);
+  function tourEl(v, sel) {
+    if (!sel) return null;
+    var root = $('#view-' + v), el = null;
+    try { el = (root && root.querySelector(sel)) || (/^#(tabbar|ytFab)/.test(sel) ? $(sel) : null); } catch (e) { }
+    if (!el) return null;
+    var r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' ? el : null;
+  }
+  function tourOk(v, s) { return !s.opt || !!tourEl(v, s.sel); }   // 선택 항목은 지금 화면에 있을 때만 (회전하면 바뀜)
+  function tourNext(from) { var st = TOURS[TOUR.v].steps; for (var k = from + 1; k < st.length; k++) if (tourOk(TOUR.v, st[k])) return k; return -1; }
+  function tourMaybe() {
+    if (tourTimer) clearTimeout(tourTimer);
+    tourTimer = setTimeout(function () {   // 화면이 자리 잡은 뒤 (확인 창·토스트가 먼저 뜰 틈)
+      tourTimer = null;
+      var cur = current(), v = cur && cur.view, t = TOURS[v], ae = document.activeElement;
+      if (!t || (S.settings.tour || {})[v] || TOUR || modalOpen || sheetOpen || STT.on || STT.wait || KO.busy || (navigator.webdriver && !window.__tourTest) || stale()) return;
+      if ((cur.params && cur.params.scroll) || (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName))) return;   // 키 넣으러 온 길·입력 중이면 이번엔 안 띄움
+      if (PDOWN) { tourMaybe(); return; }   // 손가락이 화면에 있으면 뗀 뒤에 (끌던 카드가 안내 밑에서 판정되지 않게)
+      if (t.need && !tourEl(v, t.need)) return;
+      if (!t.steps.some(function (s) { return tourOk(v, s); })) return;
+      if (v === 'ytv') { $('#ytList').scrollTop = 0; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } }   // 영상 안내는 목록 맨 위 기준 · 정리 중 보던 영상은 멈춤
+      var sv = $('#view-' + v);
+      TOUR = { v: v, k: -1, n: 0, top: sv ? sv.scrollTop : 0 };
+      var d = document.createElement('div');
+      d.id = 'tour';
+      d.innerHTML = '<div class="tour-back"></div><div class="tour-hole" id="tourHole"></div>' +
+        '<div class="tour-tip" id="tourTip" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="tourT" aria-describedby="tourB"><div aria-live="polite" aria-atomic="true"><div class="tour-n" id="tourN"></div><div class="tour-t" id="tourT"></div><p class="tour-b" id="tourB"></p></div>' +
+        '<div class="tour-act"><button class="btn ghost" data-action="tour-skip">건너뛰기</button><button class="btn primary" data-action="tour-next" id="tourGo"></button></div></div>';
+      $$('#app > *').forEach(function (e) { if (e.id !== 'toast') e.inert = true; });   // 가린 화면은 TalkBack·Tab·키보드로도 못 누르게
+      $('#app').appendChild(d);
+      tourIv = setInterval(tourPlace, 250);   // 화면이 스스로 바뀌어도(답 도착·자동 스크롤) 구멍이 따라가게
+      tourStep();
+    }, 450);
+  }
+  function tourStep() {
+    if (!TOUR) return;
+    var k = tourNext(TOUR.k);
+    if (k < 0) { tourEnd(true); return; }
+    var s = TOURS[TOUR.v].steps[k];
+    TOUR.k = k; TOUR.n++; TOUR.sc = false;
+    $('#tourT').textContent = s.t;
+    $('#tourB').textContent = s.b;
+    tourPlace();
+    var tip = $('#tourTip'); if (tip && TOUR && TOUR.n === 1) tip.focus({ preventScroll: true });   // 첫 단계만 말풍선에 초점 — 다음부터는 누른 '다음'에 두고 aria-live 가 읽는다
+  }
+  function tourPlace() {
+    if (!TOUR) return;
+    var s = TOURS[TOUR.v].steps[TOUR.k], el = tourEl(TOUR.v, s.sel), hole = $('#tourHole'), tip = $('#tourTip'); if (!hole || !tip) return;
+    if (!el && s.opt) { TOUR.n--; tourStep(); return; }   // 회전·상태 변화로 없어진 선택 항목은 건너뜀
+    var left = 0, k2 = TOUR.k, total = TOUR.n;
+    while ((k2 = tourNext(k2)) >= 0) left++;
+    total += left;   // 남은 단계 수도 지금 화면 기준 (가로 전용 · 세로 전용 단계)
+    $('#tourN').textContent = total > 1 ? TOUR.n + ' / ' + total : '';
+    $('#tourGo').textContent = left ? '다음' : '확인';
+    var A = $('#app').getBoundingClientRect(), W = A.width, H = A.height, tw = Math.min(340, W - 32), th, tb = $('#tabbar');
+    var bot = el && tb.classList.contains('show') && !el.closest('#tabbar') ? tb.getBoundingClientRect().top - A.top : H;   // 아래 탭 막대 위까지만
+    tip.style.width = tw + 'px'; th = tip.offsetHeight;
+    if (el && !TOUR.sc) {   // 화면 밖(아래 탭 막대 밑 포함)이면 한 번 보이는 곳으로 — 크면 맨 위로 (말풍선 자리)
+      var r0 = el.getBoundingClientRect();
+      TOUR.sc = true;
+      if (r0.top < A.top + 8 || r0.bottom > A.top + bot - 8) el.scrollIntoView({ block: r0.height + 2 * th + 60 > H ? 'start' : 'center' });
+    }
+    if (!el) {   // 가리킬 게 없으면 가운데 말풍선
+      hole.style.cssText = 'left:' + W / 2 + 'px;top:' + H / 2 + 'px;width:0;height:0;';
+      tip.style.left = (W - tw) / 2 + 'px'; tip.style.top = Math.max(8, (H - th) / 2) + 'px';
+      return;
+    }
+    var r = el.getBoundingClientRect(), p = 6, cs = getComputedStyle(el);
+    var x = Math.max(0, r.left - A.left - p), y = Math.max(0, r.top - A.top - p), x2 = Math.min(W, r.right - A.left + p), y2 = Math.min(H, r.bottom - A.top + p);
+    var rad = Math.max(12, Math.min((parseFloat(cs.borderTopLeftRadius) || 0) + p, (y2 - y) / 2, (x2 - x) / 2));   // 알약·동그라미 버튼은 그 모양대로
+    hole.style.cssText = 'left:' + x + 'px;top:' + y + 'px;width:' + Math.max(0, x2 - x) + 'px;height:' + Math.max(0, y2 - y) + 'px;border-radius:' + rad + 'px;';
+    var top, left2 = Math.min(W - 16 - tw, Math.max(16, (x + x2) / 2 - tw / 2));
+    if (y2 + 12 + th <= bot - 8) top = y2 + 12;   // 아래
+    else if (y - 12 - th >= 8) top = y - 12 - th;   // 위
+    else {   // 가로 화면처럼 위아래 자리가 없으면 옆 (그 문장 줄 밖으로), 그래도 없으면 화면 아래에 겹쳐서
+      var row = el.closest('.ys') || el, rr = row.getBoundingClientRect(), sx = Math.max(0, rr.left - A.left - p), sx2 = Math.min(W, rr.right - A.left + p);
+      var sw = Math.max(W - 20 - sx2, sx - 20);
+      if (sw < tw && sw >= 240) { tw = sw; tip.style.width = tw + 'px'; th = tip.offsetHeight; }   // 폰 가로: 옆 자리에 맞춰 말풍선을 줄임
+      top = Math.max(8, Math.min(H - th - 8, y));
+      if (sx2 + 12 + tw <= W - 8) left2 = sx2 + 12;
+      else if (sx - 12 - tw >= 8) left2 = sx - 12 - tw;
+      else top = Math.max(8, H - th - 16);
+    }
+    tip.style.top = top + 'px'; tip.style.left = left2 + 'px';
+  }
+  function tourEnd(seen) {
+    if (!TOUR) return;
+    var v = TOUR.v, top = TOUR.top;
+    if (seen) { S.settings.tour = S.settings.tour || {}; S.settings.tour[v] = 1; save(); }
+    TOUR = null;
+    if (tourIv) { clearInterval(tourIv); tourIv = null; }
+    var d = $('#tour'); if (d) { d.innerHTML = ''; setTimeout(function () { d.remove(); }, 400); }   // 빈 막을 0.4초 남긴다 — 두 번 톡의 둘째 톡이 밑 화면을 누르지 않게
+    $$('#app > *').forEach(function (e) { if (e !== d) e.inert = false; });
+    var sv = $('#view-' + v); if (seen && sv && current() && current().view === v) sv.scrollTop = top;   // 안내하느라 굴린 화면을 제자리로
+  }
+  window.addEventListener('resize', function () { if (TOUR) { TOUR.sc = false; tourPlace(); } });   // 회전 · 폴드 접고 펴기
 
   /* ---------------- toast / modal / sheet ---------------- */
   var toastTimer = null;
@@ -632,7 +816,7 @@
         return '<button class="btn ' + (b.cls || '') + '" data-action="modal-pick" data-value="' + esc(b.value) + '">' + esc(b.label) + '</button>';
       }).join('') + '</div>';
       m.classList.add('show'); $('#overlay').classList.add('show');
-      modalOpen = true; updateBack();
+      modalOpen = true; if (TOUR) tourEnd(false); updateBack();
     });
   }
   function confirm2(msg, okLabel, danger) {
@@ -641,7 +825,7 @@
   function closeModal(value) {
     $('#modal').classList.remove('show');
     if (!sheetOpen) $('#overlay').classList.remove('show');
-    modalOpen = false; updateBack();
+    modalOpen = false; updateBack(); tourMaybe();
     var r = modalResolve; modalResolve = null;
     if (r) r(value);
   }
@@ -650,12 +834,12 @@
     s.innerHTML = '<div class="grip"></div>' + html; s.scrollTop = 0;   // 앞 창을 스크롤했어도 새 창은 맨 위부터 (v2.26)
     $('#overlay').classList.add('show');
     requestAnimationFrame(function () { s.classList.add('show'); });
-    sheetOpen = true; updateBack();
+    sheetOpen = true; if (TOUR) tourEnd(false); updateBack();
   }
   function closeSheet() {
     $('#sheet').classList.remove('show');
     if (!modalOpen) $('#overlay').classList.remove('show');
-    sheetOpen = false; updateBack();
+    sheetOpen = false; updateBack(); tourMaybe();
   }
 
   /* ---------------- theme ---------------- */
@@ -731,17 +915,14 @@
       '<div class="t-bar"><div style="width:' + pct + '%"></div></div>' + cta + '</div>' +
       // 자주 쓰는 세 가지는 한 번에: 회화 · 유튜브 · 듣기 (단어 추가는 아래 탭바에)
       '<div class="quick">' +
-      '<button class="q" data-action="talk"><span class="q-ic">' + ICON_TALK + '</span><span class="q-t">회화 연습</span><span class="q-s">AI와 영어로</span></button>' +
-      '<button class="q" data-action="yt"><span class="q-ic">' + ICON_VIDEO + '</span><span class="q-t">유튜브</span><span class="q-s">쉐도잉 · 표현</span></button>' +
-      '<button class="q" data-action="audio"><span class="q-ic">' + ICON_HEADSET + '</span><span class="q-t">듣기 복습</span><span class="q-s">' + (AUD.active ? (AUD.playing ? '재생 중' : '일시정지') : '운전 중에') + '</span></button>' +
+      '<button class="q" data-action="talk"><span class="q-ic">' + ICON_TALK + '</span><span class="q-t">회화 연습</span></button>' +
+      '<button class="q" data-action="yt"><span class="q-ic">' + ICON_VIDEO + '</span><span class="q-t">유튜브</span></button>' +
+      '<button class="q" data-action="audio"><span class="q-ic">' + ICON_HEADSET + '</span><span class="q-t">듣기 복습</span>' + (AUD.active ? '<span class="q-s">' + (AUD.playing ? '재생 중' : '일시정지') + '</span>' : '') + '</button>' +
       '</div>' +
-      '<button class="review-btn" style="--c:var(--s2)" data-action="start" data-stage="2"' + (c[2] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">2단계 복습</div><div class="rb-s">주기적으로 복습 → 확실하면 3단계로</div></div><span class="rb-n">' + c[2] + '</span><span class="chev">›</span></button>' +
-      '<button class="review-btn" style="--c:var(--s3)" data-action="start" data-stage="3"' + (c[3] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">3단계 최종 점검</div><div class="rb-s">최종 확인 → 통과하면 졸업</div></div><span class="rb-n">' + c[3] + '</span><span class="chev">›</span></button>' +
-      '<button class="review-btn" style="--c:var(--s4)" data-action="sent"' + (sn ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">영어 문장 공부</div><div class="rb-s">졸업 단어 예문 · 유튜브에서 담은 문장</div></div><span class="rb-n">' + sn + '</span><span class="chev">›</span></button>' +
+      '<button class="review-btn" style="--c:var(--s2)" data-action="start" data-stage="2"' + (c[2] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">2단계 복습</div></div><span class="rb-n">' + c[2] + '</span><span class="chev">›</span></button>' +
+      '<button class="review-btn" style="--c:var(--s3)" data-action="start" data-stage="3"' + (c[3] ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">3단계 최종 점검</div></div><span class="rb-n">' + c[3] + '</span><span class="chev">›</span></button>' +
+      '<button class="review-btn" style="--c:var(--s4)" data-action="sent"' + (sn ? '' : ' disabled') + '><span class="dot"></span><div><div class="rb-t">영어 문장 공부</div></div><span class="rb-n">' + sn + '</span><span class="chev">›</span></button>' +
       '<div class="row"><button class="btn" data-action="list" data-stage="0">대기 ' + c[0] + '개</button><button class="btn" data-action="list-starred">★ 중요 ' + starCount() + '개</button><button class="btn" data-action="list" data-stage="4">졸업 ' + c[4] + '개</button></div>' +
-      (S.settings.tipDismissed ? '' :
-        '<div class="tip"><button class="close" data-action="tip-close">×</button><b>3단계 단어장 사용법</b><br>매일 새 단어 ' + goal + '개를 예문과 함께 익히고, 단어와 예문이 자연스럽게 나오면 오른쪽으로 스와이프하세요.' +
-        '<div class="flow"><span>1단계 새 단어장</span><i>→</i><span>2단계 외운 단어장</span><i>→</i><span>3단계 완전 암기장</span><i>→</i><span>졸업</span></div></div>') +
       '</div>';
     $('#view-home').innerHTML = html;
   };
@@ -798,8 +979,7 @@
         '<button class="btn yes" data-action="judge" data-yes="1"><span>▲ ' + (st === 1 ? '외웠다' : st === 2 ? '확실히 외웠다' : '완전 암기') + '</span><small>' + (st === 3 ? '졸업' : STAGE_SHORT[st + 1] + '로 이동') + '</small></button>' +
         '</div>' +
         '<div class="navrow"><button class="btn undo" data-action="undo" id="btnUndo">↶ 되돌리기</button></div>' +
-        (st > 1 ? '<button class="demote" data-action="demote">잘 기억 안 나면 <u>1단계로 되돌리기</u></button>' :
-          '<div class="demote">▲ 외웠다 &nbsp;·&nbsp; ▼ 아직 &nbsp;·&nbsp; ◀ ▶ 이전/다음 &nbsp;·&nbsp; 예문 길게: 수정·AI</div>') +
+        (st > 1 ? '<button class="demote" data-action="demote">잘 기억 안 나면 <u>1단계로 되돌리기</u></button>' : '') +
         '</div></div>';
     }
     mountCard('none');
@@ -823,14 +1003,14 @@
         '<div class="reveal" data-reveal="m" data-max="1" data-step="' + (st.hideMeaning ? 0 : 1) + '"><div class="label">뜻</div><div class="content"><div class="m">' + esc(w.m) + '</div></div><div class="cover">뜻 보기</div></div>' +
         '<div class="reveal" data-reveal="e" data-max="' + (w.k ? 2 : 1) + '" data-step="' + (st.hideExample ? 0 : (w.k ? 2 : 1)) + '"><div class="label">예문</div><div class="content"><div class="en"><span>' + esc(w.e || '—') + '</span></div>' +
         (w.k ? '<div class="ko">' + esc(w.k) + '</div>' : '') +
-        '</div><div class="cover">예문을 먼저 떠올린 뒤 탭</div></div>' +
+        '</div><div class="cover">예문 보기</div></div>' +
         stamps;
     }
     return top +
       '<div class="card-word"><div class="w ko">' + esc(w.m) + '</div></div>' +
-      '<div class="reveal" data-reveal="w" data-max="1" data-step="' + (st.hideMeaning ? 0 : 1) + '"><div class="label">영어 단어</div><div class="content"><div class="en"><span>' + esc(w.w) + '</span>' + spk('w', true) + '</div></div><div class="cover">영어로 말해 본 뒤 탭</div></div>' +
+      '<div class="reveal" data-reveal="w" data-max="1" data-step="' + (st.hideMeaning ? 0 : 1) + '"><div class="label">영어 단어</div><div class="content"><div class="en"><span>' + esc(w.w) + '</span>' + spk('w', true) + '</div></div><div class="cover">영어 보기</div></div>' +
       '<div class="plain"><div class="label">예문 (우리말)</div><div class="ko-big">' + esc(w.k || '(해석 없음)') + '</div></div>' +
-      '<div class="reveal" data-reveal="e" data-max="1" data-step="' + (st.hideExample ? 0 : 1) + '"><div class="label">영어 예문</div><div class="content"><div class="en"><span>' + esc(w.e || '—') + '</span></div></div><div class="cover">영어 예문을 말해 본 뒤 탭</div></div>' +
+      '<div class="reveal" data-reveal="e" data-max="1" data-step="' + (st.hideExample ? 0 : 1) + '"><div class="label">영어 예문</div><div class="content"><div class="en"><span>' + esc(w.e || '—') + '</span></div></div><div class="cover">영어 예문 보기</div></div>' +
       stamps;
   }
 
@@ -850,7 +1030,7 @@
     $('#pfill').style.width = Math.round(done / n * 100) + '%';
     $('#ghost').style.display = (n > 1) ? '' : 'none';
     $('#btnUndo').disabled = SES.undo.length === 0;
-    $('#chipMode').textContent = S.settings.mode === 'en' ? '영→한' : '한→영 (출력)';
+    $('#chipMode').textContent = S.settings.mode === 'en' ? '영→한' : '한→영';
     $('#chipMode').classList.toggle('on', S.settings.mode === 'ko');
     $('#chipAuto').textContent = '자동 발음';
     $('#chipAuto').classList.toggle('on', !!S.settings.autoSpeak);
@@ -1095,8 +1275,7 @@
         '<div class="study-actions"><div class="judge' + (S.settings.swapJudge ? ' swapped' : '') + '">' +
         '<button class="btn no" data-action="sent-judge" data-easy="0"><span>▼ 어려움</span><small>더 자주 나와요</small></button>' +
         '<button class="btn yes" data-action="sent-judge" data-easy="1"><span>▲ 쉬움</span><small>가끔 나와요</small></button></div>' +
-        '<div class="navrow"><button class="btn undo" data-action="sent-undo" id="sentUndo">↶ 되돌리기</button></div>' +
-        '<div class="demote">탭: 영어 보기·듣기 &nbsp;·&nbsp; ▲ 쉬움 &nbsp;·&nbsp; ▼ 어려움</div></div></div>';
+        '<div class="navrow"><button class="btn undo" data-action="sent-undo" id="sentUndo">↶ 되돌리기</button></div></div></div>';
     }
     sentMount('none');
   };
@@ -1115,7 +1294,7 @@
       '<div class="reveal" data-reveal="e" data-max="1" data-step="0"><div class="label">영어</div><div class="content">' +
       '<div class="en"><span>' + esc(w.e) + '</span><button class="spk sm" data-action="sent-speak" aria-label="다시 듣기">' + ICON_SPK + '</button></div>' +
       (sg ? '<div class="sent-w">📺 ' + esc(w.title || '유튜브') + ' · 쉬움/어려움을 누르면 문장 공부에 담겨요</div>' : box ? '<div class="sent-w">📺 ' + esc(w.title || '유튜브') + ' <button class="sent-drop" data-action="sent-drop">빼기</button></div>' : '<div class="sent-w">' + esc(w.w) + ' · ' + esc(w.m) + '</div>') +
-      '</div><div class="cover">영어로 말해 본 뒤 탭</div></div>' +
+      '</div><div class="cover">영어 보기</div></div>' +
       '<div class="stamp yes pos-t">쉬움</div><div class="stamp no pos-b">어려움</div>';
     area.appendChild(card);
     sentBind(card);
@@ -1325,7 +1504,7 @@
     return m < 60 ? m + u('분') : Math.floor(m / 60) + u('시간') + (m % 60 ? ' ' + (m % 60) + u('분') : '');
   }
   function useHTML(today) {   // 통계: 앱 사용 — 오늘·7일 평균 타일, 최근 14일(날짜를 누르면 그날), 기능별 시간·횟수
-    var U = S.usage, all = 0, w7 = 0, max = 1, bars = [];
+    var U = S.usage, all = 0, w7 = 0, max = 60000, bars = [];   // 1분 아래는 막대를 꽉 채우지 않게 (라벨은 분)
     for (var k in U) all += U[k].t || 0;
     for (var i = 13; i >= 0; i--) {
       var d = new Date(today); d.setDate(today.getDate() - i);
@@ -1353,7 +1532,7 @@
       '<div class="tile"><b>' + fmtMin(w7 / 7, true) + '</b><span>최근 7일 하루 평균</span></div>' +
       '</div>' +
       '<div class="card-box"><div class="cb-title">앱 사용 시간 <span class="muted small">누적 ' + fmtMin(all) + '</span></div>' +
-      '<div class="bars">' + barsHtml + '</div><div class="legend"><span>하루 사용 시간(분) · 막대를 누르면 그날 기능별</span></div></div>' +
+      '<div class="bars">' + barsHtml + '</div><div class="legend"><span>하루 사용 시간(분)</span></div></div>' +
       '<div class="card-box" id="useDay"><div class="cb-title">' + (isToday ? '오늘' : (sd.getMonth() + 1) + '월 ' + sd.getDate() + '일') + ' 기능별 <span class="muted small">' + fmtMin(e.t) + '</span></div>' +
       (rows || '<div class="empty">' + (isToday ? '오늘은 아직 기록이 없어요' : '이날은 기록이 없어요') + '</div>') +
       (cnt ? '<div class="use-c">' + cnt + '</div>' : '') + '</div>';
@@ -1479,12 +1658,12 @@
         return '<button class="scen' + (s.id === t.scenario ? ' on' : '') + '" data-action="talk-scenario" data-id="' + s.id + '"><span class="ic">' + s.icon + '</span><span>' + s.name + '</span></button>';
       }).join('') + '</div>' +
       (t.scenario === 'free' ? '<div class="field" style="margin-top:8px"><input id="talk-custom" placeholder="원하는 상황 (예: 학회에서 발표 후 질문 받기)" value="' + esc(talkSetup.custom) + '"></div>' : '') +
-      '<div class="section-title">미션 단어 <span class="muted">— 대화 중에 써 보세요</span></div>' +
+      '<div class="section-title">미션 단어</div>' +
       '<div class="card-box mission-box">' +
       (talkSetup.words.length ? '<div class="mission">' + talkSetup.words.map(function (w) { return '<button class="mchip' + (w.star ? ' starred' : '') + '" data-action="mission-word" data-id="' + esc(w.id) + '">' + (w.star ? '★ ' : '') + esc(w.w) + '</button>'; }).join('') + '</div>' : '<div class="muted small">미션 단어 없이 자유롭게 대화해요</div>') +
       '<div class="row" style="margin-top:10px"><div class="pick" style="flex:1">' + [0, 3, 5, 8].map(function (n) { return '<button class="' + (n === t.missionN ? 'on' : '') + '" data-action="talk-mission-n" data-n="' + n + '">' + (n ? n + '개' : '없음') + '</button>'; }).join('') + '</div><button class="btn" data-action="talk-reroll" style="flex:none">🎲 다시 뽑기</button></div>' +
       '<div class="row" style="margin-top:8px;align-items:center"><span class="small muted" style="flex:none">뽑는 순서</span><div class="pick" style="flex:1">' + [['star', '★ 단어 먼저' + (stars ? ' (' + stars + ')' : '')], ['auto', '오늘 학습 단어']].map(function (o) { return '<button class="' + (o[0] === (t.missionSrc || 'star') ? 'on' : '') + '" data-action="talk-src" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
-      (stars || t.missionSrc !== 'star' ? '' : '<div class="small muted" style="margin-top:6px">학습 카드에서 ★을 누른 단어가 여기 먼저 나와요. 아직 없어서 오늘 학습 단어로 채웠어요.</div>') +
+      (stars || t.missionSrc !== 'star' ? '' : '<div class="small muted" style="margin-top:6px">★ 단어가 아직 없어 오늘 학습 단어로 채웠어요.</div>') +
       '</div>' +
       '<div class="settings-group">' +
       '<div class="switch-row"><div><div class="sw-t">난이도</div></div><div class="pick">' + [['easy', '쉽게'], ['normal', '보통'], ['hard', '어렵게']].map(function (o) { return '<button class="' + (o[0] === t.level ? 'on' : '') + '" data-action="talk-set" data-key="level" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
@@ -1492,13 +1671,13 @@
       (talkSetup.more ?
         '<div class="switch-row"><div><div class="sw-t">교정 설명</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === t.feedbackLang ? 'on' : '') + '" data-action="talk-set" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
         '<div class="switch-row"><div><div class="sw-t">AI 답변 읽어 주기</div><div class="sw-s">답변이 오면 바로 음성으로 재생</div></div><button class="toggle' + (t.speak ? ' on' : '') + '" data-action="talk-toggle" data-key="speak"></button></div>' +
-        '<div class="switch-row"><div><div class="sw-t">AI 답변 한글 번역</div><div class="sw-s">말풍선 아래 흐리게 보여 주고, 누르면 선명해져요</div></div><button class="toggle' + (t.showKo ? ' on' : '') + '" data-action="talk-toggle" data-key="showKo"></button></div>' +
+        '<div class="switch-row"><div><div class="sw-t">AI 답변 한글 번역</div><div class="sw-s">말풍선 아래 흐리게 보여 줘요</div></div><button class="toggle' + (t.showKo ? ' on' : '') + '" data-action="talk-toggle" data-key="showKo"></button></div>' +
         '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (t.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>'
         : '') +
       '</div>' +
       '<button class="btn primary big" data-action="talk-start">🗣 대화 시작</button>' +
       (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
-      (log.length ? '<div class="section-title">최근 연습 <span class="muted">— 누르면 리포트 다시 보기</span></div><div class="settings-group">' + log.map(function (l, i) {
+      (log.length ? '<div class="section-title">최근 연습</div><div class="settings-group">' + log.map(function (l, i) {
         return '<button class="switch-row logrow" data-action="talk-log" data-i="' + ((S.talkLog.length - 1) - i) + '"><div><div class="sw-t">' + esc(scenarioById(l.scenario).icon + ' ' + (l.custom || scenarioById(l.scenario).name)) + '</div><div class="sw-s">' + esc(l.date + (l.time ? ' ' + l.time : '')) + ' · ' + l.turns + '턴 · 미션 ' + l.used + '/' + l.total + (l.score ? ' · ★' + l.score : '') + '</div></div><span class="chev">›</span></button>';
       }).join('') + '</div>' : '') +
       '</div>';
@@ -1670,6 +1849,7 @@
     var inp = $('#chatIn');
     inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); talkSendFromInput(); } });
     if (scroll !== false) { var log = $('#chatLog'); log.scrollTop = log.scrollHeight; }
+    tourMaybe();   // 첫 답이 오면 회화 안내 (need)
   }
   function talkSendFromInput() {
     var inp = $('#chatIn'); if (!inp) return;
@@ -1891,7 +2071,7 @@
           '<div class="yi-b"><div class="yi-t">' + esc(r.title || 'YouTube ' + r.vid) + '</div><div class="yi-s">' + esc(sub + ' · ' + r.date) + '<span id="yd-' + esc(r.vid) + '">' + esc(ytDlShort(r)) + '</span></div></div></button>' +
           '<button class="yi-del" data-action="yt-del" data-id="' + esc(r.id) + '" aria-label="삭제">' + ICON_X + '</button></div>';
       }).join('') :
-        '<div class="empty">유튜브 영상 링크를 넣으면 영어 문장을 정리해 드려요.<br>문장을 누르면 그 부분이 재생돼<br>따라 말하기(쉐도잉) 연습을 할 수 있어요.</div><button class="btn primary big" data-action="yt-add">+ 영상 추가</button>') +
+        '<div class="empty">아직 추가한 영상이 없어요</div><button class="btn primary big" data-action="yt-add">+ 영상 추가</button>') +
       (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
       // YouTube API 서비스 이용 조건: 약관·개인정보처리방침 안내
       '<div class="small muted yt-legal">영상 재생은 YouTube API 서비스를 쓰며 <b data-action="open-url" data-url="https://www.youtube.com/t/terms">YouTube 서비스 약관</b>과 <b data-action="open-url" data-url="https://policies.google.com/privacy">Google 개인정보처리방침</b>이 적용돼요. 문장 정리는 영상 링크를 내 Gemini 키로 Google에 보내서 해요.' + (isAndroid ? ' 받은 영상은 이 폰의 앱 안에만 저장되고, 긴 영상은 정리할 때 그 소리를 10분씩 내 Gemini 키로 Google에 보내요.' : '') + '</div>' +
@@ -2193,7 +2373,7 @@
   RENDER.ytv = function (p) {
     var r = ytRec(p.id); if (!r) { go('yt', {}, true); return; }
     ytStopPlayer();
-    if (!YTV || YTV.id !== r.id) { YTV = { id: r.id, act: -1, cur: -1, stopAt: null, card: null, ko: {} }; S.settings.ytHintN = (S.settings.ytHintN || 0) + 1; save(); }   // 사용법 문단은 처음 3번만 (v2.22)
+    if (!YTV || YTV.id !== r.id) YTV = { id: r.id, act: -1, cur: -1, stopAt: null, card: null, ko: {} };
     YTV.undo = null; YTV.split = null; YTV.wpick = null;   // 되돌리기·쪼개기·단어 고르기는 이 화면에 있는 동안만
     YTV.ready = false; YTV.perr = null; YTV.pending = null;
     $('#view-ytv').innerHTML =
@@ -2226,9 +2406,10 @@
         : j.moreErr ? '<div class="yt-old">⚠ ' + esc(j.moreErr) + ' · <b data-action="yt-more">다시 이어서</b></div>' : ytShort(r) ? '<div class="yt-old">⏱ ' + esc(ytMMSS(ytLastEnd(r))) + '까지만 정리됐어요 (영상 ' + fmtSec(r.dur) + ') · <b data-action="yt-more">이어서 정리하기</b></div>' : '') +
         (r.tv === 3 ? '' : '<div class="yt-old">문장 시간을 더 정확하게 맞추도록 바꿨어요 · <b data-action="yt-redo">다시 정리하기</b>를 누르면 새로 맞춰요</div>') +
         (YTV.undo && YTV.undo.id === r.id ? '<div class="yt-undo">' + (YTV.undo.kind === 'merge' ? '⤓ 문장을 합쳤어요' : '✂ 문장을 쪼갰어요') + ' · <b data-action="yt-undo">되돌리기</b></div>' : '') +
-        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장' + ((S.settings.ytHintN || 0) <= 3 ? ' · 단어를 누르면 거기부터 재생 · 두 번 톡 = 한글 보기 (단어를 두 번 톡 = 뜻) · 꾹 누르면 문장 공부·복사·합치기·쪼개기' : '') + '</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
+        '<div class="yt-hint small muted">' + esc(r.sents.length) + '문장</div>' + r.sents.map(function (x, i) { return ytRowHTML(r, i); }).join('') +
         '<div class="yt-redo small muted">문장이 이상하게 나뉘었거나 끊기는 곳이 어긋나면 <b data-action="yt-redo">다시 정리하기</b>' + (ytTailDone(r) || j.more ? '' : '<br>뒷부분이 빠졌으면 <b data-action="yt-more">이어서 정리하기</b>') + '</div>');   // v2.20: 영상 길이를 몰라도 늘 있게 (v2.21: 뒤엔 말이 없다고 확인되면 뺌)
     ytSideRender();
+    tourMaybe();   // 정리가 끝나 문장이 생기면 영상 화면 안내 (need)
   }
   function ytRowHTML(r, i) {
     var x = r.sents[i], toks = ytTokens(x.e), gm = ytGlossMap(x, toks), c = YTV.card && YTV.card.i === i ? YTV.card : null;
@@ -2598,7 +2779,7 @@
     else if (YTDL.q.indexOf(v) >= 0) h = '<span>⬇ 받기 대기 중</span><button class="yd-b" data-action="yt-dl-cancel">취소</button>';
     else if (YTDL.nosdk) h = '<span class="yd-err">' + YT_DL_ERR.sdk + '</span>';
     else if (e) h = '<span class="yd-err">' + esc(YT_DL_ERR[e.a] || '영상을 받지 못했어요') + (e.b && e.a !== 'space' ? ' <small>(' + esc(e.b.slice(0, 60)) + ')</small>' : '') + '</span><button class="yd-b" data-action="yt-dl">다시 받기</button>';
-    else h = '<button class="yd-b" data-action="yt-dl">⬇ 오프라인 저장</button><span>인터넷 없이 보고, 문장 경계를 소리로 맞춰요</span>';
+    else h = '<button class="yd-b" data-action="yt-dl">⬇ 오프라인 저장</button>';
     return '<div class="yt-dl" id="ytDl">' + h + '</div>';
   }
   function ytDlShow(vid) {
@@ -2833,6 +3014,7 @@
       '</div>';
     renderListBody();
     $('#q').addEventListener('input', function (e) { listState.q = e.target.value; renderListBody(); });
+    tourMaybe();   // 탭·★·정렬로 목록이 새로 차면 안내 (need)
   };
   // 목록 항목: 단어 w 그대로, 담은 유튜브 문장은 { sent: x } (v2.25 — 졸업 탭에 같이)
   function liWrong(it) { return it.sent ? it.sent.sh || 0 : it.wrong || 0; }   // 단어: 카드에서 "아직" · 문장: 문장 공부에서 "어려움"
@@ -2875,7 +3057,7 @@
     var arr = listItems();
     var body = $('#listBody');
     if (!arr.length) {
-      body.innerHTML = '<div class="empty">' + (listState.q ? '검색 결과가 없어요' : listState.star ? '★ 표시한 단어가 없어요.<br>학습 카드 오른쪽 위 ★을 눌러 표시해요.' : (String(listState.stage) === '0' ? '대기 중인 단어가 없어요.<br>단어를 추가하거나 기본 세트를 불러오세요.' : '여기에는 아직 단어가 없어요')) + '</div>';
+      body.innerHTML = '<div class="empty">' + (listState.q ? '검색 결과가 없어요' : listState.star ? '★ 표시한 단어가 없어요' : (String(listState.stage) === '0' ? '대기 중인 단어가 없어요.<br>단어를 추가하거나 기본 세트를 불러오세요.' : '여기에는 아직 단어가 없어요')) + '</div>';
       return;
     }
     var show = arr.slice(0, 300);
@@ -2920,7 +3102,7 @@
       '<div class="field" style="margin-top:10px"><label>예문 (영어)</label><textarea id="ex-e" autocapitalize="sentences">' + esc(w.e) + '</textarea></div>' +
       '<div class="field"><label>예문 해석</label><textarea id="ex-k">' + esc(w.k) + '</textarea></div>' +
       '<div class="ai-row"><input id="ex-hint" placeholder="AI에게 상황 요청 (선택) 예: 회의에서, 더 짧게" autocomplete="off"><button class="btn ai" data-action="ai-example" data-id="' + esc(w.id) + '">AI 새 예문</button></div>' +
-      '<div class="small muted" id="ai-note">AI가 쓴 예문은 저장 전에 직접 고칠 수 있어요</div>' +
+      '<div class="small muted" id="ai-note"></div>' +
       '<div class="sh-actions"><button class="btn" data-action="close-sheet">취소</button><button class="btn primary" data-action="ex-save" data-id="' + esc(w.id) + '">저장</button></div>'
     );
   }
@@ -2990,10 +3172,10 @@
       ta.addEventListener('input', function (e) { addState.text = e.target.value; updateImportPreview(); });
       updateImportPreview();
     }
+    tourMaybe();   // 한 단어씩 → 붙여넣기로 바꿔 #imp 가 생기면 안내 (need)
   };
   function bulkFormHTML() {
-    return '<div class="tip"><b>한 줄에 한 단어</b>만 적어도 돼요 — 뜻·예문·해석은 AI가 채워요.<br><span class="small">직접 넣으려면 <b>|</b> 로 구분: 단어 | 뜻 | 예문 | 해석 | 품사</span></div>' +
-      '<div class="field"><textarea id="imp" class="tall" placeholder="hectic\nrun late | 늦어지다\nfigure out | 알아내다 | I can\'t figure it out. | 도무지 모르겠어.\n\n(메모·사전·기사에서 복사한 목록을 그대로 붙여넣어도 돼요)">' + esc(addState.text) + '</textarea></div>' +
+    return '<div class="field"><textarea id="imp" class="tall" placeholder="hectic\nrun late | 늦어지다\nfigure out | 알아내다 | I can\'t figure it out. | 도무지 모르겠어.">' + esc(addState.text) + '</textarea></div>' +
       '<div class="imp-prev" id="impPrev"></div>' +
       '<div class="settings-group">' +
       '<div class="switch-row"><div><div class="sw-t">가져올 위치</div><div class="sw-s">1단계면 오늘 학습에 바로 포함돼요</div></div><div class="pick" id="imp-target"><button class="' + (addState.target === 1 ? 'on' : '') + '" data-action="imp-target" data-value="1">1단계</button><button class="' + (addState.target === 0 ? 'on' : '') + '" data-action="imp-target" data-value="0">대기</button></div></div>' +
@@ -3163,7 +3345,7 @@
       '<div class="field" style="padding-top:12px"><label>Gemini API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="AQ.…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" style="flex:none">보기</button></div></div>' +
       '<div class="field"><label>모델</label><div class="row"><input id="ai-model" value="' + esc(AI.model) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-models" style="flex:none">목록</button></div></div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://aistudio.google.com/apikey">키 발급 페이지 (무료)</button></div>' +
-      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">학습 카드의 <b>예문을 길게 누르면</b> 수정·AI 생성 창이 열려요. 키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. AI 버튼을 누를 때만 단어·뜻·예문이 Google Gemini로 전송돼요.</div>' +
+      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. AI 버튼을 누를 때만 단어·뜻·예문이 Google Gemini로 전송돼요.</div>' +
       '<div class="small muted ai-last" id="ai-last">' + aiLastLine() + '</div>' +
       '</div>' +
       '<div class="section-title">회화 연습</div><div class="settings-group">' +
@@ -3174,7 +3356,7 @@
       '</div>' +
       '<div class="section-title">화면</div><div class="settings-group">' +
       pick('theme', '밝기', '', [['light', '라이트'], ['dark', '다크']], st.theme) +
-      '<div class="switch-row" style="flex-direction:column;align-items:stretch;gap:10px"><div><div class="sw-t">색 테마 <span class="muted" id="themeName">' + esc(themeById(st.colorTheme).name) + '</span></div><div class="sw-s">탭해서 고르거나, 아래 스위치를 켜면 새 단어를 받을 때마다 랜덤으로 바뀌어요</div></div>' +
+      '<div class="switch-row" style="flex-direction:column;align-items:stretch;gap:10px"><div><div class="sw-t">색 테마 <span class="muted" id="themeName">' + esc(themeById(st.colorTheme).name) + '</span></div></div>' +
       '<div class="swatches">' + THEMES.map(function (t) {
         var p = st.theme === 'dark' ? t.d : t.l;
         return '<button class="sw' + (t.id === st.colorTheme ? ' on' : '') + '" data-action="color-theme" data-id="' + t.id + '" aria-label="' + esc(t.name) + '" style="--sw-bg:' + p.bg + ';--sw-p:' + p.primary + ';--sw-s:' + p.surface2 + '"><span class="sw-chip"><i></i></span><small>' + esc(t.name) + '</small></button>';
@@ -3192,12 +3374,7 @@
       '<div class="btn-row"><button class="btn" data-action="reseed">기본 단어 세트 불러오기 (' + builtinCount + '/' + (window.BUILTIN_WORDS || []).length + ')</button></div>' +
       '<div class="btn-row"><button class="btn danger" data-action="purge-grad">졸업 단어 삭제 (' + c[4] + ')</button><button class="btn danger" data-action="reset-all">전체 초기화</button></div>' +
       '</div>' +
-      '<div class="section-title">사용법</div><div class="card-box howto">' +
-      '<b>1단계 새 단어장</b> — 매일 새 단어 ' + st.dailyGoal + '개와 예문을 익혀요. 단어와 예문이 자연스럽게 나오면 오른쪽으로 넘겨 2단계로.<br>' +
-      '<b>2단계 외운 단어장</b> — 외운 단어를 주기적으로 복습해요. 확실하면 3단계로, 흔들리면 1단계로 되돌려요.<br>' +
-      '<b>3단계 완전 암기장</b> — 최종 점검을 통과한 단어는 졸업(보관)하고, 언제든 삭제할 수 있어요.<br>' +
-      '<span class="muted small">팁: 학습 카드는 단어를 톡 = 읽기, 뜻 칸을 톡 = 뜻 보이기/가리기, 예문은 한 번 톡 = 읽기 · 두 번 톡 = 해석 보이기/가리기. 가려진 영어 예문은 한 번 톡으로 보여요. 뜻만 외우지 말고 예문을 소리 내어 말해 보세요. 한→영 모드가 출력 훈련에 좋아요.</span>' +
-      '</div>' +
+      '<div class="section-title">사용법</div><div class="settings-group"><div class="btn-row"><button class="btn" data-action="tour-reset">기능 안내 다시 보기</button></div></div>' +
       '<div class="center muted small">3단계 단어장 v' + APP_VERSION + ' · 단어 ' + S.words.length + '개 · TTS ' + (bridge.ttsReady() ? '사용 가능' : '준비 중/사용 불가') + '</div>' +
       '</div>';
     if (keepScroll != null) $('#view-settings').scrollTop = keepScroll;
@@ -3317,7 +3494,7 @@
         '<button class="btn danger block" data-action="audio-ctl" data-cmd="stop">정지</button>' +
         (AUD.koOk === false ? '<div class="small muted center" style="margin-top:8px">기기에 한국어 음성이 없어 뜻은 건너뛰어요</div>' : '') +
         '</div>' +
-        '<div class="tip small">화면을 꺼도, 다른 앱(내비게이션)을 켜도 계속 재생돼요. 알림에서 이전·일시정지·다음·정지를 누를 수 있어요.<br><b>운전 중에는 화면을 보지 말고 소리로만 복습하세요.</b></div>';
+        '<div class="tip small"><b>운전 중에는 화면을 보지 말고 소리로만 복습하세요.</b></div>';
     } else {
       var counts = {};
       AUDIO_SETS.forEach(function (t) { counts[t[0]] = audioWords(t[0], 'seq').length; });
@@ -3331,11 +3508,11 @@
         '<div class="switch-row"><div><div class="sw-t">순서</div></div><div class="pick"><button class="' + (a.order === 'seq' ? 'on' : '') + '" data-action="audio-order" data-order="seq">순서대로</button><button class="' + (a.order === 'rand' ? 'on' : '') + '" data-action="audio-order" data-order="rand">랜덤</button></div></div>' +
         '<div class="switch-row"><div><div class="sw-t">읽는 방식</div><div class="sw-s">' + audioSummary() + '</div></div><button class="btn" data-action="audio-settings">변경</button></div>' +
         '</div>' +
-        '<button class="btn primary big" data-action="audio-start"' + (counts[a.set] ? '' : ' disabled') + '>▶ 재생 시작 · ' + counts[a.set] + '개</button>' +
-        '<div class="tip small">단어를 읽어 주고 잠깐 기다린 뒤, 영어 예문을 천천히 몇 번 읽고 우리말 해석을 한 번 읽어 줘요. 화면을 꺼도 계속 재생되고, 알림에서 조작할 수 있어요.</div>';
+        '<button class="btn primary big" data-action="audio-start"' + (counts[a.set] ? '' : ' disabled') + '>▶ 재생 시작 · ' + counts[a.set] + '개</button>';
     }
     html += '</div>';
     v.innerHTML = html;
+    tourMaybe();   // 재생이 끝나 .seg 가 생기면 안내 (need)
   }
   var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
   var ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
@@ -3370,7 +3547,6 @@
     'list': function (el) { stack = [{ view: 'home', params: {} }]; listState.star = false; go('list', { stage: el.getAttribute('data-stage') === 'all' ? 'all' : Number(el.getAttribute('data-stage')) }); },
     'list-example': function () { S.settings.listExample = !S.settings.listExample; save(); RENDER.list({}); },
     'list-tab': function (el) { var s = el.getAttribute('data-stage'); listState.stage = s === 'all' ? 'all' : Number(s); RENDER.list({}); },
-    'tip-close': function () { S.settings.tipDismissed = true; save(); render(); },
     'open': function (el) { openWord(el.getAttribute('data-id')); },
     'star': function (el) {
       var w = byId(el.getAttribute('data-id')); if (!w) return;
@@ -3747,10 +3923,13 @@
     'reset-all': function () {
       confirm2('모든 단어와 학습 기록을 삭제하고 처음 상태로 되돌릴까요?\n(기본 단어 세트는 다시 채워져요)', '초기화', true).then(function (ok) {
         if (!ok) return;
-        S = defaultState(); seedBuiltin(S); ytPruneMedia(); saveNow(); applyTheme(); goTab('home'); toast('초기화했어요');
+        var tr = S.settings.tour; S = defaultState(); S.settings.tour = tr || {}; seedBuiltin(S); ytPruneMedia(); saveNow(); applyTheme(); goTab('home'); toast('초기화했어요');
       });
     },
-    'modal-pick': function (el) { closeModal(el.getAttribute('data-value')); }
+    'modal-pick': function (el) { closeModal(el.getAttribute('data-value')); },
+    'tour-next': function () { tourStep(1); },
+    'tour-skip': function () { tourEnd(true); },
+    'tour-reset': function () { S.settings.tour = {}; save(); goTab('home'); }   // 홈 안내가 바로 뜬다
   };
 
   document.addEventListener('click', function (e) {
@@ -3786,7 +3965,7 @@
   })();
 
   document.addEventListener('keydown', function (e) {
-    if (!current() || current().view !== 'study') return;
+    if (TOUR || !current() || current().view !== 'study') return;
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     var card = $('#cardArea .card'); if (!card) return;
     if (e.key === 'ArrowUp') { e.preventDefault(); flyOut(card, 'up', function () { judge(true); }); }
@@ -3805,7 +3984,7 @@
   function syncLinked() { var i = bridge.syncInfo(); return i && i.uri ? i : null; }
   function syncHTML() {
     var i = syncLinked(), at = SYNC.at || +(bridge.loadRaw(SYNC_AT_KEY) || 0);
-    if (!i) return '<div class="tip-s small muted">폰을 바꿔도 이어지게 — 학습 기록을 Google 드라이브의 파일 하나에 자동으로 저장해요 (로그인 없이 폰의 드라이브 앱으로). Gemini 키는 올리지 않아요.</div>' +
+    if (!i) return '<div class="tip-s small muted">Gemini 키는 드라이브에 올리지 않아요.</div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn primary" data-action="sync-new">드라이브에 연동하기</button><button class="btn" data-action="sync-open">드라이브에서 불러오기</button></div>';
     return '<div class="switch-row"><div><div class="sw-t">연동됨 · ' + esc(i.name || '드라이브 파일') + '</div><div class="sw-s">' + (SYNC.err ? '⚠ ' + esc(SYNC.err) : at ? '마지막 저장 ' + agoText(at) : '아직 저장 전') + ' · 앱이 내려갈 때와 5분마다 자동 저장</div></div></div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="sync-now">지금 저장</button><button class="btn danger" data-action="sync-unlink">연동 끊기</button></div>';

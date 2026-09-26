@@ -201,7 +201,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   eq('줄이 비었으니 바로 받기', (await dl('dl')).split(',').pop(), 'BROKENVID03');
   eq('취소 누르면 Java 가 멈출 때까지 "취소하는 중" (버튼 없음)', await p.evaluate(() => { document.querySelector('#ytDl [data-action="yt-dl-cancel"]').click(); return document.querySelector('#ytDl').textContent + ' ' + document.querySelectorAll('#ytDl button').length; }), '⬇ 취소하는 중… 0');
   await p.waitForTimeout(100);
-  eq('취소 → Java 취소 호출 → "오프라인 저장" 버튼으로', (await dl('cancel')) + ' | ' + await dlText(), 'BROKENVID03 | ⬇ 오프라인 저장인터넷 없이 보고, 문장 경계를 소리로 맞춰요');
+  eq('취소 → Java 취소 호출 → "오프라인 저장" 버튼으로', (await dl('cancel')) + ' | ' + await dlText(), 'BROKENVID03 | ⬇ 오프라인 저장');
   await p.click('#ytDl [data-action="yt-dl"]'); await p.waitForTimeout(60);
   eq('오프라인 저장 → 다시 받기 호출', (await dl('dl')).split(',').length, 4);
   await ytdl('BROKENVID03', 'fail', 'network', 'SocketTimeoutException');

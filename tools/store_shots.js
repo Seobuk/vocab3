@@ -34,7 +34,7 @@ fs.mkdirSync(OUT, { recursive: true });
   for (let i = 0; i < 20; i++) { const c = await page.$('#cardArea .card'); if (!c) break; await page.keyboard.press(i % 4 === 0 ? 'ArrowLeft' : 'ArrowRight'); await page.waitForTimeout(320); }
   await shot('06', 'summary');
   await page.click('[data-action="home"]'); await page.waitForTimeout(200);
-  await page.click('[data-action="tip-close"]'); await shot('07', 'home_progress');
+  await shot('07', 'home_progress');
   await page.click('#tabbar [data-tab="list"]'); await shot('08', 'list');
   await page.click('#tabbar [data-tab="settings"]');
   await page.click('[data-action="setting-pick"][data-key="theme"][data-value="dark"]');

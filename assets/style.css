@@ -116,16 +116,11 @@ h1, h2, h3, p { margin: 0; }
 .review-btn { background: var(--surface); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; align-items: center; gap: 12px; text-align: left; }
 .review-btn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
 .review-btn .rb-t { font-weight: 700; font-size: 15px; }
-.review-btn .rb-s { font-size: 12.5px; color: var(--muted); }
 .review-btn .rb-n { margin-left: auto; font-weight: 700; font-size: 18px; color: var(--c); }
 .review-btn .chev { color: var(--muted); }
 
 .tip { background: var(--primary-soft); border-radius: 16px; padding: 14px 16px; font-size: 13.5px; line-height: 1.55; position: relative; }
 .tip b { color: var(--primary); }
-.tip .close { position: absolute; right: 10px; top: 8px; color: var(--muted); font-size: 18px; padding: 4px 8px; }
-.flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-weight: 600; font-size: 12.5px; }
-.flow span { background: var(--surface); padding: 4px 9px; border-radius: 999px; }
-.flow i { color: var(--muted); font-style: normal; }
 
 /* ---------- Study ---------- */
 #view-study { background: var(--bg); }
@@ -233,7 +228,7 @@ h1, h2, h3, p { margin: 0; }
 .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 2px 8px rgba(0, 0, 0, .06); }
 .seg button small { display: block; font-size: 10.5px; font-weight: 600; opacity: .8; }
 .search { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 14px; padding: 10px 14px; box-shadow: var(--shadow); }
-.search input { flex: 1; border: 0; background: transparent; font: inherit; color: var(--text); outline: none; }
+.search input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: var(--text); outline: none; }
 .search input::placeholder { color: var(--muted); }
 .list { display: flex; flex-direction: column; gap: 8px; }
 .item { background: var(--surface); border-radius: 16px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; text-align: left; box-shadow: var(--shadow); width: 100%; }
@@ -310,11 +305,9 @@ h1, h2, h3, p { margin: 0; }
 .settings-group .btn-row { display: flex; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .settings-group .btn-row:last-child { border-bottom: 0; }
 .settings-group .btn-row .btn { flex: 1; padding: 10px 12px; font-size: 14px; min-width: 40%; }
-.howto { font-size: 14px; line-height: 1.7; }
-.howto b { color: var(--primary); }
 input[type=range] { width: 100%; accent-color: var(--primary); }
 
-#toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%) translateY(-16px); width: max-content; max-width: calc(100% - 32px); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; line-height: 1.4; text-align: center; opacity: 0; transition: opacity .25s, transform .25s; z-index: 30; pointer-events: none; max-width: 90%; }
+#toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%) translateY(-16px); width: max-content; max-width: calc(100% - 32px); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; line-height: 1.4; text-align: center; opacity: 0; transition: opacity .25s, transform .25s; z-index: 24; pointer-events: none; max-width: 90%; }   /* 24: 확인 창(22) 위 · 기능 안내(25) 아래 — 안내 중엔 같이 어두워진다 */
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* ---------- Audio review (듣기 복습) ---------- */
@@ -684,7 +677,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 /* ===== v2.22 디자인 정리 (Taste · Anthropic frontend-design · UI/UX Pro Max · Vercel 가이드 리뷰) ===== */
 /* 한국어: 단어 중간에서 줄이 안 끊기게 · 여러 줄 안내는 마지막 줄에 한 단어만 남지 않게 */
 body { word-break: keep-all; overflow-wrap: break-word; }
-.yt-hint, .yt-redo, .yt-old, .empty, .tip, .switch-row .sw-s, .review-btn .rb-s, .modal p, .plain .ko-big, .reveal .ko { text-wrap: pretty; }
+.yt-hint, .yt-redo, .yt-old, .empty, .tip, .switch-row .sw-s, .modal p, .plain .ko-big, .reveal .ko { text-wrap: pretty; }
 /* 그림자: 기본은 1px 선, 떠 있는 것(학습 카드·단어 카드·FAB)만 진짜 그림자 · 단어장은 한 장의 표면 */
 .card, .ycard, .yt-fab .guide-pill { box-shadow: var(--shadow-float); }
 .card-ghost { display: none; }
@@ -778,3 +771,17 @@ body { word-break: keep-all; overflow-wrap: break-word; }
 /* ===== v2.26 학습 카드: 넓은 화면(폴드 안쪽·가로)에선 가로로 넓게 · 내용이 넘치면 칸이 눌려 글자가 삐져나오지 않고 카드가 스크롤 (사용자 요청) ===== */
 .card > * { flex-shrink: 0; }
 @media (min-width: 600px) { .card { max-width: min(820px, 100%); padding: 24px 28px 22px; } }
+
+/* v2.32 기능 안내: 화면마다 처음 한 번 — 가리킨 곳만 밝게 (구멍 = 큰 그림자), 말풍선은 아래/위 */
+#tour { position: absolute; inset: 0; z-index: 25; }
+.tour-back { position: absolute; inset: 0; }
+.tour-hole { position: absolute; border-radius: 16px; box-shadow: 0 0 0 2px var(--primary), 0 0 0 200vmax rgba(8, 10, 18, .62); pointer-events: none; transition: left .22s ease, top .22s ease, width .22s ease, height .22s ease; }
+.tour-tip { position: absolute; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 20px; padding: 16px 18px 12px; box-shadow: var(--shadow-float); max-height: calc(100% - 16px); overflow-y: auto; transition: top .22s ease, left .22s ease; }
+.tour-n { font-size: 12px; font-weight: 600; color: var(--primary-ink); margin-bottom: 4px; }
+.tour-t { font-size: 17px; font-weight: 700; line-height: 1.35; }
+.tour-b { margin: 6px 0 12px; font-size: 14.5px; line-height: 1.55; color: var(--text); text-wrap: pretty; }
+[data-theme="dark"] .tour-hole { box-shadow: 0 0 0 2px var(--primary), 0 0 0 200vmax rgba(0, 0, 0, .74); }
+.tour-act { display: flex; justify-content: space-between; gap: 8px; }
+.tour-act .btn { min-height: 44px; padding: 0 16px; }
+.tour-tip:focus { outline: none; }
+.tour-act .btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }

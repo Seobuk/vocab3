@@ -74,7 +74,7 @@ const eq = (name, got, want) => { const ok = String(got) === String(want); if (!
   eq('D 지금 저장 → 오류 지워짐', /⚠/.test(await group()), false);
 
   await p.click('[data-action="sync-unlink"]'); await run(150); await p.click('#modal .btn.danger'); await run(200);
-  eq('끊기 → 연동 전 화면', /폰을 바꿔도 이어지게/.test(await group()), true);
+  eq('끊기 → 연동 전 화면', /드라이브에 연동하기/.test(await group()), true);
 
   // --- 새 폰: 드라이브 파일 (진도·유튜브·담은 문장 있음) ---
   const drive = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(window.__vocab.state())); s.words.forEach((w, i) => { if (i < 120) w.stage = 4; }); s.settings.dailyGoal = 44; s.yt = [{ id: 'y1', vid: 'dQw4w9WgXcQ', title: 't', rows: [] }]; s.sentBox = [{ id: 's1', e: 'Hi.', k: '안녕' }]; s.usage = { '2026-09-20': { t: 1, f: {}, c: {} } }; return JSON.stringify(s); });
