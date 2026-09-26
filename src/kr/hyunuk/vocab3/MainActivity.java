@@ -64,7 +64,9 @@ public class MainActivity extends Activity {
     private static final int REQ_SYNC_NEW = 103;    // v2.28 Google 드라이브 연동: 새 파일 만들기
     private static final int REQ_SYNC_OPEN = 104;   //                           있는 파일 불러오기
     private static final String SYNC_KEY = "sync.uri";
-    private final java.util.concurrent.ExecutorService syncExec = java.util.concurrent.Executors.newSingleThreadExecutor();   // 드라이브 파일 쓰기는 한 번에 하나씩
+    private static final String SYNC_PEND = "sync.pending";   // 불러오기: 확인 창에서 덮어쓰기를 고르기(syncCommit) 전까지는 연동이 아니다
+    private static final String SYNC_NAME = "sync.name";
+    private static final java.util.concurrent.ExecutorService syncExec = java.util.concurrent.Executors.newSingleThreadExecutor();   // 드라이브 파일 쓰기는 한 번에 하나씩
 
     private WebView web;
     private FrameLayout root;
@@ -93,7 +95,9 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("vocab3", MODE_PRIVATE);
-        deleteSharedPreferences("vocab3.bak");   // v2.23 이 shared_prefs 에 두던 한 벌 — 이제 no_backup 파일 (v2.24)
+        deleteSharedPreferences("vocab3.bak");
+        String sp = prefs.getString(SYNC_PEND, null);   // v2.29: 불러오기 확인 창에서 고르기 전에 앱이 죽음 → 연동 안 한 것으로
+        if (sp != null) { syncRelease(sp); prefs.edit().remove(SYNC_PEND).apply(); }   // v2.23 이 shared_prefs 에 두던 한 벌 — 이제 no_backup 파일 (v2.24)
 
         int bg = Color.parseColor("#F6F7FB");
         try { bg = Color.parseColor(prefs.getString("sysbar", "#F6F7FB")); } catch (Exception ignored) { }
@@ -568,27 +572,32 @@ public class MainActivity extends Activity {
         return "";
     }
 
-    private void syncPicked(int req, Uri uri, int flags) {
+    private void syncPicked(final int req, final Uri uri, int flags) {
+        if ((flags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) { syncEvent("error", "이 파일에는 쓸 수 없어요", ""); return; }   // take 전에 — 뒤에서 돌아가면 읽기 권한만 남는다
         int want = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
         try { getContentResolver().takePersistableUriPermission(uri, want & flags); }   // 앱을 다시 켜도 이 파일에 쓸 수 있게
         catch (Throwable e) { syncEvent("error", "쓰기 권한을 받지 못했어요", ""); return; }
-        if ((flags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) { syncEvent("error", "이 파일에는 쓸 수 없어요", ""); return; }
-        prefs.edit().putString(SYNC_KEY, uri.toString()).apply();
-        final String name = syncName(uri);
-        if (req == REQ_SYNC_NEW) { syncEvent("linked", name, ""); return; }
-        final Uri u = uri;
+        final String s = uri.toString();
+        prefs.edit().putString(SYNC_PEND, s).apply();   // v2.29: 아직 연동 아님 — 확인 창이 떠 있는 동안 이 폰 기록이 드라이브를 덮지 않게
         syncExec.execute(new Runnable() {
             @Override
             public void run() {
-                try {
-                    InputStream is = getContentResolver().openInputStream(u);
-                    String text = readAll(is);
-                    syncEvent("opened", text, name);
-                } catch (Throwable e) {
-                    syncEvent("error", "파일을 읽지 못했어요", "");
+                String name = syncName(uri);   // 드라이브 provider 질의는 UI 스레드 밖에서, 한 번만
+                prefs.edit().putString(SYNC_NAME, name).apply();
+                String text = "";
+                try { text = readAll(getContentResolver().openInputStream(uri)); }
+                catch (Throwable e) {
+                    if (req == REQ_SYNC_OPEN) { syncRelease(s); prefs.edit().remove(SYNC_PEND).apply(); syncEvent("error", "파일을 읽지 못했어요", ""); return; }
                 }
+                // "연동하기"로 새로 만든 빈 파일만 바로 연동. 이미 내용이 있는 파일(파일 고르는 화면에서 있는 파일 → 덮어쓰기 확인)은 불러오기처럼 먼저 묻는다
+                if (req == REQ_SYNC_NEW && text.trim().length() == 0) { prefs.edit().putString(SYNC_KEY, s).remove(SYNC_PEND).apply(); syncEvent("linked", name, ""); }
+                else syncEvent("opened", text, name);
             }
         });
+    }
+
+    private void syncRelease(String s) {
+        try { getContentResolver().releasePersistableUriPermission(Uri.parse(s), Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Throwable ignored) { }
     }
 
     private void aiDone(String id, int status, String text) {
@@ -1113,7 +1122,9 @@ public class MainActivity extends Activity {
             boolean held = false;   // 새 폰에 자동 백업으로 따라온 주소는 권한이 없다 — 그땐 연동 안 한 것으로
             for (android.content.UriPermission up : getContentResolver().getPersistedUriPermissions()) if (up.getUri().toString().equals(s) && up.isWritePermission()) held = true;
             if (!held) { prefs.edit().remove(SYNC_KEY).apply(); return "{}"; }
-            try { return new org.json.JSONObject().put("uri", s).put("name", syncName(Uri.parse(s))).toString(); } catch (Exception e) { return "{}"; }
+            String n = prefs.getString(SYNC_NAME, null);
+            if (n == null) { n = syncName(Uri.parse(s)); prefs.edit().putString(SYNC_NAME, n).apply(); }   // v2.28 에서 연동한 사람: 한 번만 묻고 저장
+            try { return new org.json.JSONObject().put("uri", s).put("name", n).toString(); } catch (Exception e) { return "{}"; }
         }
 
         /** 드라이브에 새 연동 파일 만들기 (파일 고르는 화면에서 Google 드라이브를 고른다). */
@@ -1171,15 +1182,20 @@ public class MainActivity extends Activity {
             });
         }
 
-        /** 연동 끊기 (드라이브의 파일은 그대로 둔다). */
+        /** v2.29 불러오기 확인 창에서 덮어쓰기를 고름 → 이제부터 그 파일에 저장. */
+        @JavascriptInterface
+        public void syncCommit(String t) {
+            if (!ok(t)) return;
+            String p = prefs.getString(SYNC_PEND, null);
+            if (p != null) prefs.edit().putString(SYNC_KEY, p).remove(SYNC_PEND).apply();
+        }
+
+        /** 연동 끊기 · 불러오기 취소 (드라이브의 파일은 그대로 둔다). */
         @JavascriptInterface
         public void syncUnlink(String t) {
             if (!ok(t)) return;
-            String s = prefs.getString(SYNC_KEY, null);
-            if (s != null) {
-                try { getContentResolver().releasePersistableUriPermission(Uri.parse(s), Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Throwable ignored) { }
-                prefs.edit().remove(SYNC_KEY).apply();
-            }
+            for (String k : new String[] { SYNC_KEY, SYNC_PEND }) { String s = prefs.getString(k, null); if (s != null) syncRelease(s); }
+            prefs.edit().remove(SYNC_KEY).remove(SYNC_PEND).apply();
         }
 
         /** v2.27: 설치 출처(Play 면 자체 업데이트를 끈다) · 지금 버전 코드. */

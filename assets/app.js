@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.28';
+  var APP_VERSION = '2.29';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -191,6 +191,7 @@
     syncOpen: function () { try { if (isAndroid) AND.syncOpen(BT); } catch (e) { } },
     syncWrite: function (json) { try { if (isAndroid) AND.syncWrite(BT, json); } catch (e) { } },
     syncUnlink: function () { try { if (isAndroid) AND.syncUnlink(BT); } catch (e) { } },
+    syncCommit: function () { try { if (isAndroid) AND.syncCommit(BT); } catch (e) { } },
     appInfo: function () { try { return isAndroid ? JSON.parse(AND.appInfo(BT) || '{}') : {}; } catch (e) { return {}; } },   // v2.27 설치 출처
     updateInstall: function (url) { try { if (isAndroid) { AND.updateInstall(BT, url); return true; } } catch (e) { } return false; },   // 정리하는 동안 화면 켜 둠 (v2.23)
     sttStop: function () { try { if (isAndroid) AND.sttStop(BT); else if (webStt) webStt.stop(); } catch (e) { } },
@@ -3746,31 +3747,28 @@
   function syncRefresh() { var g = $('.sync-g'); if (g) g.innerHTML = syncHTML(); }
   function syncNow(force) {
     if (!isAndroid || SYNC.busy || !(force || SYNC.dirty) || !syncLinked() || stale()) return;
-    var j = backupJSON(); SYNC.dirty = false;
-    if (!force && j === SYNC.last) return;   // 바뀐 게 없으면 안 올린다 (앱을 내릴 때마다 saveNow 가 불려 dirty 만으론 모자람)
-    SYNC.busy = true; SYNC.last = j;
-    bridge.syncWrite(j);
+    var u = S.usage; S.usage = {}; var k = JSON.stringify(S); S.usage = u;   // 사용 시간(useTick 이 앱을 오갈 때마다 늘림)만 바뀐 건 안 올린다 — 다음 쓰기에 같이 실린다
+    SYNC.dirty = false;
+    if (!force && k === SYNC.last) return;
+    SYNC.busy = true; SYNC.last = k;
+    bridge.syncWrite(backupJSON());
   }
   window.onSync = function (st, a, b) {   // Java: linked(이름) · opened(내용, 이름) · written(바이트) · error(이유) · cancel
     if (st === 'linked') { toast('드라이브 연동 — ' + (a || '파일') + ' 에 저장할게요'); syncNow(true); syncRefresh(); return; }
-    if (st === 'written') { SYNC.busy = false; SYNC.err = ''; SYNC.at = Date.now(); bridge.saveRaw(SYNC_AT_KEY, String(SYNC.at)); syncRefresh(); return; }
-    if (st === 'error') { SYNC.busy = false; SYNC.dirty = true; SYNC.last = null; SYNC.err = a || '저장 실패'; toast('드라이브 연동 — ' + SYNC.err); syncRefresh(); return; }
+    if (st === 'written') { SYNC.busy = false; SYNC.err = ''; SYNC.at = Date.now(); bridge.saveRaw(SYNC_AT_KEY, String(SYNC.at)); syncRefresh(); if (SYNC.dirty && USE.paused) syncNow(); return; }
+    if (st === 'error') { SYNC.busy = false; SYNC.dirty = true; SYNC.last = null; SYNC.at = Date.now(); SYNC.err = a || '저장 실패'; toast('드라이브 연동 — ' + SYNC.err); syncRefresh(); return; }   // at: 다음 자동 시도는 5분 뒤 (마지막 저장 표시는 err 가 있는 동안 안 씀)
     if (st === 'cancel') return;
     if (st === 'opened') {
       var data = null; try { data = JSON.parse(a); } catch (e) { }
       if (!data || !Array.isArray(data.words)) { bridge.syncUnlink(); toast('3단계 단어장 백업 파일이 아니에요'); syncRefresh(); return; }
-      var grad = data.words.filter(function (w) { return w && w.stage === 4; }).length, yt = (data.yt || []).length;
-      ask('드라이브의 기록으로 이 폰을 맞출까요?\n' + (b || '') + ' — 단어 ' + data.words.length + '개 (졸업 ' + grad + ') · 유튜브 ' + yt + '개\n\n덮어쓰기: 이 폰 데이터를 드라이브 기록으로 바꿔요\n병합: 없는 단어만 더해요\n그 뒤로는 이 파일에 자동 저장해요', [
-        { label: '취소', value: '' }, { label: '병합', value: 'merge' }, { label: '덮어쓰기', value: 'replace', cls: 'primary' }
+      var grad = data.words.filter(function (w) { return w && w.stage === 4; }).length, yt = (data.yt || []).length, last = Object.keys(data.usage || {}).sort().pop();
+      // ponytail: 병합은 뺐다 — 기본 단어 b1~b200 이 겹쳐 드라이브 쪽 진도·유튜브·담은 문장을 버린 결과로 드라이브를 덮었다. 합치기는 "백업 파일 불러오기"에
+      ask('드라이브의 기록으로 이 폰을 맞출까요?\n' + (b || '') + ' — 단어 ' + data.words.length + '개 (졸업 ' + grad + ') · 유튜브 ' + yt + '개' + (last ? ' · 마지막 사용 ' + last : '') + '\n\n덮어쓰기: 이 폰 데이터를 드라이브 기록으로 바꾸고, 그 뒤로는 이 파일에 자동 저장해요', [
+        { label: '취소', value: '' }, { label: '덮어쓰기', value: 'replace', cls: 'primary' }
       ]).then(function (v) {
-        if (!v) { bridge.syncUnlink(); toast('불러오기를 취소했어요 (연동 안 함)'); syncRefresh(); return; }   // 취소하면 연동도 풀어 이 폰의 빈 기록이 드라이브를 덮지 않게
-        if (v === 'replace') { S = migrate(data); ytPruneMedia(); toast('드라이브 기록을 불러왔어요'); }
-        else {
-          var have = {}, n = 0; S.words.forEach(function (w) { have[w.id] = true; have['w:' + w.w.toLowerCase()] = true; });
-          data.words.forEach(function (w) { if (!w || have[w.id] || have['w:' + String(w.w).toLowerCase()]) return; S.words.push(mkWord(w)); n++; });
-          toast(n + '개 단어를 병합했어요');
-        }
-        saveNow(); applyTheme(); syncNow(true); goTab('home');
+        if (!v) { bridge.syncUnlink(); toast('불러오기를 취소했어요 (연동 안 함)'); syncRefresh(); return; }   // Java 가 확인 전 주소(sync.pending)와 권한을 푼다
+        S = migrate(data); ytPruneMedia(); toast('드라이브 기록을 불러왔어요');
+        bridge.syncCommit(); saveNow(); applyTheme(); syncNow(true); goTab('home');
       });
     }
   };

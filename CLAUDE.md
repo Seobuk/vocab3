@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.28 (versionCode 52).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.29 (versionCode 53).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -84,7 +84,9 @@
     오른쪽 `listSide`(단계 · ✗틀림 ✓맞음 · ▼어려움 ▲쉬움 · 마지막), 예문 `list-ex` 한 번 톡 = 읽기 · 두 번 톡(400ms) = 가린 한글(`.it-k.hid`) 보이기/가리기. 테스트 `tools/test_list.js`.
   - Google 드라이브 연동(v2.28): 로그인 없이 SAF — Java `syncLink`(ACTION_CREATE_DOCUMENT)·`syncOpen`(ACTION_OPEN_DOCUMENT) → takePersistableUriPermission,
     prefs `sync.uri`(권한이 없어지면 syncInfo 가 지움 — 자동 백업으로 새 폰에 따라온 주소), `syncWrite`(단일 스레드, sLive 가드). JS `syncNow`: 앱을 내릴 때 + 5분마다,
-    `backupJSON()`(Gemini 키 없음)이 지난번과 같으면 안 씀. 새 폰 불러오기 → 덮어쓰기/병합, 취소하면 연동도 해제. 두 폰 번갈아 쓰면 나중 저장이 이김. 테스트 `tools/test_sync.js`.
+    사용 시간(S.usage)만 바뀐 건 안 씀, 쓰는 중 편집은 끝난 뒤 이어 씀, 실패하면 5분 뒤 다시. 두 폰 번갈아 쓰면 나중 저장이 이김. 테스트 `tools/test_sync.js`.
+    **v2.29 (데이터 손실 수정)**: 불러오기(또는 내용 있는 파일로 연동하기)는 Java 가 `sync.pending` 에만 두고, 확인 창에서 "덮어쓰기"를 골라야 `syncCommit` 으로 연동 —
+    그 전엔 앱을 내려도 새 폰의 빈 기록이 드라이브를 덮지 않는다(에뮬레이터 재현). 앱이 죽으면 onCreate 가 pending 을 푼다. "병합"은 뺐다(기본 단어 id 가 겹쳐 드라이브 진도를 버렸음).
   - 앱 자체 업데이트(v2.27, GitHub APK 만): 시작·onAppResume 에서 `updCheck`(30분에 한 번, `S.settings.updAt`) → api.github.com releases/latest →
     `verNum`(X.Y 숫자) 비교 · 이 저장소 releases/download/ 의 .apk 만 → 묻기("나중에" = 그 버전 하루 안 물음 `updLater`) → Java `updateInstall`(주소 접두 검사, cache/update.apk 받기,
     `onUpdate(progress|perm|installing|fail)`) → PackageInstaller 세션 + PendingIntent(onNewIntent 에서 확인 화면). "이 출처 허용"이 없으면 설정을 열고 onResume 에서 이어서.
