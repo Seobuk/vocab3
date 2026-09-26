@@ -9,17 +9,18 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.addInitScript(() => {
     window.fetch = (url, opt) => {
       const body = JSON.parse(opt.body);
+      (window.__bodies = window.__bodies || []).push(body);
       const last = body.contents[body.contents.length - 1].parts[0].text;
       const out = {
         reply: /Start the conversation/.test(last) ? 'Hi there! What can I get for you?' : 'Sure, one latte coming up. Anything else?',
-        fix: '', note: '', used: [],
+        fix: window.__fix || '', note: '', used: [],
         say: [{ e: 'Can I get a latte, please?', k: '라떼 한 잔 주시겠어요?' }, { e: "I'd like a latte with oat milk, please.", k: '오트 밀크 넣은 라떼로 주세요.' }]
       };
       return Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(out) }] } }] })) });
     };
     // 가짜 음성인식: 테스트가 window.__say(텍스트, 확정여부) 로 구간을 흘려 넣는다
     function FakeSR() { this.continuous = false; this.interimResults = false; this._res = []; }
-    FakeSR.prototype.start = function () { window.__sr = this; };
+    FakeSR.prototype.start = function () { window.__sr = this; if (!window.__lateStart) this.onstart && this.onstart(); };
     FakeSR.prototype.stop = function () { this.onend && this.onend(); };
     FakeSR.prototype.abort = function () { this.aborted = true; };
     window.SpeechRecognition = FakeSR; delete window.webkitSpeechRecognition;
@@ -102,6 +103,43 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   eq('가이드 끄면 칩 없음', await chips(), 0);
   eq('그래도 대화는 시작됨', await p.$$eval('.msg.ai', x => x.length), 1);
 
+  // --- v2.34 인식률: 준비 신호 · 오류 나도 들은 데까지 · Gemini 에 [spoken] 알림 · 마침표만 다른 교정 숨김 ---
+  await p.evaluate(() => { window.__bodies = []; window.__lateStart = true; });
+  await p.click('[data-action="talk-mic"]'); await p.waitForTimeout(150);
+  eq('인식기 준비 전: 준비 중 안내', await p.getAttribute('#chatIn', 'placeholder'), '준비 중… 진동이 오면 말하세요');
+  await p.evaluate(() => window.__sr.onstart()); await p.waitForTimeout(100);
+  eq('준비되면 듣는 중 안내', await p.getAttribute('#chatIn', 'placeholder'), '듣는 중 · 다 말하면 ■ 누르기');
+  await p.evaluate(() => window.__say('I want to order', false)); await p.waitForTimeout(100);
+  const n0 = await msgs();
+  await p.evaluate(() => window.__sr.onerror({ error: 'network' })); await p.waitForTimeout(250);
+  eq('인식 오류 → 들은 데까지 입력창에 · 안 보냄 · 안내', (await p.inputValue('#chatIn')) + ' | ' + ((await msgs()) === n0) + ' | ' + /들은 데까지/.test(await p.textContent('#toast')), 'I want to order | true | true');
+  await p.evaluate(() => { window.__fix = 'I want to order.'; });
+  await p.click('[data-action="talk-send"]'); await p.waitForTimeout(700);
+  const lb = () => p.evaluate(() => { const b = window.__bodies[window.__bodies.length - 1]; return b.contents[b.contents.length - 1].parts[0].text + ' | ' + /speech recognition/.test(b.systemInstruction.parts[0].text); });
+  eq('인식한 문장은 [spoken] 으로 · 시스템에 인식 오류 안내', await lb(), '[spoken] I want to order | true');
+  eq('마침표만 다른 교정은 안 보임', await p.$$eval('.msg.me .fb.fix', x => x.length), 0);
+  await p.evaluate(() => { window.__fix = ''; });
+  await p.fill('#chatIn', 'Just typing here'); await p.click('[data-action="talk-send"]'); await p.waitForTimeout(700);
+  eq('직접 입력한 문장엔 태그 없음', await lb(), 'Just typing here | true');
+  await p.click('[data-action="talk-guide"]'); await p.waitForTimeout(150);   // 위에서 꺼 둔 할 말 칩을 켠다
+  await p.click('[data-action="talk-say"][data-i="0"]'); await p.waitForTimeout(100); await p.click('[data-action="talk-send"]'); await p.waitForTimeout(700);
+  eq('추천 문장도 태그 없음', /^\[spoken\]/.test(await lb()), false);
+  // 듣는 중에 ➤ 도 인식 문장 · 인식 문장을 다 지우고 적으면 입력 문장 · 한국어도 준비 중 안내
+  await p.click('[data-action="talk-mic"]'); await p.waitForTimeout(150);
+  await p.evaluate(() => window.__sr.onstart()); await p.evaluate(() => window.__say('Could I pay by card', false)); await p.waitForTimeout(100);
+  await p.click('[data-action="talk-send"]'); await p.waitForTimeout(700);
+  eq('듣는 중에 ➤ → [spoken]', (await lb()).split(' | ')[0], '[spoken] Could I pay by card');
+  await p.click('[data-action="talk-mic"]'); await p.waitForTimeout(150);
+  await p.evaluate(() => window.__sr.onstart()); await p.evaluate(() => window.__say('One more thing', true)); await p.waitForTimeout(100);
+  await p.click('[data-action="talk-mic"]'); await p.waitForTimeout(400);
+  await p.fill('#chatIn', ''); await p.type('#chatIn', 'Typed instead'); await p.click('[data-action="talk-send"]'); await p.waitForTimeout(700);
+  eq('인식 문장을 지우고 새로 적으면 태그 없음', (await lb()).split(' | ')[0], 'Typed instead');
+  await p.click('[data-action="talk-ko"]'); await p.waitForTimeout(150);
+  eq('한국어도 준비 전엔 준비 중 안내', await p.getAttribute('#chatIn', 'placeholder'), '준비 중… 진동이 오면 말하세요');
+  await p.evaluate(() => window.__sr.onstart()); await p.waitForTimeout(100);
+  eq('준비되면 한국어 안내', await p.getAttribute('#chatIn', 'placeholder'), '한국어로 말하는 중 · 다 말하면 ■');
+  await p.evaluate(() => { window.__sr.abort(); }); await p.evaluate(() => window.onSttState('cancel')); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.__lateStart = false; });
   console.log('errors:', errs);
   await b.close();
 })();

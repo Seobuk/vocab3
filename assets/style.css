@@ -785,3 +785,9 @@ body { word-break: keep-all; overflow-wrap: break-word; }
 .tour-act .btn { min-height: 44px; padding: 0 16px; }
 .tour-tip:focus { outline: none; }
 .tour-act .btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* v2.34 목소리 고르기 창 */
+.voice-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 12px; max-height: 50vh; overflow-y: auto; }
+.voice-row { justify-content: space-between; background: transparent; box-shadow: var(--shadow); }
+.voice-row.on { background: var(--primary-soft); color: var(--primary-ink); }
+.voice-row small { color: var(--muted); font-weight: 600; }

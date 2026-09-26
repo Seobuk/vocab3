@@ -57,6 +57,8 @@ public class ReviewService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextToSpeech tts;
     private boolean ttsReady = false, koOk = false, pendingBegin = false;
+    private android.speech.tts.Voice enVoice;   // v2.34 앱에서 고른 영어 목소리
+    private String curLang;
     private JSONArray playlist = new JSONArray();
     private JSONArray steps = new JSONArray();
     private int index = 0, stepIdx = 0, uttSeq = 0;
@@ -95,11 +97,12 @@ public class ReviewService extends Service {
             ch.setShowBadge(false);
             nm.createNotificationChannel(ch);
         }
-        tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+        tts = MainActivity.newTts(this, new TextToSpeech.OnInitListener() {
             @Override
             public void onInit(int status) {
                 ttsReady = status == TextToSpeech.SUCCESS;
                 if (ttsReady) {
+                    enVoice = MainActivity.findVoice(tts, getSharedPreferences("vocab3", MODE_PRIVATE).getString("tts.voice", ""));
                     try {
                         tts.setAudioAttributes(new AudioAttributes.Builder()
                                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -174,6 +177,7 @@ public class ReviewService extends Service {
     }
 
     private void begin() {
+        curLang = null;   // 새 재생은 언어·목소리를 다시 맞춘다
         acquireResources();
         playing = true; finished = false;
         loadSteps();
@@ -211,13 +215,11 @@ public class ReviewService extends Service {
             String part = s.optString("p", "");
             if (!part.equals(curPart)) { curPart = part; pushState(); }
             try {
-                tts.setLanguage("ko".equals(lang) ? Locale.KOREAN : Locale.US);
+                if (!lang.equals(curLang)) { if ("ko".equals(lang)) tts.setLanguage(Locale.KOREAN); else MainActivity.useEn(tts, enVoice); curLang = lang; }
                 tts.setSpeechRate(rate);
                 final String id = "u" + (++uttSeq);
                 currentUtt = id;
-                Bundle params = new Bundle();
-                params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC);
-                int r = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, id);
+                int r = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id);   // 스트림은 위 setAudioAttributes(USAGE_MEDIA)가 정한다
                 if (r != TextToSpeech.SUCCESS) {
                     currentUtt = null;
                     pendingWait = new Runnable() { @Override public void run() { pendingWait = null; stepIdx++; runStep(); } };
@@ -332,6 +334,7 @@ public class ReviewService extends Service {
                             .setAudioAttributes(new AudioAttributes.Builder()
                                     .setUsage(AudioAttributes.USAGE_MEDIA)
                                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                            .setWillPauseWhenDucked(true)   // v2.34: 내비 안내가 나오면 줄이지 말고 멈췄다가 이어서 (엔진 소리는 다른 프로세스라 이게 있어야 알려 준다)
                             .setOnAudioFocusChangeListener(focusListener, handler)
                             .build();
                 }

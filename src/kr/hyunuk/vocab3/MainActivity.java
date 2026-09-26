@@ -15,6 +15,8 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
+import android.os.SystemClock;
+import android.util.Log;
 import android.os.Bundle;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -22,6 +24,7 @@ import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
 import java.util.ArrayList;
 import android.graphics.Insets;
 import android.view.View;
@@ -76,6 +79,72 @@ public class MainActivity extends Activity {
     private volatile boolean ttsReady = false;
     private volatile boolean backHandled = false;
     private volatile String ttsLang = "en";
+    // v2.34 목소리: Google 엔진을 먼저 (없으면 폰 기본) · 고른 영어 목소리는 이 폰 prefs 에만 (목소리 이름이 기기마다 달라 동기화하는 S 에 안 둠)
+    static final String TTS_GOOGLE = "com.google.android.tts";
+    private Voice enVoice;
+    private volatile String[] ttsPend;   // 준비 전에 온 마지막 읽기 (켜자마자 톡이 소리 없이 버려지던 것)
+    private void ttsStop() { ttsPend = null; if (tts != null) tts.stop(); }   // 멈추면 기다리던 읽기도 버린다
+    static TextToSpeech newTts(Context c, TextToSpeech.OnInitListener l) {
+        String e = c.getSharedPreferences("vocab3", MODE_PRIVATE).getString("tts.engine", TTS_GOOGLE);
+        return e.length() == 0 ? new TextToSpeech(c, l) : new TextToSpeech(c, l, e);   // ponytail: 3-인자 생성자는 그 엔진이 없으면 폰 기본으로 간다
+    }
+    static Voice findVoice(TextToSpeech tts, String name) {
+        if (name == null || name.length() == 0) return null;
+        try {
+            java.util.Set<Voice> vs = tts.getVoices();
+            if (vs != null) for (Voice v : vs) if (name.equals(v.getName()) && !v.isNetworkConnectionRequired()) return v;
+        } catch (Exception ignored) { }
+        return null;   // 이 폰에 없으면 엔진 기본 목소리
+    }
+    static void useEn(TextToSpeech tts, Voice v) {   // setLanguage 는 고른 목소리를 풀어 버린다 — 영어는 목소리로
+        if (v == null || tts.setVoice(v) != TextToSpeech.SUCCESS) tts.setLanguage(Locale.US);
+    }
+    private volatile int ttsGen;
+    private TextToSpeech makeTts() {   // 인스턴스마다 제 onInit — API 31+ 은 연결 중 shutdown 이 안 먹어 옛 것이 늦게 붙으면 새 tts 로 ttsInit 을 돌렸다
+        final int g = ++ttsGen;
+        final TextToSpeech[] me = new TextToSpeech[1];
+        me[0] = newTts(this, new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int s) {
+                if (g == ttsGen) ttsInit.onInit(s);
+                else if (me[0] != null) try { me[0].shutdown(); } catch (Exception ignored) { }   // 이제 붙었으니 진짜로 놓는다
+            }
+        });
+        return me[0];
+    }
+    private final TextToSpeech.OnInitListener ttsInit = new TextToSpeech.OnInitListener() {
+        @Override
+        public void onInit(int status) {
+            if (status == TextToSpeech.SUCCESS) {
+                int r = tts.setLanguage(Locale.US);
+                ttsReady = (r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED);
+                enVoice = findVoice(tts, prefs.getString("tts.voice", ""));
+                try { useEn(tts, enVoice); } catch (Exception ignored) { }
+                ttsLang = "en";
+            } else {
+                ttsReady = false;
+            }
+            runJs("window.onTtsReady && window.onTtsReady(" + ttsReady + ")");
+            String[] p = ttsPend; ttsPend = null;
+            if (ttsReady && p != null) sayNow(p[0], p[1], Float.parseFloat(p[2]), "1".equals(p[3]));
+        }
+    };
+    private void sayNow(final String text, final String lang, final float rate, final boolean flush) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (!lang.equals(ttsLang)) {
+                        if ("ko".equals(lang)) tts.setLanguage(Locale.KOREAN); else useEn(tts, enVoice);
+                        ttsLang = lang;
+                    }
+                    tts.setSpeechRate(rate);
+                    tts.speak(text, flush ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD, null, "vocab3");
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
     private String pendingSaveContent = null;
     private static final int REQ_NOTI = 201;
     private Intent pendingAudioStart = null;
@@ -86,7 +155,9 @@ public class MainActivity extends Activity {
     private boolean sttListening = false;   // 사용자가 멈추라고 할 때까지 계속 듣는 중
     private boolean sttActive = false;      // startListening ~ onResults/onError 사이
     private String sttText = "";            // 끊긴 구간들을 이어 붙인 문장
-    private int sttSilent = 0;              // 연속으로 아무 말 없던 구간 수
+    private long sttHeard = 0;              // v2.34 마지막으로 말을 들은 때 — 말없이 20초면 마이크를 놓는다 (예전엔 빈 구간 '횟수'라 인식기가 빨리 끝내면 생각하는 사이 닫혔다)
+    private static boolean sttNoSeg = false; // 이 폰 인식기가 이어 듣기(세그먼트 세션)를 거부함 — 앱이 켜져 있는 동안 기억
+    private boolean sttSegReq = false, sttSegMode = false;   // 이번 세션에 이어 듣기를 요청함 · 실제로 이어 듣기 결과가 옴
     private String sttSegPartial = "";     // 지금 듣는 구간의 마지막 부분 인식 결과 (확정 결과가 꼬리를 잘라 먹으면 이걸로 보충)
     private int sttSeq = 0;                 // 지연 stopListening 이 옛 구간에 적용되지 않게
     private Offline off;                    // v2.14 오프라인 영상 (받기·파형·/media/ 서빙)
@@ -182,18 +253,7 @@ public class MainActivity extends Activity {
                     });
         }
 
-        tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
-            @Override
-            public void onInit(int status) {
-                if (status == TextToSpeech.SUCCESS) {
-                    int r = tts.setLanguage(Locale.US);
-                    ttsReady = (r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED);
-                } else {
-                    ttsReady = false;
-                }
-                runJs("window.onTtsReady && window.onTtsReady(" + ttsReady + ")");
-            }
-        });
+        tts = makeTts();
     }
 
     // 브리지는 유튜브 iframe(과 그 안의 광고 프레임)에도 주입된다 → 우리 index.html 에만 심은 토큰이 있어야 동작
@@ -293,7 +353,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        if (tts != null) tts.stop();
+        ttsStop();
         // 이제 듣기가 저절로 끝나지 않으므로, 앱이 내려가면 마이크를 반드시 놓아 준다
         if (sttListening || sttActive) { cancelStt(); runJs("window.onSttState && window.onSttState('cancel')"); }
         runJs("window.onAppPause && window.onAppPause()");
@@ -318,6 +378,7 @@ public class MainActivity extends Activity {
         if (web != null) { root.removeView(web); web.destroy(); web = null; }
         if (off != null) off.close();   // 받던 것 멈추고 .part 지움, 파형 작업도 멈춤
         try { if (stt != null) { stt.destroy(); stt = null; } } catch (Exception ignored) { }
+        ttsGen++;   // 연결 중에 닫으면 늦은 onInit 이 스스로 놓는다
         if (tts != null) {
             tts.stop();
             tts.shutdown();
@@ -353,30 +414,57 @@ public class MainActivity extends Activity {
                 stt = SpeechRecognizer.createSpeechRecognizer(this);
                 stt.setRecognitionListener(new RecognitionListener() {
                     @Override public void onReadyForSpeech(Bundle params) { runJs("window.onSttState && window.onSttState('ready')"); }
-                    @Override public void onBeginningOfSpeech() { runJs("window.onSttState && window.onSttState('speech')"); }
+                    @Override public void onBeginningOfSpeech() { sttHeard = SystemClock.uptimeMillis(); runJs("window.onSttState && window.onSttState('speech')"); }
                     @Override public void onRmsChanged(float rmsdB) { }
                     @Override public void onBufferReceived(byte[] buffer) { }
                     @Override public void onEndOfSpeech() { }   // 한 구간이 끝났을 뿐 — 아직 듣는 중이면 곧 다시 시작한다
                     @Override public void onError(int error) {
+                        // 11: 끊긴 인식기는 다시 안 붙는다 (끊긴 뒤 startListening 은 곧장 11) → 쉬는 중에 와도 버리고 다음엔 새로 만든다
+                        if (error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED && web != null) {
+                            final SpeechRecognizer dead = stt;
+                            web.post(new Runnable() { @Override public void run() { if (stt == dead && stt != null) { try { stt.destroy(); } catch (Exception ignored) { } stt = null; } } });
+                        }
+                        boolean quiet = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT;
+                        boolean net = error == SpeechRecognizer.ERROR_NETWORK || error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT || error == SpeechRecognizer.ERROR_SERVER
+                                || error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED;
+                        boolean notSeg = quiet || net || error == SpeechRecognizer.ERROR_AUDIO || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == 10;   // 마이크·바쁨·한도 — 이어 듣기 거부가 아니다
+                        if (sttActive && sttSegReq && !sttSegMode && !notSeg) { sttNoSeg = true; Log.i("vocab3stt", "seg refused " + error); }   // 이어 듣기를 못 하는 인식기 → 예전 방식으로
                         // 말을 고르느라 쉬면 인식기가 이렇게 끝낸다 → 오류가 아니라 "빈 구간"으로 치고 이어 듣는다
-                        if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                                || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
-                            sttSegmentDone("");
+                        if (quiet || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT || (sttNoSeg && sttSegReq && !net)) {
+                            if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) { try { stt.cancel(); } catch (Exception ignored) { } }
+                            sttSegmentDone("", quiet ? 150 : 500);
                             return;
                         }
                         if (!sttListening && !sttActive) return;
-                        sttListening = false; sttActive = false; sttText = ""; sttSilent = 0;
+                        String kept = SttText.join(sttText, sttSegPartial == null ? "" : sttSegPartial.trim());   // 들은 데까지는 넘긴다 (예전엔 문장을 통째로 버렸다)
+                        sttListening = false; sttActive = false; sttText = ""; sttSegPartial = "";
                         String code;
                         switch (error) {
                             case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: code = "permission"; break;
                             case SpeechRecognizer.ERROR_NETWORK: case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: case SpeechRecognizer.ERROR_SERVER: code = "network"; break;
                             default: code = "error" + error;
                         }
-                        runJs("window.onSttError && window.onSttError(" + jsString(code) + ")");
+                        runJs("window.onSttError && window.onSttError(" + jsString(code) + "," + jsString(kept) + ")");
                     }
                     @Override public void onResults(Bundle results) {
+                        if (sttSegReq) Log.i("vocab3stt", "plain");   // 이어 듣기를 요청했는데 보통 결과가 옴 = 무시됨 (지금 방식으로 계속)
                         ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                        sttSegmentDone((list != null && !list.isEmpty()) ? list.get(0) : "");
+                        sttSegmentDone((list != null && !list.isEmpty()) ? list.get(0) : "", 150);
+                    }
+                    // v2.34 API 33+ 이어 듣기(세그먼트 세션): 쉴 때마다 인식기를 새로 켜는 틈(그 사이 말이 사라짐)·앞 문맥 끊김이 없다
+                    @Override public void onSegmentResults(Bundle b) {
+                        if (!sttActive) return;
+                        sttSegMode = true;
+                        ArrayList<String> l = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                        String seg = SttText.merge(l != null && !l.isEmpty() ? l.get(0) : "", sttSegPartial);
+                        sttSegPartial = "";
+                        if (seg.length() > 0) { sttText = SttText.join(sttText, seg); sttHeard = SystemClock.uptimeMillis(); }
+                        Log.i("vocab3stt", "segment");
+                    }
+                    @Override public void onEndOfSegmentedSession() {
+                        Log.i("vocab3stt", "end-seg");
+                        if (!sttActive) return;
+                        sttSegmentDone("", 0);   // 확정 안 된 부분 결과까지 넣고, 이어 듣거나 마친다
                     }
                     @Override public void onPartialResults(Bundle partial) {
                         if (!sttActive) return;
@@ -387,18 +475,19 @@ public class MainActivity extends Activity {
                         ArrayList<String> unstable = partial.getStringArrayList("android.speech.extra.UNSTABLE_TEXT");
                         String stable = (list != null && !list.isEmpty() && list.get(0) != null) ? list.get(0).trim() : "";
                         String tail = (unstable != null && !unstable.isEmpty() && unstable.get(0) != null) ? unstable.get(0).trim() : "";
-                        String shown = sttJoin(stable, tail);
+                        String shown = SttText.join(stable, tail);
                         if (shown.length() > 0) {
-                            sttSegPartial = shown;
-                            runJs("window.onSttPartial && window.onSttPartial(" + jsString(sttJoin(sttText, shown)) + ")");
+                            sttSegPartial = shown; sttHeard = SystemClock.uptimeMillis();
+                            runJs("window.onSttPartial && window.onSttPartial(" + jsString(SttText.join(sttText, shown)) + ")");
                         }
                     }
                     @Override public void onEvent(int eventType, Bundle params) { }
                 });
             }
-            if (tts != null) tts.stop();
-            sttListening = true; sttText = ""; sttSilent = 0;
+            ttsStop();
+            sttListening = true; sttText = ""; sttHeard = SystemClock.uptimeMillis(); sttSegMode = false;
             listenSegment();
+            sttTick();
         } catch (Exception e) {
             sttListening = false; sttActive = false;
             runJs("window.onSttError && window.onSttError(" + jsString("exception") + ")");
@@ -412,10 +501,18 @@ public class MainActivity extends Activity {
             Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, sttLang);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, sttLang);
             i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+            sttSegReq = false;
+            if (Build.VERSION.SDK_INT >= 33) {
+                i.putExtra(RecognizerIntent.EXTRA_MASK_OFFENSIVE_WORDS, false);   // 억양 섞인 말이 욕으로 잘못 들리면 *** 로 가려져 무슨 말인지 알 수 없었다
+                if (!sttNoSeg) {
+                    i.putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS);
+                    i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 120000);   // int 여야 한다 (long 이면 조용히 무시됨)
+                    sttSegReq = true;
+                }
+            }
             sttActive = true; sttSegPartial = ""; sttSeq++;
             stt.startListening(i);
         } catch (Exception e) {
@@ -424,45 +521,72 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** 한 구간의 결과 (빈 문자열 = 그 구간엔 말이 없었음). */
-    private void sttSegmentDone(String text) {
+    /** 한 구간의 결과 (빈 문자열 = 그 구간엔 말이 없었음). delay = 다시 듣기까지 (인식기가 바쁘다고 하면 조금 더 쉰다). */
+    private void sttSegmentDone(String text, int delay) {
         if (!sttListening && !sttActive) return;   // 이미 끝났거나 취소된 세션의 뒤늦은 콜백
         sttActive = false;
-        String seg = (text == null) ? "" : text.trim();
-        // stopListening() 직후의 확정 결과는 마지막 단어를 떨어뜨리거나 아예 비어 오기도 한다 → 부분 결과가 더 길면 그걸 쓴다
-        String part = (sttSegPartial == null) ? "" : sttSegPartial.trim();
-        if (part.length() > seg.length() && (seg.length() == 0 || part.toLowerCase().startsWith(seg.toLowerCase()))) seg = part;
+        // stopListening() 직후의 확정 결과는 마지막 단어를 떨어뜨리거나 다듬어 온다 → 부분 결과에만 있던 꼬리 단어를 붙인다
+        String seg = SttText.merge(text, sttSegPartial);
         sttSegPartial = "";
-        if (seg.length() > 0) { sttText = sttJoin(sttText, seg); sttSilent = 0; } else sttSilent++;
-        // ponytail: 계속 조용하면(≈20초) 마이크를 놓는다. 더 오래 쉬고 싶으면 이 숫자만 올리면 됨
-        if (sttListening && sttSilent < 4) {
+        if (seg.length() > 0) { sttText = SttText.join(sttText, seg); sttHeard = SystemClock.uptimeMillis(); }
+        // ponytail: 20초 = 말없이 기다리는 한도. 더 오래 쉬고 싶으면 이 숫자만 올리면 됨
+        if (sttListening && SystemClock.uptimeMillis() - sttHeard < 20000) {
             if (web != null) web.postDelayed(new Runnable() {
                 @Override public void run() { if (sttListening && !sttActive) listenSegment(); }
-            }, 150);
+            }, delay);
             return;
         }
         finishStt();
     }
 
+    /** 2초마다 20초 침묵을 확인한다 (이어 듣기 중엔 구간 끝 콜백이 없다). */
+    private void sttTick() {
+        if (web == null) return;
+        web.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (!sttListening) return;
+                if (SystemClock.uptimeMillis() - sttHeard > 20000) { sttStopNow(); return; }   // 어느 방식이든 말없이 20초 (이어 듣기는 한 마디도 없으면 구간 끝이 안 온다)
+                sttTick();
+            }
+        }, 2000);
+    }
+
+    /** ■ : 0.8초 뒤 멈춤 (바로 멈추면 끝 단어가 잘림) · 끝 콜백을 안 주는 인식기면 2.5초 뒤 들은 데까지로 마친다. */
+    private void sttStopNow() {
+        if (!sttListening && !sttActive) return;
+        sttListening = false;
+        if (sttActive) {
+            final int seq = sttSeq;
+            if (web != null) {
+                web.postDelayed(new Runnable() {
+                    @Override public void run() {
+                        if (sttActive && sttSeq == seq) { try { if (stt != null) stt.stopListening(); } catch (Exception ignored) { } }
+                    }
+                }, 800);
+                web.postDelayed(new Runnable() {
+                    @Override public void run() {
+                        if (sttActive && sttSeq == seq) { try { if (stt != null) stt.cancel(); } catch (Exception ignored) { } sttActive = false; finishStt(); }
+                    }
+                }, 3300);
+            }
+        }
+        else finishStt();   // 구간 재시작 사이라 멈출 세션이 없다 → 모아 둔 문장을 바로 넘긴다
+    }
+
     private void finishStt() {
         sttListening = false; sttActive = false;
-        String out = sttText;
-        sttText = ""; sttSilent = 0;
+        String out = SttText.join(sttText, sttSegPartial == null ? "" : sttSegPartial.trim());   // 확정 전 남은 부분 결과까지
+        sttText = ""; sttSegPartial = "";
         runJs("window.onSttState && window.onSttState('end')");
         runJs("window.onStt && window.onStt(" + jsString(out) + ")");
     }
 
     private void cancelStt() {
         if (!sttListening && !sttActive) return;
-        sttListening = false; sttActive = false; sttText = ""; sttSilent = 0;
+        sttListening = false; sttActive = false; sttText = ""; sttSegPartial = "";
         try { if (stt != null) stt.cancel(); } catch (Exception ignored) { }
     }
 
-    private static String sttJoin(String a, String b) {
-        if (a == null || a.length() == 0) return b;
-        if (b == null || b.length() == 0) return a;
-        return a + " " + b;
-    }
 
     private void launchService(Intent i) {
         try {
@@ -758,27 +882,81 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void speak(String t, final String text, final String lang, final float rate, final boolean flush) {
             if (!ok(t)) return;
-            if (tts == null || !ttsReady) return;
+            if (tts == null || !ttsReady) { ttsPend = new String[] { text, lang, String.valueOf(rate), flush ? "1" : "0" }; return; }   // 준비되면 읽는다 (마지막 것만)
+            sayNow(text, lang, rate, flush);
+        }
+
+        /** v2.34 영어 목소리 목록: {eng:"google"|"sys", cur, list:[{n, l:"US"|"GB"|…, inst}]} — 기기 안 목소리만 (네트워크 목소리는 늦고 문장이 폰 밖으로 나감) */
+        @JavascriptInterface
+        public String ttsVoices(String t) {
+            if (!ok(t)) return "{}";
+            try {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("eng", TTS_GOOGLE.equals(prefs.getString("tts.engine", TTS_GOOGLE)) ? "google" : "sys");
+                o.put("cur", prefs.getString("tts.voice", ""));
+                org.json.JSONArray a = new org.json.JSONArray();
+                java.util.Set<Voice> vs = tts != null && ttsReady ? tts.getVoices() : null;
+                if (vs != null) for (Voice v : vs) {
+                    Locale l = v.getLocale();
+                    if (l == null || !"en".equals(l.getLanguage()) || v.isNetworkConnectionRequired()) continue;
+                    java.util.Set<String> f = v.getFeatures();
+                    org.json.JSONObject x = new org.json.JSONObject();
+                    x.put("n", v.getName());
+                    x.put("l", l.getCountry());
+                    x.put("inst", f == null || !f.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED));
+                    a.put(x);
+                }
+                o.put("list", a);
+                return o.toString();
+            } catch (Exception e) { return "{}"; }
+        }
+
+        @JavascriptInterface
+        public void ttsSetVoice(String t, final String name) {
+            if (!ok(t)) return;
+            prefs.edit().putString("tts.voice", name == null ? "" : name).apply();
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    try {
-                        if (!lang.equals(ttsLang)) {
-                            tts.setLanguage("ko".equals(lang) ? Locale.KOREAN : Locale.US);
-                            ttsLang = lang;
-                        }
-                        tts.setSpeechRate(rate);
-                        tts.speak(text, flush ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD, null, "vocab3");
-                    } catch (Exception ignored) {
-                    }
+                    if (tts == null || !ttsReady) return;
+                    try { enVoice = findVoice(tts, name); useEn(tts, enVoice); ttsLang = "en"; } catch (Exception ignored) { }
                 }
             });
+        }
+
+        /** pkg = "com.google.android.tts" 또는 "" (폰 기본) — 엔진을 새로 만들고 onInit 이 목소리를 다시 고른다 (Voice 는 엔진마다 다름) */
+        @JavascriptInterface
+        public void ttsSetEngine(String t, final String pkg) {
+            if (!ok(t)) return;
+            prefs.edit().putString("tts.engine", TTS_GOOGLE.equals(pkg) ? TTS_GOOGLE : "").apply();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    ttsReady = false;
+                    try { if (tts != null) tts.shutdown(); } catch (Exception ignored) { }
+                    tts = makeTts();
+                }
+            });
+        }
+
+        /** install = 지금 엔진의 음성 데이터 받기 화면, 아니면 폰의 "텍스트 음성 변환" 설정 */
+        @JavascriptInterface
+        public boolean ttsOpen(String t, boolean install) {
+            if (!ok(t)) return false;
+            try {
+                String pkg = prefs.getString("tts.engine", TTS_GOOGLE);
+                if (pkg.length() == 0 && tts != null) pkg = tts.getDefaultEngine();   // 폰 기본 = 그 엔진의 받기 화면 (없으면 ActivityNotFound → false → JS 가 설정으로)
+                Intent i = install ? new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).setPackage(pkg) : new Intent("com.android.settings.TTS_SETTINGS");
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return true;
+            } catch (Exception e) { return false; }
         }
 
         @JavascriptInterface
         public void stopSpeak(String t) {
             if (!ok(t)) return;
-            if (tts != null) tts.stop();
+            ttsStop();
         }
 
         @JavascriptInterface
@@ -936,7 +1114,7 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    if (tts != null) tts.stop();
+                    ttsStop();
                     final Intent i = new Intent(MainActivity.this, ReviewService.class)
                             .setAction(ReviewService.ACTION_START)
                             .putExtra(ReviewService.EXTRA_PLAYLIST, playlistJson)
@@ -1023,20 +1201,7 @@ public class MainActivity extends Activity {
             if (!ok(t)) return;
             runOnUiThread(new Runnable() {
                 @Override
-                public void run() {
-                    if (!sttListening && !sttActive) return;
-                    sttListening = false;
-                    if (sttActive) {
-                        // 바로 stopListening() 하면 마지막 단어가 잘린다 — 0.8초 안에 끝점 검출로 스스로 끝나면 그 결과를, 아니면 그때 멈춘다
-                        final int seq = sttSeq;
-                        if (web != null) web.postDelayed(new Runnable() {
-                            @Override public void run() {
-                                if (sttActive && sttSeq == seq) { try { if (stt != null) stt.stopListening(); } catch (Exception ignored) { } }
-                            }
-                        }, 800);
-                    }
-                    else finishStt();   // 구간 재시작 사이라 멈출 세션이 없다 → 모아 둔 문장을 바로 넘긴다
-                }
+                public void run() { sttStopNow(); }
             });
         }
 

@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.33 (versionCode 57).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.34 (versionCode 58).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -17,6 +17,18 @@
     Java: onDestroy 에서 `web.destroy()`, 저장·삭제는 마지막으로 index.html 을 받아 간 페이지(`sLive`)만. JS: `vocab3.owner` 에 페이지 SID — 더 나중 페이지가 있으면
     `bridge.saveRaw` 가 거부(`stale()`), 다시 보이면 reload. **새 저장은 반드시 bridge.save/saveRaw 로만**(AND.save 직접 호출 금지). 켤 때 상태 한 벌 `vocab3.bak.start`
     (v2.24: Java 가 no_backup/bak-start.json 파일로 — 자동 백업 25MB 에 안 들어가게. 브라우저는 localStorage, 한도에 걸리면 한 벌을 버림. 설정 → 데이터 → "켤 때 상태로"). configChanges 는 density·fontScale 등까지 넓힘. 테스트 `tools/test_stale.js`.
+  - **v2.34 음성 인식(회화)**: 들은 말을 안 버린다 — 진짜 오류(인터넷 등)도 `onSttError(code, kept)` 로 들은 데까지 넘김, 앱 내림('cancel')도 입력창에 남김,
+    ■ 직후 꼬리 단어는 `SttText.merge`(새 파일, 확정 결과의 끝 단어 자리 뒤에서만 부분 결과 꼬리를 붙임 · `java -ea -cp build/classes kr.hyunuk.vocab3.SttText` 자체 검사),
+    침묵 한도는 시간(`sttHeard` 20초, `sttTick` 2초마다), 준비 신호 'ready' → 진동 + "준비 중… 진동이 오면 말하세요", EXTRA_MASK_OFFENSIVE_WORDS false.
+    API 33+ 이어 듣기(EXTRA_SEGMENTED_SESSION + MINIMUM_LENGTH 120000 int) → onSegmentResults/onEndOfSegmentedSession, 거부하면 `sttNoSeg`(static)로 예전 구간 방식.
+    ERROR_SERVER_DISCONNECTED(11)는 언제 와도 stt 를 버리고 다음에 새로. `sttStopNow` = 0.8초 뒤 stopListening + 3.3초 안전장치. 폴드 확인: `adb logcat -s vocab3stt`(segment/end-seg/plain/seg refused).
+    JS: 인식한 영어는 `STT_HEARD` → talk 기록에 `spoken` → Gemini 에 `[spoken] ` 접두 + 시스템 한 줄(인식 오류를 fix/note 에 넣지 말 것, 한국식 발음 실수면 발음 팁),
+    리포트 transcript 도 `(spoken)`. 마침표·대소문자만 다른 fix 는 숨김. renderChat 이 입력창을 새로 그리면 STT_HEARD 초기화. 테스트 `tools/test_stt.js` 끝.
+  - **v2.34 목소리(TTS)**: `MainActivity.newTts` 가 Google 엔진(com.google.android.tts)을 먼저(없으면 폰 기본), `findVoice`/`useEn`(영어는 setVoice — setLanguage 는 고른 목소리를 풂),
+    엔진·목소리는 이 폰 prefs `tts.engine`/`tts.voice`(기기마다 이름이 달라 S 에 안 둠), 기기 안 목소리만(네트워크 목소리는 늦고 문장이 밖으로 나감 — 개인정보처리방침 그대로).
+    `makeTts`(세대 번호 — 연결 중 shutdown 이 안 먹는 API 31+), 준비 전 읽기 `ttsPend`(ttsStop 이 버림). 브릿지 ttsVoices/ttsSetVoice/ttsSetEngine/ttsOpen,
+    설정 → 발음 속도 아래 "음성 엔진"·"영어 목소리"(창에서 누르면 바꾸고 들려줌, 받기 필요 → 그 엔진의 받기 화면). ReviewService 도 같은 엔진·목소리 + setWillPauseWhenDucked(내비 안내에 멈춤). 테스트 `tools/test_voice.js`.
+    다음 후보(사용자 확인 필요): Gemini 로 받아 적기(녹음 → Gemini, 선택)·AI 목소리(Gemini TTS, 선택) — 둘 다 소리/문장이 Google 로 가서 개인정보처리방침을 고쳐야 함.
 - `src/kr/hyunuk/vocab3/ReviewService.java` — 듣기 복습 포그라운드 서비스(알림 제어).
 - `src/kr/hyunuk/vocab3/Offline.java` (v2.14) — 유튜브 영상 받기(NewPipeExtractor, 360p 합쳐진 MP4 → 없으면 M4A, 10MB Range 청크),
   `getNoBackupFilesDir()/videos/<vid>.mp4|m4a|env`(자동 백업 25MB 한도에 안 걸리게), `/media/<vid>` Range 서빙(WebView 가 Range 를 한 번 더 적용하는 걸 보정),
