@@ -23,12 +23,10 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.click('#cardArea .card-word .w'); await p.waitForTimeout(500);
   eq('단어 톡 = 단어 읽기', await p.evaluate(() => window.__spoken.slice(-1)[0]), w0);
   const mStep0 = await p.getAttribute(m, 'data-step');
-  await p.click(m); await p.waitForTimeout(500);
-  eq('뜻 칸 한 번 톡 = 단어 읽기 · 뜻은 그대로', (await p.evaluate(() => window.__spoken.slice(-1)[0])) + ' ' + ((await p.getAttribute(m, 'data-step')) === mStep0), w0 + ' true');
-  await p.dblclick(m); await p.waitForTimeout(200);
-  eq('뜻 칸 두 번 톡 = 뜻 보이기/가리기', (await p.getAttribute(m, 'data-step')) !== mStep0, true);
-  await p.waitForTimeout(500); await p.dblclick(m); await p.waitForTimeout(200);
-  eq('다시 두 번 톡 = 원래대로', await p.getAttribute(m, 'data-step'), mStep0);
+  await p.click(m); await p.waitForTimeout(150);
+  eq('뜻 칸 한 번 톡 = 뜻 보이기/가리기 (v2.31)', (await p.getAttribute(m, 'data-step')) !== mStep0, true);
+  await p.click(m); await p.waitForTimeout(150);
+  eq('빨리 한 번 더 톡 = 원래대로 (두 번 톡으로 안 묶임)', await p.getAttribute(m, 'data-step'), mStep0);
   await p.waitForTimeout(500);
   eq('처음엔 예문 가림', await step(), '0');
   await p.click(ex); await p.waitForTimeout(500);

@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.30';
+  var APP_VERSION = '2.31';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -883,7 +883,7 @@
   }
 
   // v2.30 학습 카드는 모두 같은 규칙 (유튜브·단어장과 같게, 사용자 요청): 한 번 톡 = 영어 읽기 · 두 번 톡(400ms) = 한글 보이기/가리기.
-  //   단어 → 읽기 · 뜻 칸 → 한 번 = 단어 읽기, 두 번 = 뜻 보이기/가리기 · 예문 칸 → 가려져 있으면 한 번 = 영어 보기+읽기, 보이면 한 번 = 다시 읽기, 두 번 = 해석 보이기/가리기
+  //   단어 → 읽기 · 뜻 칸 → 한 번 톡 = 뜻 보이기/가리기 (v2.31 사용자 요청) · 예문 칸 → 가려져 있으면 한 번 = 영어 보기+읽기, 보이면 한 번 = 다시 읽기, 두 번 = 해석 보이기/가리기
   //   (한→영 모드의 영어 단어·영어 예문 칸 → 한 번 = 보이기+읽기, 보이면 다시 읽기)
   var revealTap = null;
   function tapReveal(r) {
@@ -891,10 +891,7 @@
     var now = Date.now(), lt = revealTap, dbl = lt && lt.r === r && now - lt.at < 400;
     revealTap = dbl ? null : { r: r, at: now };
     var say = function (t) { if (t) speak(t, 'en'); };
-    if (kind === 'm') {   // 뜻(한글)
-      if (dbl) { r.setAttribute('data-step', step ? '0' : '1'); bridge.vibrate(6); } else say(w && w.w);
-      return;
-    }
+    if (kind === 'm') { r.setAttribute('data-step', step ? '0' : '1'); bridge.vibrate(6); revealTap = null; return; }   // 뜻(한글): 한 번 톡 = 열기/닫기
     var en = kind === 'e' ? w && w.e : w && w.w;   // 예문 · 한→영 모드의 영어 단어
     if (!step) { r.setAttribute('data-step', '1'); bridge.vibrate(6); say(en); revealTap = null; return; }   // 가려진 영어 → 보이며 읽기 (두 번 톡으로 치지 않게 기록 지움)
     if (dbl) { if (max >= 2) { r.setAttribute('data-step', step >= 2 ? '1' : '2'); bridge.vibrate(6); } return; }
@@ -3199,7 +3196,7 @@
       '<b>1단계 새 단어장</b> — 매일 새 단어 ' + st.dailyGoal + '개와 예문을 익혀요. 단어와 예문이 자연스럽게 나오면 오른쪽으로 넘겨 2단계로.<br>' +
       '<b>2단계 외운 단어장</b> — 외운 단어를 주기적으로 복습해요. 확실하면 3단계로, 흔들리면 1단계로 되돌려요.<br>' +
       '<b>3단계 완전 암기장</b> — 최종 점검을 통과한 단어는 졸업(보관)하고, 언제든 삭제할 수 있어요.<br>' +
-      '<span class="muted small">팁: 학습 카드는 한 번 톡 = 영어 읽기, 두 번 톡 = 한글(뜻·해석) 보이기/가리기. 가려진 영어 예문은 한 번 톡으로 보여요. 뜻만 외우지 말고 예문을 소리 내어 말해 보세요. 한→영 모드가 출력 훈련에 좋아요.</span>' +
+      '<span class="muted small">팁: 학습 카드는 단어를 톡 = 읽기, 뜻 칸을 톡 = 뜻 보이기/가리기, 예문은 한 번 톡 = 읽기 · 두 번 톡 = 해석 보이기/가리기. 가려진 영어 예문은 한 번 톡으로 보여요. 뜻만 외우지 말고 예문을 소리 내어 말해 보세요. 한→영 모드가 출력 훈련에 좋아요.</span>' +
       '</div>' +
       '<div class="center muted small">3단계 단어장 v' + APP_VERSION + ' · 단어 ' + S.words.length + '개 · TTS ' + (bridge.ttsReady() ? '사용 가능' : '준비 중/사용 불가') + '</div>' +
       '</div>';

@@ -51,9 +51,9 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   console.log('tap4 e-step:', await step('e'), 'spoken:', await spoken());
 
   // meaning toggles open/close
-  await page.dblclick('.reveal[data-reveal="m"]'); await page.waitForTimeout(100);
+  await page.click('.reveal[data-reveal="m"]'); await page.waitForTimeout(100);
   const m1 = await step('m');
-  await page.dblclick('.reveal[data-reveal="m"]'); await page.waitForTimeout(100);
+  await page.click('.reveal[data-reveal="m"]'); await page.waitForTimeout(100);
   console.log('meaning toggle:', m1, '->', await step('m'));
 
   // reveal-all speaks example once (word already spoken at mount)

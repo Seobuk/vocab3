@@ -31,7 +31,7 @@ fs.mkdirSync(OUT, { recursive: true });
   // start stage-1 session
   await page.click('[data-action="start"][data-stage="1"]');
   await shot('02-card-front');
-  await page.dblclick('.reveal[data-reveal="m"]');   // v2.30: 뜻은 두 번 톡
+  await page.click('.reveal[data-reveal="m"]');
   await page.click('.reveal[data-reveal="e"]');
   await shot('03-card-revealed');
 
