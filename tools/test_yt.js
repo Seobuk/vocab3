@@ -50,7 +50,7 @@ const SENTS = [
   const view = () => p.evaluate(() => document.querySelector('.view.active').id);
 
   // --- 홈 → 유튜브 목록 (빈 상태 · 약관 안내) ---
-  eq('홈 가운데 타일 = 유튜브', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent).join('/')), '회화 연습/유튜브/듣기 복습');
+  eq('홈 빠른 타일에 유튜브', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent).join('/')), '회화 연습/다이얼로그/유튜브/듣기 복습');
   await p.click('.quick [data-action="yt"]'); await p.waitForTimeout(200);
   eq('유튜브 목록 화면', await view(), 'view-yt');
   eq('빈 목록 안내', await p.$$eval('#view-yt .empty', x => x.length), 1);
