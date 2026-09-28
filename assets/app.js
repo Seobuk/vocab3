@@ -47,6 +47,9 @@
   var SVG_O = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';   // v2.22: 이모지 대신 선 아이콘 (Feather/Tabler MIT 경로)
   var ICON_TALK = SVG_O + '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
   var ICON_VIDEO = SVG_O + '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M10 9l5 3-5 3z"/></svg>';
+  var ICON_DLG = SVG_O + '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>';
+  var ICON_MORE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+  var ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
   var ICON_HEADSET = SVG_O + '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>';
   var ICON_PIN = SVG_O + '<path d="M15 4.5l-4 4-4 1.5-1.5 1.5 7 7 1.5-1.5 1.5-4 4-4"/><path d="M9 15l-4.5 4.5"/><path d="M14.5 4l5.5 5.5"/></svg>';
   var ICON_TIME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2.5 1.5M9.5 3h5"/></svg>';
@@ -98,6 +101,16 @@
           if (flush !== false) speechSynthesis.cancel();
           speechSynthesis.speak(u);
         }
+      } catch (e) { }
+    },
+    // v2.35 다이얼로그: 목소리(이름, '' = 기본)·음높이를 정해 읽고 끝나면 window.onSpoke(uid)
+    speakAs: function (text, rate, voice, pitch, uid) {
+      try {
+        if (isAndroid) { AND.speakAs(BT, text, rate, voice || '', pitch || 1, uid); return; }
+        if (!window.speechSynthesis) return;
+        var u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; u.rate = rate; u.pitch = pitch || 1;
+        u.onend = function () { window.onSpoke && window.onSpoke(uid); };
+        speechSynthesis.cancel(); speechSynthesis.speak(u);
       } catch (e) { }
     },
     stop: function () {
@@ -295,7 +308,7 @@
   function aiLastLine() {
     var l = AI.last; if (!l || !l.at) return '';
     var d = new Date(l.at), hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
-    var what = { example: '예문', talk: '회화', summary: '회화 정리', test: '연결 테스트', models: '모델 목록', youtube: '유튜브 정리', word: '단어 뜻' }[l.what] || l.what;
+    var what = { example: '예문', talk: '회화', summary: '회화 정리', test: '연결 테스트', models: '모델 목록', youtube: '유튜브 정리', word: '단어 뜻', dialog: '다이얼로그' }[l.what] || l.what;
     return '마지막 호출 ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh + ' · ' + what + ' · ' + (l.ms / 1000).toFixed(1) + '초 · ' + (l.status === 200 ? '성공 ✓' : '실패 — ' + esc(l.err || ('HTTP ' + l.status)));
   }
   function aiPrompt(w, hint) {
@@ -438,14 +451,14 @@
   var BAK_KEY = 'vocab3.bak.start';   // v2.23: 켤 때 읽은 상태 한 벌 (설정 → 데이터 → "켤 때 상태로")
 
   function defaultSettings() {
-    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, listSort: 'base', autoUpdate: true };
+    return { dailyGoal: 20, hideMeaning: true, hideExample: true, mode: 'en', autoSpeak: false, rate: 0.9, theme: 'light', colorTheme: 'indigo', themeRandom: true, shuffle: true, swapJudge: false, listExample: true, sfx: true, addMode: 'bulk', ytPause: true, ytPin: false, listSort: 'base', autoUpdate: true, profile: '', profileG: 'm', dlgKo: true, dlgHide: false, dlgLoop: false };
   }
   function defaultAudio() {
     return { wordRepeat: 1, pauseAfterWord: 2000, exampleRepeat: 2, exampleRate: 0.8, exampleGap: 1000, readMeaning: false, readExampleKo: true, pauseBetween: 1500, loop: false, set: 1, order: 'rand', orderV2: true, koV2: true };
   }
   function defaultState() {
     var st = defaultSettings(); st.audio = defaultAudio(); st.talk = defaultTalk(); st.tour = {};   // v2.32 기능 안내: 새로 설치하면 빈 기록 → 화면마다 처음 한 번
-    return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now(), yt: [], usage: {}, sentBox: [] };
+    return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now(), yt: [], usage: {}, sentBox: [], dlg: [] };
   }
   function mkWord(o) {
     var now = Date.now();
@@ -476,6 +489,8 @@
     if (!tk.autoSendV2) { tk.autoSend = false; tk.autoSendV2 = true; }   // v1.19: ■ 뒤에 확인하고 보내는 게 기본
     s.settings.talk = tk;
     if (!Array.isArray(s.talkLog)) s.talkLog = [];
+    s.dlg = (Array.isArray(s.dlg) ? s.dlg : []).map(dlgClean).filter(Boolean);   // v2.35 다이얼로그
+    s.settings.profile = String(s.settings.profile || '');
     // v2.2 유튜브 쉐도잉 — 백업 파일에서 들어올 수 있으니 모양을 검사해 정리한다
     s.yt = (Array.isArray(s.yt) ? s.yt : []).filter(function (r) { return r && typeof r.id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(r.vid); });
     var ml = bridge.mediaList();   // v2.14 받은 영상 — 실제 파일과 맞춘다 (복원한 백업의 off 도 이 폰 파일 기준)
@@ -598,6 +613,7 @@
     if (sheetOpen) { closeSheet(); return; }
     var cur = current(), prev = stack[stack.length - 2];
     if (cur && cur.view === 'chat') { talkBack(); return; }
+    if (cur && cur.view === 'dlgv') { if (prev && prev.view === 'dlg') { stack.pop(); render(); } else go('dlg', {}, true); return; }
     if (cur && cur.view === 'ytv') { if (prev && prev.view === 'yt') { stack.pop(); render(); } else go('yt', {}, true); return; }
     if (prev && prev.view === 'study') { stack.pop(); render(); return; } // detour from the card (e.g. settings for the AI key) → back to the card, not home
     if (cur && cur.view !== 'home') { goTab('home'); return; }
@@ -608,6 +624,7 @@
     useTick();   // 앞 화면까지의 사용 시간을 넣고 새 화면으로 다시 잰다
     var cur = current();
     if (cur.view !== 'ytv') ytStopPlayer();   // 영상 화면을 떠나면 멈춘다 (유튜브 정책: 안 보이는 곳에서 재생 금지)
+    if (cur.view !== 'dlgv') dlgStop();   // 다이얼로그 화면을 떠나면 읽기도 멈춘다
     bridge.setRotate(cur.view === 'ytv');   // 가로 회전은 영상 화면에서만 (왼쪽 영상 · 오른쪽 스크립트)
     $$('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + cur.view); });
     var showTab = ['home', 'list', 'edit', 'import', 'settings', 'stats'].indexOf(cur.view) >= 0;
@@ -635,7 +652,7 @@
       { sel: '.today', t: '오늘의 학습', b: '매일 대기 단어에서 하루 목표(처음엔 20개)만큼 1단계로 채워 줘요. "학습 시작"을 누르면 카드로 외워요.' },
       { sel: '.review-btn[data-stage="2"]', t: '외우면 한 단계씩', b: '카드에서 "외웠다"를 고르면 2단계, 또 외우면 3단계로 올라가고 3단계를 통과하면 졸업해요. "아직"이면 그 단계에 남아요.' },
       { sel: '.review-btn[data-action="sent"]', t: '졸업하면 문장 공부', b: '졸업한 단어의 예문과 유튜브에서 담은 문장을 우리말만 보고 영어로 말해 봐요. 졸업한 단어나 담은 문장이 생기면 열려요.' },
-      { sel: '.quick', t: '회화 · 유튜브 · 듣기', b: '회화 연습은 AI와 영어로 대화해요. 유튜브는 링크를 넣으면 문장마다 나눠 줘요. 듣기 복습은 화면을 꺼도 계속 읽어 줘요.' },
+      { sel: '.quick', t: '회화 · 다이얼로그 · 유튜브 · 듣기', b: '회화 연습은 AI와 영어로 대화해요. 다이얼로그는 필요한 상황의 대화문을 만들어 외워요. 유튜브는 링크를 넣으면 문장마다 나눠 줘요. 듣기 복습은 화면을 꺼도 계속 읽어 줘요.' },
       { sel: '#tabbar [data-tab="settings"]', t: 'AI 기능은 키가 필요해요', b: '회화 · 유튜브 · AI 채우기는 Gemini API 키가 있어야 돼요. 설정의 "키 발급 페이지 (무료)"에서 받아 넣어요.' }
     ] },
     study: { steps: [
@@ -682,6 +699,15 @@
       { sel: '#micBtn', t: '영어로 말하기', b: '마이크를 톡 하고 말한 뒤 ■를 톡 하세요. 중간에 쉬어도 안 끊겨요. 입력창의 문장을 확인하고 보내요.' },
       { sel: '#koBtn', t: '한국어로 말하기', b: '영어가 안 떠오르면 여기를 톡 하고 한국어로 말한 뒤 "다 말했어요"를 톡 하세요. 영어로 옮겨 입력창에 넣고 읽어 줘요.' },
       { sel: '.topbar [data-action="talk-end"]', t: '교정과 리포트', b: '어색한 문장은 말풍선 아래에 고친 문장이 나와요. 한 번 이상 답한 뒤 "끝내기"를 누르면 교정과 기억할 표현을 모은 리포트가 나와요.' }
+    ] },
+    dlg: { steps: [
+      { sel: '.dl-me', t: '내 정보', b: '직업·가족처럼 나에 대해 적어 두면 대화가 내 상황에 맞춰 나와요. 회화 연습 상대도 참고해요.' },
+      { sel: '.topbar [data-action="dlg-add"]', t: '상황으로 대화 만들기', b: '"+ 추가"를 누르고 필요한 상황을 말하거나 적으면 짧은 영어 대화를 만들어 여기에 모아 둬요.' }
+    ] },
+    dlgv: { need: '.dl-line', steps: [
+      { sel: '.dl-play', t: '남녀 목소리로 재생', b: '누르면 A(나)와 B(상대)를 남자·여자 목소리로 번갈아 끝까지 읽어 줘요. "반복"을 켜면 계속 돌아요.' },
+      { sel: '.dl-line', t: '한 줄씩 듣기 · 해석', b: '줄을 한 번 톡 하면 그 줄을 읽고, 두 번 톡 하면 한글이 보였다 가려져요. 재생 중에 톡 하면 거기서부터 이어서 읽어요.' },
+      { sel: '[data-key="dlgHide"]', t: '내 대사 외우기', b: '"내 대사 가리기"를 켜면 A 줄의 영어가 가려지고, 재생할 때 내 차례에 먼저 말해 볼 시간을 준 뒤 보여 주며 읽어요.' }
     ] },
     yt: { steps: [
       { sel: '.empty', t: '유튜브 쉐도잉', b: '영상의 영어를 문장마다 나눠 한글 해석과 함께 보여 줘요. 문장을 톡 하면 그 부분만 나오고 멈춰서 바로 따라 말할 수 있어요.', opt: 1 },
@@ -867,6 +893,7 @@
     sheetOpen = true; if (TOUR) tourEnd(false); updateBack();
   }
   function closeSheet() {
+    if (DSTT) dlgMicCancel();   // 창 안 음성 입력 중이었으면 마이크를 놓는다
     $('#sheet').classList.remove('show');
     if (!modalOpen) $('#overlay').classList.remove('show');
     sheetOpen = false; updateBack(); tourMaybe();
@@ -943,9 +970,10 @@
       '<div class="hh-r"><div class="eyebrow ver">v' + APP_VERSION + '</div><div class="streak">🔥 ' + streak + '일 연속</div></div></div>' +
       '<div class="today"><div class="t-title">오늘의 학습</div><div class="t-sub">' + sub + '</div>' +
       '<div class="t-bar"><div style="width:' + pct + '%"></div></div>' + cta + '</div>' +
-      // 자주 쓰는 세 가지는 한 번에: 회화 · 유튜브 · 듣기 (단어 추가는 아래 탭바에)
+      // 자주 쓰는 네 가지는 한 번에: 회화 · 다이얼로그 · 유튜브 · 듣기 (단어 추가는 아래 탭바에)
       '<div class="quick">' +
       '<button class="q" data-action="talk"><span class="q-ic">' + ICON_TALK + '</span><span class="q-t">회화 연습</span></button>' +
+      '<button class="q" data-action="dlg"><span class="q-ic">' + ICON_DLG + '</span><span class="q-t">다이얼로그</span></button>' +
       '<button class="q" data-action="yt"><span class="q-ic">' + ICON_VIDEO + '</span><span class="q-t">유튜브</span></button>' +
       '<button class="q" data-action="audio"><span class="q-ic">' + ICON_HEADSET + '</span><span class="q-t">듣기 복습</span>' + (AUD.active ? '<span class="q-s">' + (AUD.playing ? '재생 중' : '일시정지') + '</span>' : '') + '</button>' +
       '</div>' +
@@ -1546,7 +1574,7 @@
   /* ================= 사용 기록 (v2.13) =================
      앱이 화면에 떠 있는 시간을 날짜·기능별로 쌓는다 (화면이 꺼지거나 앱이 내려가면 멈춤 — 백그라운드 듣기 복습은 안 셈).
      S.usage['YYYY-MM-DD'] = { t: 총 ms, f: { 기능: ms }, c: { sent·yt·talk: 횟수 } } — 판정한 카드 수는 studyDays */
-  var USE_FEAT = { study: 'study', summary: 'study', sent: 'sent', talk: 'talk', chat: 'talk', yt: 'yt', ytv: 'yt', audio: 'audio' };   // 나머지(홈·단어장·추가·설정·통계) = etc
+  var USE_FEAT = { study: 'study', summary: 'study', sent: 'sent', talk: 'talk', chat: 'talk', dlg: 'talk', dlgv: 'talk', yt: 'yt', ytv: 'yt', audio: 'audio' };   // 나머지(홈·단어장·추가·설정·통계) = etc
   var USE_ORDER = [['study', '단어 학습'], ['sent', '문장 공부'], ['talk', '회화 연습'], ['yt', '유튜브'], ['audio', '듣기 복습'], ['etc', '홈·단어장·설정']];
   var USE = { f: null, at: 0, paused: false, saved: 0 }, useSel = null;   // useSel: 통계에서 고른 날
   function useDay() { var d = localDate(); return S.usage[d] || (S.usage[d] = { t: 0, f: {}, c: {} }); }
@@ -1768,6 +1796,7 @@
     return [
       'You are a friendly English conversation partner for a Korean adult learner. Level: ' + (LEVELS[TALK.level] || LEVELS.normal) + '.',
       'Scenario: ' + (TALK.scenario === 'free' && TALK.custom ? TALK.custom : sc.desc) + '. You play ' + sc.role + '; the learner plays themselves. Stay in the scene, be natural and warm, never lecture.',
+      String(S.settings.profile || '').trim() ? 'About the learner (they play themselves): ' + String(S.settings.profile).trim() + '. Use this naturally when it fits; do not force it.' : '',
       'Each "reply": 1-3 short spoken sentences, English only, and end with a question or prompt so the learner keeps talking.',
       words.length ? 'Target words the learner is practicing: ' + words.join(', ') + '. Steer the conversation so they get natural chances to use them; you may use them too.' : '',
       'Feedback on the learner\'s LAST message only: if it has a grammar, word-choice or naturalness problem, put the corrected full sentence in "fix" and a one-line explanation in "note" written in ' + fb + '. If it is fine, set "fix" to "" and "note" to a very short praise in ' + fb + '. For the opening turn (no learner message yet) both are "".',
@@ -1973,12 +2002,13 @@
     // 인식기가 끝내 답이 없으면 화면에 보이던 문장으로 마무리한다
     if (STT.wait) STT.timer = setTimeout(function () { if (STT.wait) window.onStt(STT.partial); }, 6000);
   }
-  window.onSttPartial = function (text) { if (!STT.on && !STT.wait) return; STT.partial = text; var i = $('#chatIn'); if (i) i.value = text; };   // ■ 뒤 끝맺는 동안에도 갱신
+  window.onSttPartial = function (text) { if (DSTT) { dlgSttEv('partial', text); return; } if (!STT.on && !STT.wait) return; STT.partial = text; var i = $('#chatIn'); if (i) i.value = text; };   // ■ 뒤 끝맺는 동안에도 갱신
   function chatFill(text, noFocus) {   // 인식한 문장을 입력창에 — 확인·수정한 뒤 ➤ 로 보낸다
     var i = $('#chatIn'); if (i) { i.value = text; i.placeholder = '확인하고 ➤ 누르기'; if (!noFocus) { i.focus(); try { i.setSelectionRange(text.length, text.length); } catch (e) { } } }
     var sb = $('.chat-bar .send'); if (sb) sb.classList.add('ready');
   }
   window.onSttState = function (st) {
+    if (DSTT) { dlgSttEv('state', st); return; }
     if (st === 'cancel') {   // 앱이 백그라운드로 가서 마이크를 놓음 — 들은 데까지는 입력창에 남긴다
       var keep = STT.partial, kl = STT.lang;
       sttReset(); if (TALK) { renderChat(false); if (keep && kl !== 'ko') { STT_HEARD = keep; chatFill(keep, true); } }
@@ -1992,6 +2022,7 @@
     if (st === 'end') { var m = $('#micBtn'); if (m) m.classList.add('thinking'); }
   };
   window.onStt = function (text) {
+    if (DSTT) { dlgSttEv('final', text); return; }
     if (!STT.on && !STT.wait) return;   // 이미 처리했거나 취소된 결과
     var lang = STT.lang || 'en';
     sttReset();
@@ -2005,6 +2036,7 @@
     STT_HEARD = text; chatFill(text);
   };
   window.onSttError = function (code, kept) {
+    if (DSTT) { dlgSttEv('error', code, kept); return; }
     var keep = String(kept || STT.partial || '').replace(/\s+/g, ' ').trim(), kl = STT.lang;
     sttReset(); if (TALK) renderChat(false);
     if (keep && TALK) {   // 인터넷 끊김 같은 오류라도 들은 데까지는 살린다 (예전엔 문장을 통째로 버렸다)
@@ -2110,6 +2142,259 @@
     if (!TALK) { go('talk', {}, true); return; }
     if (TALK.turns === 0 && !TALK.busy) { TALK = null; bridge.sttCancel(); sttReset(); go('talk', {}, true); return; }
     confirm2('대화를 끝내고 정리할까요?', '끝내기').then(function (ok) { if (ok) { bridge.sttCancel(); sttReset(); talkEnd(); } });
+  }
+
+  /* ================= 다이얼로그 (v2.35, 사용자 요청) =================
+     필요한 상황을 말(한국어 음성 인식)이나 글로 적으면 Gemini 가 짧은 영어 대화문을 만들어 S.dlg 에 모은다 — 외우기 위한 것.
+     A = 나(내 정보 S.settings.profile, 목소리 S.settings.profileG) · B = 상대(반대 성별). ▶ = A·B 를 남자·여자 목소리로 번갈아 끝까지 읽기.
+     기록 { id, title, sit, b, lv, len, lines:[{s:'A'|'B', e, k}] | null, date, addedAt, plays }. 만드는 중·실패는 DJOB (저장 안 함). */
+  var DLG_LEN = { short: 6, normal: 10, long: 16 };
+  var DJOB = {};              // { id: { busy, err } }
+  var DLGV = null;            // 보는 중 { id, ko:{i:1}, show:{i:1}, tap:{i,t} }
+  var DP = null;              // 재생 중 { id, i, uid, timer, tok, one }
+  var dpTok = 0;
+  var DADD = { sit: '', len: 'normal' };   // 추가 창 입력 (내 정보 창에 다녀와도 남게)
+  var DSTT = null;            // 창 안 음성 입력 { el: textarea id, base, on, wait, timer, partial }
+  function dlgRec(id) { for (var i = 0; i < S.dlg.length; i++) if (S.dlg[i].id === id) return S.dlg[i]; return null; }
+  function dlgClean(r) {   // 백업에서 올 수 있어 모양 검사 (migrate)
+    if (!r || typeof r.id !== 'string') return null;
+    var lines = Array.isArray(r.lines) ? r.lines.filter(function (x) { return x && x.e; }).map(function (x) { return { s: x.s === 'B' ? 'B' : 'A', e: String(x.e), k: String(x.k || '') }; }) : null;
+    return { id: r.id, title: String(r.title || ''), sit: String(r.sit || ''), b: String(r.b || ''), lv: String(r.lv || 'normal'), len: DLG_LEN[r.len] ? r.len : 'normal', lines: lines && lines.length ? lines : null, date: String(r.date || ''), addedAt: Number(r.addedAt) || 0, plays: Number(r.plays) || 0 };
+  }
+
+  // 남자·여자 목소리 — Google 엔진 목소리 이름의 세 글자(en-us-x-iom-local)로 성별을 안다. 모르면 기본 목소리 + 음높이로 구분.
+  var VOICE_G = { iob: 'f', iog: 'f', iol: 'm', iom: 'm', sfg: 'f', tpc: 'f', tpd: 'm', tpf: 'f', gba: 'f', gbb: 'm', gbc: 'f', gbd: 'm', gbg: 'f', rjs: 'm', fis: 'f', afa: 'f', aua: 'f', aub: 'm', auc: 'f', aud: 'm', ahp: 'f', cxx: 'f', ena: 'f', enc: 'f', end: 'm', ene: 'm' };
+  function voiceG(n) { var m = /-x-([a-z]{3})-/.exec(String(n || '').toLowerCase()); return m ? VOICE_G[m[1]] || '' : ''; }
+  function dlgVoices() {
+    var tv = bridge.ttsVoices() || {}, cur = ttsCur(tv), list = (tv.list || []).filter(function (x) { return x.inst; });
+    var cl = ''; list.forEach(function (x) { if (x.n === cur) cl = x.l; });
+    var pref = cl || 'US';
+    function pick(g) {
+      if (cur && voiceG(cur) === g) return cur;   // 내가 고른 목소리가 그 성별이면 그대로
+      var a = list.filter(function (x) { return voiceG(x.n) === g; });
+      a.sort(function (x, y) { return (x.l === pref ? 0 : 1) - (y.l === pref ? 0 : 1) || (/local/.test(x.n) ? 0 : 1) - (/local/.test(y.n) ? 0 : 1) || (x.n < y.n ? -1 : 1); });
+      return a.length ? a[0].n : '';
+    }
+    var m = pick('m'), f = pick('f');
+    return { m: { v: m, p: m ? 1 : 0.78 }, f: { v: f, p: f ? 1 : 1.12 } };
+  }
+  function dlgG(r, s) { var me = S.settings.profileG === 'f' ? 'f' : 'm'; return s === 'A' ? me : (me === 'm' ? 'f' : 'm'); }
+
+  RENDER.dlg = function () {
+    var list = S.dlg.slice().sort(function (a, b) { return b.addedAt - a.addedAt; }), pf = String(S.settings.profile || '').trim();
+    $('#view-dlg').innerHTML =
+      '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title">다이얼로그</span><button class="btn" data-action="dlg-add" style="flex:none;padding:8px 12px">+ 추가</button></div>' +
+      '<div class="wrap">' +
+      '<button class="dl-me" data-action="dlg-profile"><span class="dl-me-t">내 정보' + (pf ? '' : ' 넣기') + '</span><span class="dl-me-s">' + esc(pf || '직업·가족 같은 걸 적어 두면 대화가 내 상황에 맞춰 나와요') + '</span><span class="chev">›</span></button>' +
+      (list.length ? list.map(function (r) {
+        var j = DJOB[r.id] || {};
+        var sub = j.busy ? '만드는 중…' : j.err ? '만들지 못했어요 — 눌러서 다시' : r.lines ? r.lines.length + '줄' + (r.b ? ' · ' + r.b : '') : '만들기 전';
+        return '<div class="yt-item"><button class="yt-open" data-action="dlg-open" data-id="' + esc(r.id) + '"><span class="dl-ic">' + ICON_DLG + '</span>' +
+          '<div class="yi-b"><div class="yi-t">' + esc(r.title || r.sit || '다이얼로그') + '</div><div class="yi-s">' + esc(sub + ' · ' + r.date + (r.plays ? ' · ▶ ' + r.plays + '번' : '')) + '</div></div></button>' +
+          '<button class="yi-del" data-action="dlg-del" data-id="' + esc(r.id) + '" aria-label="삭제">' + ICON_X + '</button></div>';
+      }).join('') :
+        '<div class="empty">아직 만든 다이얼로그가 없어요</div><button class="btn primary big" data-action="dlg-add">+ 다이얼로그 만들기</button>') +
+      (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
+      '<div class="small muted yt-legal">대화는 적은 상황과 내 정보를 내 Gemini 키로 Google에 보내서 만들어요. 읽기는 폰 안의 목소리로 해요.</div>' +
+      '</div>';
+  };
+  function dlgMicBtn(id) { var on = DSTT && DSTT.el === id; return '<button class="btn dl-mic' + (on ? ' on' : '') + '" data-action="dlg-mic" data-el="' + id + '">' + (on ? (DSTT.wait ? '…' : '■ 다 말했어요') : '🎤 말로 입력') + '</button>'; }
+  function dlgAddSheet() {
+    var pf = String(S.settings.profile || '').trim();
+    openSheet('<div class="sh-word"><span>새 다이얼로그</span></div>' +
+      '<div class="field" style="margin-top:10px"><textarea id="dlgSit" rows="3" placeholder="어떤 상황인가요? 예: 새로 온 연구원에게 연구소 투어를 하겠냐고 물어보기">' + esc(DADD.sit) + '</textarea></div>' +
+      '<div class="row" style="margin-top:8px;align-items:center">' + dlgMicBtn('dlgSit') +
+      '<div class="pick" style="flex:1;justify-content:flex-end">' + [['short', '짧게'], ['normal', '보통'], ['long', '길게']].map(function (o) { return '<button class="' + (o[0] === DADD.len ? 'on' : '') + '" data-action="dlg-len" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
+      '<button class="dl-me sm" data-action="dlg-profile" data-from="add"><span class="dl-me-t">내 정보</span><span class="dl-me-s">' + esc(pf || '아직 없어요 — 넣으면 내 상황에 맞춰 만들어요') + '</span><span class="chev">›</span></button>' +
+      '<div class="sh-actions"><button class="btn" data-action="close-sheet">취소</button><button class="btn primary" data-action="dlg-submit">만들기</button></div>');
+    var i = $('#dlgSit'); if (i) i.addEventListener('input', function () { DADD.sit = i.value; });
+  }
+  function dlgProfileSheet(from) {
+    var g = S.settings.profileG === 'f' ? 'f' : 'm';
+    openSheet('<div class="sh-word"><span>내 정보</span></div>' +
+      '<div class="small muted" style="margin-top:6px;line-height:1.5">다이얼로그에서 A가 나예요. 적어 둔 내용에 맞춰 대화를 만들고, 회화 연습 상대도 참고해요.</div>' +
+      '<div class="field" style="margin-top:10px"><textarea id="dlgPf" rows="5" placeholder="예: 한국기계연구원 연구원이에요. 로봇을 연구하고, 일곱 살 딸이 하나 있어요.">' + esc(S.settings.profile || '') + '</textarea></div>' +
+      '<div class="row" style="margin-top:8px;align-items:center">' + dlgMicBtn('dlgPf') +
+      '<div class="pick" style="flex:1;justify-content:flex-end"><span class="small muted" style="align-self:center;margin-right:4px">내 목소리</span>' + [['m', '남자'], ['f', '여자']].map(function (o) { return '<button class="' + (o[0] === g ? 'on' : '') + '" data-action="dlg-pg" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
+      '<div class="sh-actions"><button class="btn" data-action="' + (from === 'add' ? 'dlg-add' : 'close-sheet') + '">취소</button><button class="btn primary" data-action="dlg-pf-save" data-from="' + (from || '') + '">저장</button></div>');
+  }
+  function dlgSubmit() {
+    var i = $('#dlgSit'), sit = String(i ? i.value : DADD.sit).replace(/\s+/g, ' ').trim();
+    if (!sit) { toast('어떤 상황인지 적거나 말해 주세요'); return; }
+    if (i) i.blur();
+    dlgMicCancel(); closeSheet();
+    if (!AI.key) { confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return; }
+    var r = { id: uid(), title: '', sit: sit, b: '', lv: S.settings.talk.level || 'normal', len: DADD.len, lines: null, date: localDate(), addedAt: Date.now(), plays: 0 };
+    S.dlg.push(r); save(); DADD = { sit: '', len: DADD.len };
+    go('dlgv', { id: r.id });
+    dlgMake(r);
+  }
+  function dlgPrompt(r) {
+    var n = DLG_LEN[r.len] || 10, pf = String(S.settings.profile || '').trim(), me = S.settings.profileG === 'f' ? 'woman' : 'man';
+    return [
+      'You write short, natural spoken English dialogues for a Korean adult learner to memorize and use in real life. Level: ' + (LEVELS[r.lv] || LEVELS.normal) + '.',
+      'Speaker A is the learner (a ' + me + '). Speaker B is the other person in the situation (a ' + (me === 'man' ? 'woman' : 'man') + '). The situation may be described in Korean.',
+      'Write exactly ' + n + ' lines that strictly alternate A, B, A, B … Start with whoever would naturally speak first in the situation.',
+      'Each line: 1-2 short sentences a native speaker would actually say — useful, reusable expressions, no textbook stiffness, no narration or stage directions, no placeholders like [name].',
+      pf ? 'About the learner (A): ' + pf + '. Keep A consistent with these facts and use them where they fit naturally; do not force every detail in.' : '',
+      '"k": a natural Korean translation of the line (spoken style). "title": a short Korean title for the situation (max 20 characters). "b": who B is, in Korean (a few words, e.g. "새로 온 연구원").',
+      'Return JSON only: {"title": "...", "b": "...", "lines": [{"s": "A", "e": "...", "k": "..."}]}'
+    ].filter(Boolean).join('\n');
+  }
+  function dlgMake(r) {
+    if (DJOB[r.id] && DJOB[r.id].busy) return;
+    var job = DJOB[r.id] = { busy: true, err: '' }; dlgRefresh(r.id);
+    var body = {
+      systemInstruction: { parts: [{ text: dlgPrompt(r) }] },
+      contents: [{ role: 'user', parts: [{ text: 'Situation: ' + r.sit }] }],
+      generationConfig: {
+        temperature: 0.8, responseMimeType: 'application/json',
+        responseSchema: { type: 'OBJECT', properties: { title: { type: 'STRING' }, b: { type: 'STRING' }, lines: { type: 'ARRAY', items: { type: 'OBJECT', properties: { s: { type: 'STRING', enum: ['A', 'B'] }, e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['s', 'e', 'k'], propertyOrdering: ['s', 'e', 'k'] } } }, required: ['title', 'b', 'lines'], propertyOrdering: ['title', 'b', 'lines'] }
+      }
+    };
+    aiGenerate(body, 'dialog', 90000).then(function (res) {
+      if (DJOB[r.id] !== job) return;
+      if (res.status !== 200) throw { msg: aiErrorMessage(res) };
+      var out = parseAiJson(res.text), lines = out && Array.isArray(out.lines) ? out.lines : [];
+      lines = lines.filter(function (x) { return x && x.e; }).map(function (x) { return { s: x.s === 'B' ? 'B' : 'A', e: String(x.e).replace(/\s+/g, ' ').trim(), k: String(x.k || '').replace(/\s+/g, ' ').trim() }; });
+      if (!lines.length) throw { msg: '대화를 이해하지 못했어요. 다시 만들어 보세요' };
+      var rr = dlgRec(r.id); if (!rr) return;   // 기다리는 사이 지웠다
+      rr.lines = lines; rr.title = String(out.title || '').trim().slice(0, 40); rr.b = String(out.b || '').trim().slice(0, 30); save();
+      DJOB[r.id] = { busy: false, err: '' };
+      if (DLGV && DLGV.id === r.id) { DLGV.ko = {}; DLGV.show = {}; }
+    }).catch(function (e) {
+      if (DJOB[r.id] !== job) return;
+      var msg = e && e.msg ? e.msg : '연결에 실패했어요', rr = dlgRec(r.id);
+      if (rr && rr.lines) { DJOB[r.id] = { busy: false, err: '' }; toast('다시 만들기 실패 — ' + msg); }   // 있던 대화는 그대로
+      else DJOB[r.id] = { busy: false, err: msg };
+    }).then(function () { dlgRefresh(r.id); });
+  }
+  function dlgRefresh(id) {
+    var cur = current();
+    if (cur && cur.view === 'dlg') RENDER.dlg();
+    else if (cur && cur.view === 'dlgv' && DLGV && DLGV.id === id) dlgRenderBody();
+  }
+
+  RENDER.dlgv = function (p) {
+    var r = dlgRec(p && p.id);
+    if (!r) { go('dlg', {}, true); return; }
+    if (!DLGV || DLGV.id !== r.id) DLGV = { id: r.id, ko: {}, show: {}, tap: null };
+    $('#view-dlgv').innerHTML =
+      '<div class="topbar"><button class="icon-btn" data-action="back">' + ICON_BACK + '</button><span class="title" id="dlgT"></span><button class="icon-btn" data-action="dlg-menu" aria-label="메뉴">' + ICON_MORE + '</button></div>' +
+      '<div class="wrap dl-wrap" id="dlgBody"></div>' +
+      '<div class="dl-bar" id="dlgBar"></div>';
+    dlgRenderBody();
+  };
+  function dlgRenderBody() {
+    var r = DLGV && dlgRec(DLGV.id), el = $('#dlgBody'); if (!r || !el) return;
+    var j = DJOB[r.id] || {}, st = S.settings, gA = dlgG(r, 'A'), gB = dlgG(r, 'B');
+    $('#dlgT').textContent = r.title || '다이얼로그';
+    var head = '<div class="dl-sit"><div class="dl-sit-t">' + esc(r.sit) + '</div>' +
+      '<div class="dl-who"><span class="dl-tag a">A</span>나 · ' + (gA === 'm' ? '남자' : '여자') + '<span class="dl-tag b">B</span>' + esc(r.b || '상대') + ' · ' + (gB === 'm' ? '남자' : '여자') + '</div></div>';
+    var body;
+    if (j.busy) body = '<div class="dl-busy"><div class="bubble typing"><i></i><i></i><i></i></div>대화를 만드는 중이에요…</div>';
+    else if (!r.lines) body = '<div class="dl-busy">' + esc(j.err || '아직 만들지 않았어요') + '<button class="btn primary" data-action="dlg-remake">다시 만들기</button></div>';
+    else body = '<div class="dl-lines">' + r.lines.map(function (L, i) {
+      var hideEn = st.dlgHide && L.s === 'A' && !DLGV.show[i], showKo = st.dlgKo ? !DLGV.ko[i] : !!DLGV.ko[i];
+      return '<div class="dl-line ' + (L.s === 'A' ? 'a' : 'b') + (DP && DP.id === r.id && DP.i === i ? ' on' : '') + '" data-action="dlg-line" data-i="' + i + '" id="dl-' + i + '">' +
+        '<span class="dl-tag ' + (L.s === 'A' ? 'a' : 'b') + '">' + L.s + '</span>' +
+        '<div class="dl-bub"><div class="dl-e' + (hideEn ? ' hid' : '') + '">' + esc(L.e) + '</div>' + (L.k ? '<div class="dl-k' + (showKo ? '' : ' hid') + '">' + esc(L.k) + '</div>' : '') + '</div></div>';
+    }).join('') + '</div>';
+    el.innerHTML = head + body;
+    dlgRenderBar();
+    tourMaybe();
+  }
+  function dlgRenderBar() {
+    var r = DLGV && dlgRec(DLGV.id), b = $('#dlgBar'); if (!b) return;
+    var st = S.settings, on = !!(DP && !DP.one && r && DP.id === r.id), ok = !!(r && r.lines);
+    b.innerHTML = '<div class="dl-opts">' +
+      '<button class="chip' + (st.dlgKo ? ' on' : '') + '" data-action="dlg-opt" data-key="dlgKo">한글</button>' +
+      '<button class="chip' + (st.dlgHide ? ' on' : '') + '" data-action="dlg-opt" data-key="dlgHide">내 대사 가리기</button>' +
+      '<button class="chip' + (st.dlgLoop ? ' on' : '') + '" data-action="dlg-opt" data-key="dlgLoop">반복</button></div>' +
+      '<button class="dl-play' + (on ? ' on' : '') + '" data-action="dlg-play" aria-label="' + (on ? '멈춤' : '재생') + '"' + (ok ? '' : ' disabled') + '>' + (on ? ICON_STOP : ICON_PLAY) + '</button>';
+  }
+  function dlgMark() {   // 지금 읽는 줄 표시만 바꾼다 (다시 그리지 않음 — 스크롤 유지)
+    $$('#dlgBody .dl-line').forEach(function (x) { x.classList.toggle('on', !!DP && DP.i === +x.getAttribute('data-i')); });
+    var el = DP && $('#dl-' + DP.i); if (el && !DP.one) try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { }
+  }
+
+  // 재생: 줄마다 bridge.speakAs → window.onSpoke(uid) 가 오면 다음 줄. 안 오면(엔진이 조용히 실패) 글자 길이만큼 기다렸다 넘어간다.
+  function dlgPlay(from, one) {
+    var r = DLGV && dlgRec(DLGV.id); if (!r || !r.lines) return;
+    dlgStop(true);
+    DP = { id: r.id, i: from || 0, tok: ++dpTok, one: !!one, v: dlgVoices() };
+    if (!one && !from) { r.plays = (r.plays || 0) + 1; useCount('dlg'); save(); }
+    dlgRenderBar(); dlgLine();
+  }
+  function dlgLine() {
+    var r = DP && dlgRec(DP.id); if (!r || !r.lines) { dlgStop(); return; }
+    var L = r.lines[DP.i];
+    if (!L) {
+      if (S.settings.dlgLoop && !DP.one) { DP.i = 0; DP.timer = setTimeout(dlgLine, 1500); dlgMark(); return; }
+      dlgStop(); return;
+    }
+    dlgMark();
+    var rate = S.settings.rate || 0.9, g = DP.v[dlgG(r, L.s)], tok = DP.tok;
+    if (S.settings.dlgHide && L.s === 'A' && !DP.one && !DLGV.show[DP.i]) {   // 내 차례: 먼저 말해 볼 시간을 주고, 그다음 보여 주며 읽는다
+      var words = L.e.split(/\s+/).length;
+      DP.timer = setTimeout(function () { if (!DP || DP.tok !== tok) return; var e = $('#dl-' + DP.i + ' .dl-e'); if (e) e.classList.remove('hid'); dlgSay(L, g, rate); }, 1500 + words * 420 / rate);
+      return;
+    }
+    dlgSay(L, g, rate);
+  }
+  function dlgSay(L, g, rate) {
+    DP.uid = 'd' + DP.tok + '_' + DP.i;
+    bridge.speakAs(L.e, rate, g.v, g.p, DP.uid);
+    clearTimeout(DP.timer);
+    var tok = DP.tok, i = DP.i;
+    DP.timer = setTimeout(function () { if (DP && DP.tok === tok && DP.i === i) dlgNext(); }, 5000 + L.e.length * 110 / rate);   // 끝 신호가 안 와도 멈추지 않게
+  }
+  function dlgNext() {
+    if (!DP) return;
+    if (DP.one) { dlgStop(); return; }
+    DP.i++; dlgLine();
+  }
+  window.onSpoke = function (uid) {
+    if (!DP || DP.uid !== uid) return;
+    clearTimeout(DP.timer); var tok = DP.tok;
+    DP.timer = setTimeout(function () { if (DP && DP.tok === tok) dlgNext(); }, 450);   // 줄 사이 숨 한 번
+  };
+  function dlgStop(quiet) {
+    if (!DP) return;
+    clearTimeout(DP.timer); DP = null;
+    if (!quiet) bridge.stop();
+    dlgMark(); dlgRenderBar();
+  }
+
+  // 창 안 음성 입력 (한국어) — 회화 연습의 STT 콜백을 잠시 여기로 돌린다 (DSTT 가 있을 때만)
+  function dlgMic(id) {
+    if (DSTT) { if (DSTT.on) { DSTT.on = false; DSTT.wait = true; dlgMicPaint(); bridge.sttStop(); var d = DSTT; d.timer = setTimeout(function () { if (DSTT === d) dlgSttDone(d.partial); }, 6000); } return; }
+    if (!bridge.sttAvailable()) { toast('이 기기에서 음성 인식을 쓸 수 없어요. 글로 적어 주세요'); return; }
+    var t = $('#' + id); if (!t) return;
+    dlgStop(); bridge.stop();
+    DSTT = { el: id, base: t.value.replace(/\s+$/, ''), on: true, wait: false, partial: '', timer: 0 };
+    dlgMicPaint(); t.placeholder = '준비 중… 진동이 오면 말하세요';
+    bridge.sttStart('ko-KR');
+  }
+  function dlgMicPaint() { var b = $('.dl-mic'); if (b) b.outerHTML = dlgMicBtn(b.getAttribute('data-el')); }
+  function dlgSttFill(text) { var t = DSTT && $('#' + DSTT.el); if (!t) return; t.value = DSTT.base + (DSTT.base && text ? ' ' : '') + text; if (DSTT.el === 'dlgSit') DADD.sit = t.value; }
+  function dlgSttDone(text) {
+    if (!DSTT) return; clearTimeout(DSTT.timer);
+    text = String(text || '').replace(/\s+/g, ' ').trim();
+    dlgSttFill(text); DSTT = null; dlgMicPaint();
+    if (!text) toast('잘 못 들었어요. 다시 말해 주세요');
+  }
+  function dlgMicCancel() { if (DSTT) { clearTimeout(DSTT.timer); DSTT = null; bridge.sttCancel(); } }
+  function dlgSttEv(kind, a, b) {
+    if (kind === 'partial') { DSTT.partial = String(a || ''); dlgSttFill(DSTT.partial); return; }
+    if (kind === 'final') { dlgSttDone(a); return; }
+    if (kind === 'error') {
+      var keep = String(b || DSTT.partial || '').trim(); dlgSttDone(keep);
+      if (!keep) toast({ permission: '마이크 권한이 필요해요. 설정에서 허용해 주세요', unavailable: '이 기기에는 음성 인식 서비스가 없어요', network: '음성 인식에 인터넷이 필요해요' }[a] || '잘 못 들었어요. 다시 말해 주세요');
+      return;
+    }
+    if (a === 'ready') { bridge.vibrate(30); var t = $('#' + DSTT.el); if (t) t.placeholder = '한국어로 말하는 중 · 다 말하면 ■'; }
+    else if (a === 'cancel') dlgSttDone(DSTT.partial);
   }
 
   /* ================= YOUTUBE 쉐도잉 ================= */
@@ -3437,6 +3722,7 @@
       '<div class="small muted ai-last" id="ai-last">' + aiLastLine() + '</div>' +
       '</div>' +
       '<div class="section-title">회화 연습</div><div class="settings-group">' +
+      '<button class="switch-row more-row" data-action="dlg-profile"><div><div class="sw-t">내 정보</div><div class="sw-s">' + esc(String(st.profile || '').trim().slice(0, 60) || '직업·가족 등 — 다이얼로그와 회화 상대가 참고해요') + '</div></div><span class="chev">›</span></button>' +
       '<div class="switch-row"><div><div class="sw-t">교정 설명 언어</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === st.talk.feedbackLang ? 'on' : '') + '" data-action="talk-set-s" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
       '<div class="switch-row"><div><div class="sw-t">AI 답변 읽어 주기</div></div><button class="toggle' + (st.talk.speak ? ' on' : '') + '" data-action="talk-toggle" data-key="speak"></button></div>' +
       '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (st.talk.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>' +
@@ -3822,6 +4108,61 @@
     'talk': function () { go('talk'); },
     'yt': function () { go('yt'); },
     'yt-add': function () { ytAddSheet(); },
+    /* --- 다이얼로그 (v2.35) --- */
+    'dlg': function () { go('dlg'); },
+    'dlg-add': function () { dlgAddSheet(); var i = $('#dlgSit'); if (i && !DADD.sit) i.focus(); },
+    'dlg-submit': function () { dlgSubmit(); },
+    'dlg-len': function (el) { DADD.len = el.getAttribute('data-value'); $$('#sheet [data-action="dlg-len"]').forEach(function (b) { b.classList.toggle('on', b === el); }); },
+    'dlg-mic': function (el) { dlgMic(el.getAttribute('data-el')); },
+    'dlg-profile': function (el) { var i = $('#dlgSit'); if (i) DADD.sit = i.value; dlgMicCancel(); dlgProfileSheet(el.getAttribute('data-from')); },
+    'dlg-pg': function (el) { $$('#sheet [data-action="dlg-pg"]').forEach(function (b) { b.classList.toggle('on', b === el); }); },
+    'dlg-pf-save': function (el) {
+      var t = $('#dlgPf'), g = $('#sheet [data-action="dlg-pg"].on');
+      S.settings.profile = String(t ? t.value : '').trim().slice(0, 1000); if (g) S.settings.profileG = g.getAttribute('data-value'); save();
+      dlgMicCancel();
+      if (el.getAttribute('data-from') === 'add') dlgAddSheet(); else { closeSheet(); render(); }
+      toast('내 정보를 저장했어요');
+    },
+    'dlg-open': function (el) {
+      var r = dlgRec(el.getAttribute('data-id')); if (!r) return;
+      go('dlgv', { id: r.id });
+      if (!r.lines && !(DJOB[r.id] && DJOB[r.id].busy) && AI.key) dlgMake(r);
+    },
+    'dlg-del': function (el) {
+      var id = el.getAttribute('data-id'), r = dlgRec(id); if (!r) return;
+      confirm2('"' + (r.title || r.sit).slice(0, 40) + '" 다이얼로그를 지울까요?', '삭제', true).then(function (ok) {
+        if (!ok) return;
+        if (sheetOpen) closeSheet();
+        S.dlg = S.dlg.filter(function (x) { return x.id !== id; }); delete DJOB[id]; if (DLGV && DLGV.id === id) DLGV = null; save(); render();
+      });
+    },
+    'dlg-remake': function () { var r = DLGV && dlgRec(DLGV.id); if (!r) return; if (!AI.key) { go('settings', { scroll: 'ai' }); return; } dlgStop(); dlgMake(r); },
+    'dlg-menu': function () {
+      var r = DLGV && dlgRec(DLGV.id); if (!r) return;
+      openSheet('<div class="sh-word"><span>' + esc(r.title || '다이얼로그') + '</span></div><div class="yt-menu">' +
+        (r.lines ? '<button class="btn" data-action="dlg-copy">대화 복사</button>' : '') +
+        '<button class="btn" data-action="dlg-again">같은 상황으로 다시 만들기</button>' +
+        '<button class="btn danger" data-action="dlg-del" data-id="' + esc(r.id) + '">삭제</button></div>');
+    },
+    'dlg-copy': function () { var r = DLGV && dlgRec(DLGV.id); if (!r || !r.lines) return; bridge.copy(r.lines.map(function (L) { return L.s + ': ' + L.e + (L.k ? '\n   ' + L.k : ''); }).join('\n')); closeSheet(); toast('대화를 복사했어요'); },
+    'dlg-again': function () {
+      closeSheet(); var r = DLGV && dlgRec(DLGV.id); if (!r) return;
+      if (!r.lines) { ACTIONS['dlg-remake'](); return; }
+      confirm2('같은 상황으로 새 대화를 만들어 지금 대화를 바꿀까요?', '다시 만들기').then(function (ok) { if (ok) ACTIONS['dlg-remake'](); });
+    },
+    'dlg-opt': function (el) { var k = el.getAttribute('data-key'); S.settings[k] = !S.settings[k]; save(); if (DLGV) { DLGV.ko = {}; DLGV.show = {}; } dlgRenderBody(); },
+    'dlg-play': function () { if (DP && !DP.one) dlgStop(); else dlgPlay(0); },
+    'dlg-line': function (el) {   // 한 번 톡 = 그 줄 읽기 (재생 중이면 거기서부터 이어서) · 두 번 톡(400ms) = 한글 보이기/가리기 · 가린 내 대사는 톡 = 보이기
+      var i = +el.getAttribute('data-i'), now = Date.now(), tp = DLGV.tap;
+      DLGV.tap = { i: i, t: now };
+      if (tp && tp.i === i && now - tp.t < 400) {
+        DLGV.tap = null; DLGV.ko[i] = !DLGV.ko[i];
+        var k = el.querySelector('.dl-k'); if (k) k.classList.toggle('hid');
+        return;
+      }
+      var e = el.querySelector('.dl-e.hid'); if (e) { e.classList.remove('hid'); DLGV.show[i] = 1; }
+      if (DP && !DP.one) { dlgStop(true); dlgPlay(i); } else dlgPlay(i, true);
+    },
     'yt-submit': function () { ytSubmit(); },
     'yt-open': function (el) { var r = ytRec(el.getAttribute('data-id')); if (r) go('ytv', { id: r.id }); },
     'yt-del': function (el) {
@@ -4160,7 +4501,7 @@
     if (sheetOpen && $('#sheet .voice-list')) openVoiceSheet();
   };
   window.onAppResume = function () { if (stale()) { location.reload(); return; } USE.paused = false; useTick(); updCheck(false); if (current() && current().view === 'home') RENDER.home(); };
-  window.onAppPause = function () { useTick(); USE.paused = true; USE.f = null; saveNow(); syncNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
+  window.onAppPause = function () { dlgStop(); useTick(); USE.paused = true; USE.f = null; saveNow(); syncNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
   document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); else window.onAppResume(); });
   window.addEventListener('pagehide', saveNow);
 

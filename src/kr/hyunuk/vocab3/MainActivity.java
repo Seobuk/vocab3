@@ -24,6 +24,7 @@ import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
 import java.util.ArrayList;
 import android.graphics.Insets;
@@ -121,6 +122,7 @@ public class MainActivity extends Activity {
                 enVoice = findVoice(tts, prefs.getString("tts.voice", ""));
                 try { useEn(tts, enVoice); } catch (Exception ignored) { }
                 ttsLang = "en";
+                tts.setOnUtteranceProgressListener(ttsDone);
             } else {
                 ttsReady = false;
             }
@@ -128,6 +130,12 @@ public class MainActivity extends Activity {
             String[] p = ttsPend; ttsPend = null;
             if (ttsReady && p != null) sayNow(p[0], p[1], Float.parseFloat(p[2]), "1".equals(p[3]));
         }
+    };
+    /** v2.35 다이얼로그: "d…" 로 시작하는 읽기가 끝나면 JS 에 알린다 (다음 줄로) — 멈춤(stop)은 onStop 이라 안 알림 */
+    private final UtteranceProgressListener ttsDone = new UtteranceProgressListener() {
+        @Override public void onStart(String id) { }
+        @Override public void onDone(String id) { if (id != null && id.startsWith("d")) runJs("window.onSpoke && window.onSpoke(" + jsString(id) + ")"); }
+        @Override @Deprecated public void onError(String id) { onDone(id); }
     };
     private void sayNow(final String text, final String lang, final float rate, final boolean flush) {
         runOnUiThread(new Runnable() {
@@ -138,6 +146,7 @@ public class MainActivity extends Activity {
                         if ("ko".equals(lang)) tts.setLanguage(Locale.KOREAN); else useEn(tts, enVoice);
                         ttsLang = lang;
                     }
+                    tts.setPitch(1f);   // 다이얼로그가 바꿔 둔 음높이를 되돌린다
                     tts.setSpeechRate(rate);
                     tts.speak(text, flush ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD, null, "vocab3");
                 } catch (Exception ignored) {
@@ -884,6 +893,25 @@ public class MainActivity extends Activity {
             if (!ok(t)) return;
             if (tts == null || !ttsReady) { ttsPend = new String[] { text, lang, String.valueOf(rate), flush ? "1" : "0" }; return; }   // 준비되면 읽는다 (마지막 것만)
             sayNow(text, lang, rate, flush);
+        }
+
+        /** v2.35 다이얼로그 한 줄: 목소리 이름('' = 고른 영어 목소리)·음높이로 읽고, 끝나면 window.onSpoke(uid) */
+        @JavascriptInterface
+        public void speakAs(String t, final String text, final float rate, final String voice, final float pitch, final String uid) {
+            if (!ok(t) || tts == null || !ttsReady) return;   // 준비 전이면 JS 가 시간으로 넘어간다
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Voice v = findVoice(tts, voice);
+                        useEn(tts, v != null ? v : enVoice);
+                        ttsLang = "dlg";   // 다음 보통 읽기는 고른 목소리로 되돌린다 (sayNow)
+                        tts.setPitch(pitch > 0.3f && pitch < 3f ? pitch : 1f);
+                        tts.setSpeechRate(rate);
+                        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, uid != null && uid.startsWith("d") ? uid : "d" + uid);
+                    } catch (Exception ignored) { }
+                }
+            });
         }
 
         /** v2.34 영어 목소리 목록: {eng:"google"|"sys", cur, list:[{n, l:"US"|"GB"|…, inst}]} — 기기 안 목소리만 (네트워크 목소리는 늦고 문장이 폰 밖으로 나감) */

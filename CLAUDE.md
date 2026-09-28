@@ -29,6 +29,13 @@
     `makeTts`(세대 번호 — 연결 중 shutdown 이 안 먹는 API 31+), 준비 전 읽기 `ttsPend`(ttsStop 이 버림). 브릿지 ttsVoices/ttsSetVoice/ttsSetEngine/ttsOpen,
     설정 → 발음 속도 아래 "음성 엔진"·"영어 목소리"(창에서 누르면 바꾸고 들려줌, 받기 필요 → 그 엔진의 받기 화면). ReviewService 도 같은 엔진·목소리 + setWillPauseWhenDucked(내비 안내에 멈춤). 테스트 `tools/test_voice.js`.
     다음 후보(사용자 확인 필요): Gemini 로 받아 적기(녹음 → Gemini, 선택)·AI 목소리(Gemini TTS, 선택) — 둘 다 소리/문장이 Google 로 가서 개인정보처리방침을 고쳐야 함.
+  - **v2.35 다이얼로그(사용자 요청)**: 홈 빠른 버튼 4개(회화·다이얼로그·유튜브·듣기, 같은 크기). 화면 `dlg`(유튜브 목록 모양 + 맨 위 "내 정보" `S.settings.profile`·`profileG` 내 목소리 남/여)
+    → "+ 추가" 창에 상황을 글 또는 🎤(한국어 STT — `DSTT` 가 있으면 onStt* 콜백을 창으로 돌림) + 길이(짧게 6·보통 10·길게 16줄) → `dlgMake`(Gemini, A=나·B=상대, 번갈아, 내 정보 반영)
+    → `S.dlg`[{id,title,sit,b,lv,len,lines:[{s,e,k}],date,addedAt,plays}] (만드는 중·실패 `DJOB`, 저장 안 함). 화면 `dlgv`: A 왼쪽·B 오른쪽 말풍선, ▶ = 끝까지 번갈아 읽기(`DP`),
+    줄 한 번 톡 = 읽기(재생 중이면 거기서부터) · 두 번 톡 = 한글, 칩 한글·내 대사 가리기(내 차례에 말해 볼 시간 → 보여 주며 읽기)·반복(`S.settings.dlgKo/dlgHide/dlgLoop`).
+    목소리: Java `speakAs(t,text,rate,voice,pitch,uid)` + UtteranceProgressListener → `window.onSpoke(uid)`(끝 신호가 없어도 글자 길이로 넘어감), `dlgVoices` 가 Google 목소리 이름 세 글자(`VOICE_G`)로 남/여를 고르고
+    모르면 기본 목소리 + 음높이(남 0.78·여 1.12). sayNow 는 음높이 1 로 되돌림. 화면을 떠나거나 앱이 내려가면 멈춤. 내 정보는 회화 연습 시스템 프롬프트에도(About the learner). 테스트 `tools/test_dlg.js`.
+    다음 후보(사용자 확인 필요): 대화 줄을 문장 공부에 담기, 화면 꺼도 듣기(ReviewService), 목소리 직접 고르기.
 - `src/kr/hyunuk/vocab3/ReviewService.java` — 듣기 복습 포그라운드 서비스(알림 제어).
 - `src/kr/hyunuk/vocab3/Offline.java` (v2.14) — 유튜브 영상 받기(NewPipeExtractor, 360p 합쳐진 MP4 → 없으면 M4A, 10MB Range 청크),
   `getNoBackupFilesDir()/videos/<vid>.mp4|m4a|env`(자동 백업 25MB 한도에 안 걸리게), `/media/<vid>` Range 서빙(WebView 가 Range 를 한 번 더 적용하는 걸 보정),
