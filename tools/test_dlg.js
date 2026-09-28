@@ -24,7 +24,11 @@ const LINES = [
       const body = opt && opt.body ? JSON.parse(opt.body) : null; window.__calls.push({ url, body });
       const ok = (obj) => Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] })) });
       const sys = body && body.systemInstruction ? body.systemInstruction.parts[0].text : '';
-      if (/dialogues for a Korean adult learner/.test(sys)) return new Promise(r => setTimeout(r, 300)).then(() => ok({ title: '새 연구원에게 연구소 투어', b: '새로 온 연구원', lines: LINES }));
+      if (/dialogues for a Korean adult learner/.test(sys)) {
+        if (window.__fail) return Promise.resolve({ status: 500, text: () => Promise.resolve('{"error":{"message":"boom"}}') });
+        const edited = /거절/.test(body.contents[0].parts[0].text);   // 상황 수정 뒤에는 다른 대화(4줄)
+        return new Promise(r => setTimeout(r, 300)).then(() => edited ? ok({ title: '투어 권하기 — 거절', b: '바쁜 연구원', lines: LINES.slice(0, 4) }) : ok({ title: '새 연구원에게 연구소 투어', b: '새로 온 연구원', lines: LINES }));
+      }
       return ok({ reply: 'Hi!', ko: '안녕', fix: '', note: '', used: [], say: [] });
     };
     // 가짜 TTS: 읽은 문장·음높이를 적고 60ms 뒤 끝
@@ -114,6 +118,60 @@ const LINES = [
   eq('목록 항목', await p.textContent('#view-dlg .yi-s'), '6줄 · 새로 온 연구원 · ' + await p.evaluate(() => window.__vocab.state().dlg[0].date) + ' · ▶ 2번');
   await p.screenshot({ path: OUT + '/dlg-6-list.png' });
 
+  // 상황 수정 (v2.36): 상황 칸 "수정" → 지금 상황·길이가 든 창 → 고치거나 말로 덧붙여 다시 만들기. 새 대화가 와야 기록이 바뀐다.
+  const SIT = '새로 온 연구원에게 연구소 투어를 하겠냐고 물어보기', SIT2 = SIT + ' 상대가 바쁘다고 거절해요.';
+  const rec = () => p.evaluate(() => { const r = window.__vocab.state().dlg[0]; return [r.sit, r.len, r.lines.length]; });
+  const sheet = async () => [await p.textContent('#sheet .sh-word'), await p.inputValue('#dlgSit'), await p.getAttribute('#sheet [data-action="dlg-len"].on', 'data-value'), await p.textContent('#sheet [data-action="dlg-submit"]')];
+  await p.click('.topbar [data-action="dlg-add"]'); await p.waitForTimeout(250);
+  await p.fill('#dlgSit', '쓰던 글'); await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);   // 추가 창에 쓰다 만 글
+  await p.click('#view-dlg .yt-open'); await p.waitForTimeout(250);
+  const id0 = await p.evaluate(() => window.__vocab.state().dlg[0].id);
+  await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
+  eq('수정 창: 제목 · 지금 상황 · 길이 · 버튼', await sheet(), ['상황 수정', SIT, 'short', '다시 만들기']);
+  await p.screenshot({ path: OUT + '/dlg-7-edit.png' });
+  await p.fill('#dlgSit', '버릴 글'); await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
+  eq('취소: 그대로', await rec(), [SIT, 'short', 6]);
+  await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
+  eq('다시 열면 원래 상황', await p.inputValue('#dlgSit'), SIT);
+  await p.click('[data-action="dlg-mic"]'); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.onSttState('ready'); window.onStt('상대가 바쁘다고 거절해요.'); });
+  eq('말로 덧붙임', await p.inputValue('#dlgSit'), SIT2);
+  await p.click('#sheet [data-action="dlg-len"][data-value="normal"]');
+  await p.evaluate(() => { window.__fail = 1; });
+  await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(400);
+  eq('실패: 기록·화면 그대로', [await rec(), await p.textContent('.dl-sit-t'), await p.$$eval('.dl-line', x => x.length)], [[SIT, 'short', 6], SIT, 6]);
+  eq('실패 안내', await p.textContent('#toast'), '다시 만들기 실패 — Gemini 서버 오류 (500)');
+  await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
+  eq('실패한 수정: 적은 글·길이가 남음', await sheet(), ['상황 수정', SIT2, 'normal', '다시 만들기']);
+  await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
+  await p.click('[data-action="dlg-menu"]'); await p.waitForTimeout(250);
+  await p.click('#sheet [data-action="dlg-again"]'); await p.waitForTimeout(250); await p.click('#modal [data-value="ok"]'); await p.waitForTimeout(400);
+  await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
+  eq('"같은 상황으로 다시 만들기"가 실패해도 적은 글은 남음', [await rec(), await sheet()], [[SIT, 'short', 6], ['상황 수정', SIT2, 'normal', '다시 만들기']]);
+  await p.evaluate(() => { window.__fail = 0; });
+  await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(100);
+  eq('만드는 중: 새 상황 · 수정 버튼 숨김', await p.evaluate(() => [document.querySelector('.dl-sit-t').textContent, !!document.querySelector('#dlgBody .typing'), !!document.querySelector('.dl-sit [data-action="dlg-edit"]')]), [SIT2, true, false]);
+  await p.waitForTimeout(500);
+  eq('요청: 새 상황 · 10줄', await p.evaluate(() => { const b = window.__calls[window.__calls.length - 1].body; return [b.contents[0].parts[0].text, /exactly 10 lines/.test(b.systemInstruction.parts[0].text)]; }), ['Situation: ' + SIT2, true]);
+  eq('같은 기록이 새 상황·새 대화로', await p.evaluate(() => { const d = window.__vocab.state().dlg; return [d.length, d[0].id, d[0].sit, d[0].len, d[0].lines.length, d[0].title, d[0].plays]; }), [1, id0, SIT2, 'normal', 4, '투어 권하기 — 거절', 2]);
+  eq('화면도 새 대화', [await p.textContent('#dlgT'), await p.textContent('.dl-sit-t'), await p.$$eval('.dl-line', x => x.length)], ['투어 권하기 — 거절', SIT2, 4]);
+  await p.screenshot({ path: OUT + '/dlg-8-edited.png' });
+  await p.click('[data-action="dlg-menu"]'); await p.waitForTimeout(250);
+  await p.click('#sheet [data-action="dlg-edit"]'); await p.waitForTimeout(250);
+  eq('메뉴 → 상황 수정', await sheet(), ['상황 수정', SIT2, 'normal', '다시 만들기']);
+  await p.click('#sheet [data-action="dlg-profile"]'); await p.waitForTimeout(250);   // 내 정보에 다녀와도 수정 창 그대로
+  await p.click('#sheet [data-action="dlg-add"]'); await p.waitForTimeout(250);
+  eq('내 정보 → 취소: 수정 창으로', await sheet(), ['상황 수정', SIT2, 'normal', '다시 만들기']);
+  const who = async g => { await p.click('#sheet [data-action="dlg-profile"]'); await p.waitForTimeout(250); await p.click('#sheet [data-action="dlg-pg"][data-value="' + g + '"]'); await p.click('[data-action="dlg-pf-save"]'); await p.waitForTimeout(250); return [(await sheet())[0], await p.textContent('.dl-who')]; };
+  eq('내 정보에서 내 목소리를 바꾸면 뒤 화면의 남자/여자도', await who('f'), ['상황 수정', 'A나 · 여자B바쁜 연구원 · 남자']);
+  eq('되돌림', await who('m'), ['상황 수정', 'A나 · 남자B바쁜 연구원 · 여자']);
+  await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
+  await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);
+  await p.click('#view-dlg .dl-me'); await p.waitForTimeout(250); await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);   // 닫힌 창에 남은 글이 되살아나지 않는다
+  await p.click('.topbar [data-action="dlg-add"]'); await p.waitForTimeout(250);
+  eq('추가 창: 쓰던 글 그대로 (수정과 안 섞임)', await sheet(), ['새 다이얼로그', '쓰던 글', 'short', '만들기']);
+  await p.fill('#dlgSit', ''); await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
+
   // 회화 연습도 내 정보를 참고
   await p.evaluate(() => window.__vocab.go('talk')); await p.waitForTimeout(150);
   await p.click('[data-action="talk-start"]'); await p.waitForTimeout(400);
@@ -122,7 +180,33 @@ const LINES = [
 
   // 삭제 · 다시 켜도 남음
   await p.reload(); await p.waitForTimeout(400);
-  eq('저장됨 (다시 켜도)', await p.evaluate(() => window.__vocab.state().dlg.map(r => r.lines.length)), [6]);
+  eq('저장됨 (다시 켜도)', await p.evaluate(() => window.__vocab.state().dlg.map(r => [r.sit, r.lines.length])), [[SIT2, 4]]);
+
+  // 상황 수정 — 키가 없을 때: 고쳐 적은 글이 남는다
+  const open1 = async () => { await p.click('.quick [data-action="dlg"]'); await p.waitForTimeout(150); await p.click('#view-dlg .yt-open'); await p.waitForTimeout(400); };
+  const KEY = await p.evaluate(() => { const k = localStorage.getItem('vocab3.ai.v1'); localStorage.removeItem('vocab3.ai.v1'); return k; });
+  await p.reload(); await p.waitForTimeout(400); await open1();
+  await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
+  await p.fill('#dlgSit', '키 없이 고친 글'); await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(250);
+  eq('키 없음: 키를 넣으라는 창', /API 키가 아직 없어요/.test(await p.textContent('#modal')), true);
+  await p.click('#modal [data-value=""]'); await p.waitForTimeout(250);
+  await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
+  eq('키 없음: 적은 글이 남음 · 기록은 그대로', [await p.inputValue('#dlgSit'), await rec()], ['키 없이 고친 글', [SIT2, 'normal', 4]]);
+
+  // 상황 수정 — 아직 대화가 없는 기록(첫 만들기 실패): 상황을 바로 바꾸고, 다시 만들면 그 상황으로
+  await p.evaluate(k => { localStorage.setItem('vocab3.ai.v1', k); const s = window.__vocab.state(); s.dlg[0].lines = null; window.__vocab.save(); }, KEY);
+  await p.reload(); await p.waitForTimeout(400);
+  await p.evaluate(() => { window.__fail = 1; }); await open1();
+  eq('대화 없는 기록: 실패 안내 · 수정 칩', await p.evaluate(() => [!!document.querySelector('#dlgBody [data-action="dlg-remake"]'), !!document.querySelector('.dl-sit [data-action="dlg-edit"]')]), [true, true]);
+  await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
+  eq('대화 없는 기록: 바뀐다는 안내 없음', await p.$$eval('#sheet .small.muted', x => x.length), 0);
+  await p.fill('#dlgSit', '투어를 권했는데 거절당하기'); await p.click('#sheet [data-action="dlg-len"][data-value="long"]');
+  await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(400);
+  eq('대화 없는 기록: 상황·길이 바로 바뀜', await p.evaluate(() => { const r = window.__vocab.state().dlg[0]; return [r.sit, r.len, r.lines]; }), ['투어를 권했는데 거절당하기', 'long', null]);
+  await p.evaluate(() => { window.__fail = 0; });
+  await p.click('#dlgBody [data-action="dlg-remake"]'); await p.waitForTimeout(700);
+  eq('다시 만들기: 고친 상황 · 16줄로 요청', await p.evaluate(() => { const b = window.__calls[window.__calls.length - 1].body; return [b.contents[0].parts[0].text, /exactly 16 lines/.test(b.systemInstruction.parts[0].text), window.__vocab.state().dlg[0].lines.length]; }), ['Situation: 투어를 권했는데 거절당하기', true, 4]);
+  await p.reload(); await p.waitForTimeout(400);
   await p.click('.quick [data-action="dlg"]'); await p.waitForTimeout(150);
   await p.click('#view-dlg .yi-del'); await p.waitForTimeout(150); await p.click('#modal .btn.danger'); await p.waitForTimeout(200);
   eq('삭제', await p.evaluate(() => window.__vocab.state().dlg.length), 0);

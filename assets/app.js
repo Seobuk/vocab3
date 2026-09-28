@@ -707,7 +707,8 @@
     dlgv: { need: '.dl-line', steps: [
       { sel: '.dl-play', t: '남녀 목소리로 재생', b: '누르면 A(나)와 B(상대)를 남자·여자 목소리로 번갈아 끝까지 읽어 줘요. "반복"을 켜면 계속 돌아요.' },
       { sel: '.dl-line', t: '한 줄씩 듣기 · 해석', b: '줄을 한 번 톡 하면 그 줄을 읽고, 두 번 톡 하면 한글이 보였다 가려져요. 재생 중에 톡 하면 거기서부터 이어서 읽어요.' },
-      { sel: '[data-key="dlgHide"]', t: '내 대사 외우기', b: '"내 대사 가리기"를 켜면 A 줄의 영어가 가려지고, 재생할 때 내 차례에 먼저 말해 볼 시간을 준 뒤 보여 주며 읽어요.' }
+      { sel: '[data-key="dlgHide"]', t: '내 대사 외우기', b: '"내 대사 가리기"를 켜면 A 줄의 영어가 가려지고, 재생할 때 내 차례에 먼저 말해 볼 시간을 준 뒤 보여 주며 읽어요.' },
+      { sel: '.dl-sit [data-action="dlg-edit"]', t: '상황 수정', b: '대화가 생각과 다르면 "수정"을 눌러 상황을 고치거나 덧붙이세요(글이나 말로). 그 상황으로 대화를 다시 만들어요.', opt: 1 }
     ] },
     yt: { steps: [
       { sel: '.empty', t: '유튜브 쉐도잉', b: '영상의 영어를 문장마다 나눠 한글 해석과 함께 보여 줘요. 문장을 톡 하면 그 부분만 나오고 멈춰서 바로 따라 말할 수 있어요.', opt: 1 },
@@ -894,6 +895,7 @@
   }
   function closeSheet() {
     if (DSTT) dlgMicCancel();   // 창 안 음성 입력 중이었으면 마이크를 놓는다
+    DED = null;                 // 다이얼로그 상황 수정 창이었으면 고치던 글을 버린다 (v2.36)
     $('#sheet').classList.remove('show');
     if (!modalOpen) $('#overlay').classList.remove('show');
     sheetOpen = false; updateBack(); tourMaybe();
@@ -2154,6 +2156,8 @@
   var DP = null;              // 재생 중 { id, i, uid, timer, tok, one }
   var dpTok = 0;
   var DADD = { sit: '', len: 'normal' };   // 추가 창 입력 (내 정보 창에 다녀와도 남게)
+  var DED = null;             // 상황 수정 (v2.36) { id, sit, len } — 있으면 추가 창이 "상황 수정"으로 열린다. 창을 닫으면 버린다
+  function dlgIn() { return DED || DADD; }
   var DSTT = null;            // 창 안 음성 입력 { el: textarea id, base, on, wait, timer, partial }
   function dlgRec(id) { for (var i = 0; i < S.dlg.length; i++) if (S.dlg[i].id === id) return S.dlg[i]; return null; }
   function dlgClean(r) {   // 백업에서 올 수 있어 모양 검사 (migrate)
@@ -2199,15 +2203,16 @@
       '</div>';
   };
   function dlgMicBtn(id) { var on = DSTT && DSTT.el === id; return '<button class="btn dl-mic' + (on ? ' on' : '') + '" data-action="dlg-mic" data-el="' + id + '">' + (on ? (DSTT.wait ? '…' : '■ 다 말했어요') : '🎤 말로 입력') + '</button>'; }
-  function dlgAddSheet() {
-    var pf = String(S.settings.profile || '').trim();
-    openSheet('<div class="sh-word"><span>새 다이얼로그</span></div>' +
-      '<div class="field" style="margin-top:10px"><textarea id="dlgSit" rows="3" placeholder="어떤 상황인가요? 예: 새로 온 연구원에게 연구소 투어를 하겠냐고 물어보기">' + esc(DADD.sit) + '</textarea></div>' +
+  function dlgAddSheet() {   // 새 다이얼로그 · 상황 수정(DED) 같은 창
+    var pf = String(S.settings.profile || '').trim(), d = dlgIn(), old = DED && dlgRec(DED.id);
+    openSheet('<div class="sh-word"><span>' + (DED ? '상황 수정' : '새 다이얼로그') + '</span></div>' +
+      (old && old.lines ? '<div class="small muted" style="margin-top:6px;line-height:1.5">상황을 고치거나 덧붙이면 그 상황으로 대화를 새로 만들어요. 지금 대화는 새 대화로 바뀌어요.</div>' : '') +
+      '<div class="field" style="margin-top:10px"><textarea id="dlgSit" rows="' + (DED ? 4 : 3) + '" placeholder="어떤 상황인가요? 예: 새로 온 연구원에게 연구소 투어를 하겠냐고 물어보기">' + esc(d.sit) + '</textarea></div>' +
       '<div class="row" style="margin-top:8px;align-items:center">' + dlgMicBtn('dlgSit') +
-      '<div class="pick" style="flex:1;justify-content:flex-end">' + [['short', '짧게'], ['normal', '보통'], ['long', '길게']].map(function (o) { return '<button class="' + (o[0] === DADD.len ? 'on' : '') + '" data-action="dlg-len" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
+      '<div class="pick" style="flex:1;justify-content:flex-end">' + [['short', '짧게'], ['normal', '보통'], ['long', '길게']].map(function (o) { return '<button class="' + (o[0] === d.len ? 'on' : '') + '" data-action="dlg-len" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
       '<button class="dl-me sm" data-action="dlg-profile" data-from="add"><span class="dl-me-t">내 정보</span><span class="dl-me-s">' + esc(pf || '아직 없어요 — 넣으면 내 상황에 맞춰 만들어요') + '</span><span class="chev">›</span></button>' +
-      '<div class="sh-actions"><button class="btn" data-action="close-sheet">취소</button><button class="btn primary" data-action="dlg-submit">만들기</button></div>');
-    var i = $('#dlgSit'); if (i) i.addEventListener('input', function () { DADD.sit = i.value; });
+      '<div class="sh-actions"><button class="btn" data-action="close-sheet">취소</button><button class="btn primary" data-action="dlg-submit">' + (DED ? '다시 만들기' : '만들기') + '</button></div>');
+    var i = $('#dlgSit'); if (i) i.addEventListener('input', function () { d.sit = i.value; });
   }
   function dlgProfileSheet(from) {
     var g = S.settings.profileG === 'f' ? 'f' : 'm';
@@ -2219,18 +2224,28 @@
       '<div class="sh-actions"><button class="btn" data-action="' + (from === 'add' ? 'dlg-add' : 'close-sheet') + '">취소</button><button class="btn primary" data-action="dlg-pf-save" data-from="' + (from || '') + '">저장</button></div>');
   }
   function dlgSubmit() {
-    var i = $('#dlgSit'), sit = String(i ? i.value : DADD.sit).replace(/\s+/g, ' ').trim();
+    var i = $('#dlgSit'), d = dlgIn(), ed = DED, sit = String(i ? i.value : d.sit).replace(/\s+/g, ' ').trim();
     if (!sit) { toast('어떤 상황인지 적거나 말해 주세요'); return; }
     if (i) i.blur();
-    dlgMicCancel(); closeSheet();
-    if (!AI.key) { confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return; }
+    dlgMicCancel(); closeSheet();   // closeSheet 가 DED 를 버린다 — 위에서 잡아 둔 ed 를 쓴다
+    if (!AI.key) {
+      if (ed && dlgRec(ed.id)) DJOB[ed.id] = { busy: false, err: (DJOB[ed.id] || {}).err || '', q: { sit: sit, len: ed.len } };   // 고쳐 적은 글은 남긴다 (키를 넣고 수정 창을 다시 열면 채워짐)
+      confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return;
+    }
+    if (ed) {   // 상황 수정: 있던 대화는 새 대화가 올 때까지 그대로 (dlgMake 가 성공했을 때만 상황·길이를 바꾼다)
+      var old = dlgRec(ed.id); if (!old) return;
+      dlgStop(); if (DJOB[old.id]) DJOB[old.id].q = null;   // 앞서 남겨 둔 글은 지금 것으로 바뀐다
+      if (old.lines) dlgMake(old, { sit: sit, len: ed.len });
+      else { old.sit = sit; old.len = ed.len; save(); dlgMake(old); }
+      return;
+    }
     var r = { id: uid(), title: '', sit: sit, b: '', lv: S.settings.talk.level || 'normal', len: DADD.len, lines: null, date: localDate(), addedAt: Date.now(), plays: 0 };
     S.dlg.push(r); save(); DADD = { sit: '', len: DADD.len };
     go('dlgv', { id: r.id });
     dlgMake(r);
   }
-  function dlgPrompt(r) {
-    var n = DLG_LEN[r.len] || 10, pf = String(S.settings.profile || '').trim(), me = S.settings.profileG === 'f' ? 'woman' : 'man';
+  function dlgPrompt(r, len) {
+    var n = DLG_LEN[len || r.len] || 10, pf = String(S.settings.profile || '').trim(), me = S.settings.profileG === 'f' ? 'woman' : 'man';
     return [
       'You write short, natural spoken English dialogues for a Korean adult learner to memorize and use in real life. Level: ' + (LEVELS[r.lv] || LEVELS.normal) + '.',
       'Speaker A is the learner (a ' + me + '). Speaker B is the other person in the situation (a ' + (me === 'man' ? 'woman' : 'man') + '). The situation may be described in Korean.',
@@ -2241,12 +2256,14 @@
       'Return JSON only: {"title": "...", "b": "...", "lines": [{"s": "A", "e": "...", "k": "..."}]}'
     ].filter(Boolean).join('\n');
   }
-  function dlgMake(r) {
+  function dlgMake(r, q) {   // q = 상황 수정 { sit, len } (v2.36) — 새 대화가 왔을 때만 기록에 넣고, 실패하면 DJOB 에 남겨 수정 창을 다시 열 때 보여 준다
     if (DJOB[r.id] && DJOB[r.id].busy) return;
-    var job = DJOB[r.id] = { busy: true, err: '' }; dlgRefresh(r.id);
+    q = q || null;
+    var sit = q ? q.sit : r.sit, len = q ? q.len : r.len, prev = (DJOB[r.id] || {}).q || null;   // prev: 앞서 실패한 수정이 남긴 글 — 이번에도 실패하면 그대로 둔다
+    var job = DJOB[r.id] = { busy: true, err: '', q: q }; dlgRefresh(r.id);
     var body = {
-      systemInstruction: { parts: [{ text: dlgPrompt(r) }] },
-      contents: [{ role: 'user', parts: [{ text: 'Situation: ' + r.sit }] }],
+      systemInstruction: { parts: [{ text: dlgPrompt(r, len) }] },
+      contents: [{ role: 'user', parts: [{ text: 'Situation: ' + sit }] }],
       generationConfig: {
         temperature: 0.8, responseMimeType: 'application/json',
         responseSchema: { type: 'OBJECT', properties: { title: { type: 'STRING' }, b: { type: 'STRING' }, lines: { type: 'ARRAY', items: { type: 'OBJECT', properties: { s: { type: 'STRING', enum: ['A', 'B'] }, e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['s', 'e', 'k'], propertyOrdering: ['s', 'e', 'k'] } } }, required: ['title', 'b', 'lines'], propertyOrdering: ['title', 'b', 'lines'] }
@@ -2259,14 +2276,14 @@
       lines = lines.filter(function (x) { return x && x.e; }).map(function (x) { return { s: x.s === 'B' ? 'B' : 'A', e: String(x.e).replace(/\s+/g, ' ').trim(), k: String(x.k || '').replace(/\s+/g, ' ').trim() }; });
       if (!lines.length) throw { msg: '대화를 이해하지 못했어요. 다시 만들어 보세요' };
       var rr = dlgRec(r.id); if (!rr) return;   // 기다리는 사이 지웠다
-      rr.lines = lines; rr.title = String(out.title || '').trim().slice(0, 40); rr.b = String(out.b || '').trim().slice(0, 30); save();
+      rr.lines = lines; rr.title = String(out.title || '').trim().slice(0, 40); rr.b = String(out.b || '').trim().slice(0, 30); rr.sit = sit; rr.len = len; save();
       DJOB[r.id] = { busy: false, err: '' };
       if (DLGV && DLGV.id === r.id) { DLGV.ko = {}; DLGV.show = {}; }
     }).catch(function (e) {
       if (DJOB[r.id] !== job) return;
       var msg = e && e.msg ? e.msg : '연결에 실패했어요', rr = dlgRec(r.id);
-      if (rr && rr.lines) { DJOB[r.id] = { busy: false, err: '' }; toast('다시 만들기 실패 — ' + msg); }   // 있던 대화는 그대로
-      else DJOB[r.id] = { busy: false, err: msg };
+      if (rr && rr.lines) { DJOB[r.id] = { busy: false, err: '', q: q || prev }; toast('다시 만들기 실패 — ' + msg); }   // 있던 대화는 그대로 (고쳐 적은 상황은 q 에)
+      else DJOB[r.id] = { busy: false, err: msg, q: q || prev };
     }).then(function () { dlgRefresh(r.id); });
   }
   function dlgRefresh(id) {
@@ -2289,7 +2306,7 @@
     var r = DLGV && dlgRec(DLGV.id), el = $('#dlgBody'); if (!r || !el) return;
     var j = DJOB[r.id] || {}, st = S.settings, gA = dlgG(r, 'A'), gB = dlgG(r, 'B');
     $('#dlgT').textContent = r.title || '다이얼로그';
-    var head = '<div class="dl-sit"><div class="dl-sit-t">' + esc(r.sit) + '</div>' +
+    var head = '<div class="dl-sit"><div class="dl-sit-h"><div class="dl-sit-t">' + esc(j.busy && j.q ? j.q.sit : r.sit) + '</div>' + (j.busy ? '' : '<button class="chip" data-action="dlg-edit">수정</button>') + '</div>' +
       '<div class="dl-who"><span class="dl-tag a">A</span>나 · ' + (gA === 'm' ? '남자' : '여자') + '<span class="dl-tag b">B</span>' + esc(r.b || '상대') + ' · ' + (gB === 'm' ? '남자' : '여자') + '</div></div>';
     var body;
     if (j.busy) body = '<div class="dl-busy"><div class="bubble typing"><i></i><i></i><i></i></div>대화를 만드는 중이에요…</div>';
@@ -2377,7 +2394,7 @@
     bridge.sttStart('ko-KR');
   }
   function dlgMicPaint() { var b = $('.dl-mic'); if (b) b.outerHTML = dlgMicBtn(b.getAttribute('data-el')); }
-  function dlgSttFill(text) { var t = DSTT && $('#' + DSTT.el); if (!t) return; t.value = DSTT.base + (DSTT.base && text ? ' ' : '') + text; if (DSTT.el === 'dlgSit') DADD.sit = t.value; }
+  function dlgSttFill(text) { var t = DSTT && $('#' + DSTT.el); if (!t) return; t.value = DSTT.base + (DSTT.base && text ? ' ' : '') + text; if (DSTT.el === 'dlgSit') dlgIn().sit = t.value; }
   function dlgSttDone(text) {
     if (!DSTT) return; clearTimeout(DSTT.timer);
     text = String(text || '').replace(/\s+/g, ' ').trim();
@@ -4110,17 +4127,26 @@
     'yt-add': function () { ytAddSheet(); },
     /* --- 다이얼로그 (v2.35) --- */
     'dlg': function () { go('dlg'); },
-    'dlg-add': function () { dlgAddSheet(); var i = $('#dlgSit'); if (i && !DADD.sit) i.focus(); },
+    'dlg-add': function () { if (!sheetOpen) DED = null; dlgAddSheet(); var i = $('#dlgSit'); if (i && !dlgIn().sit) i.focus(); },   // 내 정보 창의 "취소"도 여기로 (창이 열린 채 — 수정 중이면 수정 창으로)
+    'dlg-edit': function () {   // 상황 수정 (v2.36): 지금 상황·길이를 채운 창 → 고치거나 덧붙여 다시 만들기
+      var r = DLGV && dlgRec(DLGV.id); if (!r) return;
+      var j = DJOB[r.id] || {};
+      if (j.busy) { if (sheetOpen) closeSheet(); toast('대화를 만드는 중이에요. 다 만든 뒤에 고쳐 주세요'); return; }
+      dlgStop();
+      DED = { id: r.id, sit: j.q ? j.q.sit : r.sit, len: j.q ? j.q.len : r.len };   // 실패한 수정이 있으면 그때 적은 글부터
+      dlgAddSheet();
+    },
     'dlg-submit': function () { dlgSubmit(); },
-    'dlg-len': function (el) { DADD.len = el.getAttribute('data-value'); $$('#sheet [data-action="dlg-len"]').forEach(function (b) { b.classList.toggle('on', b === el); }); },
+    'dlg-len': function (el) { dlgIn().len = el.getAttribute('data-value'); $$('#sheet [data-action="dlg-len"]').forEach(function (b) { b.classList.toggle('on', b === el); }); },
     'dlg-mic': function (el) { dlgMic(el.getAttribute('data-el')); },
-    'dlg-profile': function (el) { var i = $('#dlgSit'); if (i) DADD.sit = i.value; dlgMicCancel(); dlgProfileSheet(el.getAttribute('data-from')); },
+    'dlg-profile': function (el) { var i = sheetOpen && $('#dlgSit'); if (i) dlgIn().sit = i.value; dlgMicCancel(); dlgProfileSheet(el.getAttribute('data-from')); },   // 닫힌 창에 남은 옛 글은 안 읽는다
     'dlg-pg': function (el) { $$('#sheet [data-action="dlg-pg"]').forEach(function (b) { b.classList.toggle('on', b === el); }); },
     'dlg-pf-save': function (el) {
       var t = $('#dlgPf'), g = $('#sheet [data-action="dlg-pg"].on');
       S.settings.profile = String(t ? t.value : '').trim().slice(0, 1000); if (g) S.settings.profileG = g.getAttribute('data-value'); save();
       dlgMicCancel();
-      if (el.getAttribute('data-from') === 'add') dlgAddSheet(); else { closeSheet(); render(); }
+      if (el.getAttribute('data-from') === 'add') { dlgAddSheet(); dlgRefresh(DLGV && DLGV.id); }   // 창 뒤 화면의 내 정보·남자/여자 표시도 새로 (v2.36: 대화 화면에서도 이 길로 온다)
+      else { closeSheet(); render(); }
       toast('내 정보를 저장했어요');
     },
     'dlg-open': function (el) {
@@ -4141,6 +4167,7 @@
       var r = DLGV && dlgRec(DLGV.id); if (!r) return;
       openSheet('<div class="sh-word"><span>' + esc(r.title || '다이얼로그') + '</span></div><div class="yt-menu">' +
         (r.lines ? '<button class="btn" data-action="dlg-copy">대화 복사</button>' : '') +
+        '<button class="btn" data-action="dlg-edit">상황 수정해서 다시 만들기</button>' +
         '<button class="btn" data-action="dlg-again">같은 상황으로 다시 만들기</button>' +
         '<button class="btn danger" data-action="dlg-del" data-id="' + esc(r.id) + '">삭제</button></div>');
     },

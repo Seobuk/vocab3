@@ -36,6 +36,12 @@
     목소리: Java `speakAs(t,text,rate,voice,pitch,uid)` + UtteranceProgressListener → `window.onSpoke(uid)`(끝 신호가 없어도 글자 길이로 넘어감), `dlgVoices` 가 Google 목소리 이름 세 글자(`VOICE_G`)로 남/여를 고르고
     모르면 기본 목소리 + 음높이(남 0.78·여 1.12). sayNow 는 음높이 1 로 되돌림. 화면을 떠나거나 앱이 내려가면 멈춤. 내 정보는 회화 연습 시스템 프롬프트에도(About the learner). 테스트 `tools/test_dlg.js`.
     다음 후보(사용자 확인 필요): 대화 줄을 문장 공부에 담기, 화면 꺼도 듣기(ReviewService), 목소리 직접 고르기.
+  - **v2.36 상황 수정(사용자 요청)**: 대화 화면 상황 칸의 "수정" 칩 · 메뉴 "상황 수정해서 다시 만들기"(`dlg-edit`) → 추가 창과 같은 창(`dlgAddSheet`)이 `DED`({id,sit,len})로 열림
+    (`dlgIn()` = DED || DADD — 추가 창의 쓰던 글과 안 섞임, `closeSheet` 가 DED 를 버림) → 글·🎤(있던 글 뒤에 덧붙음)로 고치고 "다시 만들기" → `dlgMake(r, q)`:
+    새 대화가 왔을 때만 `r.sit`/`r.len` 을 바꾼다 — 실패하면 있던 상황·대화 그대로, 적은 글은 `DJOB[id].q` 에 남아 수정 창을 다시 열 때 채워짐(대화가 아직 없는 기록은 바로 바꿈).
+    키가 없어 못 만들 때도 적은 글을 q 에 남기고, q 없는 다시 만들기("같은 상황으로")가 실패해도 앞의 q 는 그대로(`prev`). 만드는 중엔 상황 칸이 새 상황을 보여 주고 수정은 막음.
+    `dlg-profile` 은 창이 열려 있을 때만 #dlgSit 을 읽는다(닫힌 창에 남은 옛 글이 되살아났음), 추가·수정 창에서 내 정보를 저장하면 뒤 화면도 새로 그림(`dlgRefresh`). 테스트 `tools/test_dlg.js` 의 "상황 수정".
+    다음 후보(사용자 확인 필요): 있던 대화를 Gemini 에 같이 보내 맞는 줄은 살리고 고치기(지금은 고친 상황으로 통째로 새로 만듦).
 - `src/kr/hyunuk/vocab3/ReviewService.java` — 듣기 복습 포그라운드 서비스(알림 제어).
 - `src/kr/hyunuk/vocab3/Offline.java` (v2.14) — 유튜브 영상 받기(NewPipeExtractor, 360p 합쳐진 MP4 → 없으면 M4A, 10MB Range 청크),
   `getNoBackupFilesDir()/videos/<vid>.mp4|m4a|env`(자동 백업 25MB 한도에 안 걸리게), `/media/<vid>` Range 서빙(WebView 가 Range 를 한 번 더 적용하는 걸 보정),
