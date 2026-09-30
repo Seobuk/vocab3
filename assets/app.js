@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.35';
+  var APP_VERSION = '2.36';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -663,7 +663,7 @@
       { sel: '#cardArea .star', t: '★ 중요 단어', b: '★을 톡 하면 중요 단어로 표시돼요. 홈의 "★ 중요"에 모이고, 회화 연습 미션 단어로 먼저 나와요.' }
     ] },
     list: { need: '#listBody .item', steps: [
-      { sel: '#listBody .it-head', t: '단어 자세히 보기', b: '단어 줄을 톡 하면 창이 열려요. 아는 단어는 "단계 이동"에서 졸업으로 옮기고, 중요 표시·예문 고치기·수정·삭제도 여기서 해요.', opt: 1 },
+      { sel: '#listBody .it-head', t: '단어 듣기 · 자세히 보기', b: '단어 줄을 톡 하면 단어와 예문을 읽어 줘요. 꾹 누르면 창이 열려요 — 아는 단어는 "단계 이동"에서 졸업으로 옮기고, 중요 표시·예문 고치기·수정·삭제도 여기서 해요.', opt: 1 },
       { sel: '#listBody .it-ex', t: '예문 듣기 · 해석', b: '예문을 한 번 톡 하면 읽어 줘요. 두 번 톡 하면 흐리게 가린 해석이 보였다 가려져요.', opt: 1 },
       { sel: '.search', t: '검색 · ★ · 예문', b: '단어·뜻·예문으로 찾을 수 있어요. ★을 누르면 중요 단어만, "예문"을 누르면 예문 줄을 숨기거나 다시 보여 줘요.' }
     ] },
@@ -3457,12 +3457,13 @@
     body.innerHTML = show.map(function (it) {
       if (it.sent) {   // 문장 공부에 담은 유튜브 문장 (졸업 탭)
         var x = it.sent;
-        return '<button class="item" style="--c:' + STAGE_COLOR[4] + '" data-action="list-sent" data-id="' + esc(x.id) + '"><span class="dot"></span><div class="it-body">' +
+        return '<button class="item" style="--c:' + STAGE_COLOR[4] + '" data-action="list-sent-say" data-id="' + esc(x.id) + '"><span class="dot"></span><div class="it-body">' +   // v2.36: 톡 = 읽기 · 꾹 = 시트(openSentBox)
           exHTML(x.id, x.e, x.k) + '<div class="it-src">' + esc(x.title || '유튜브') + '</div></div>' + listSide(it) + '</button>';
       }
       var w = it;
       // 한 줄: 단어 + 뜻 / 아래: 영어 예문 / 그 아래: 우리말 해석 (설정으로 접을 수 있음)
-      return '<button class="item" style="--c:' + STAGE_COLOR[w.stage] + '" data-action="open" data-id="' + esc(w.id) + '">' +
+      // v2.36(사용자 요청): 줄 한 번 톡 = 단어 → 예문 읽기(앱 규칙: 한 번 톡 = 읽기) · 꾹(550ms) = 단어 상세 창(openWord — 아래 꾹 누르기 블록)
+      return '<button class="item" style="--c:' + STAGE_COLOR[w.stage] + '" data-action="list-word" data-id="' + esc(w.id) + '">' +
         '<span class="dot"></span><div class="it-body"><div class="it-head"><span class="it-w">' + (w.star ? '<i class="star-i">★</i>' : '') + esc(w.w) + '</span><span class="it-m">' + esc(w.m) + '</span></div>' +
         (ex && w.e ? exHTML(w.id, w.e, w.k) : '') +
         '</div>' + listSide(w) + '</button>';
@@ -3966,6 +3967,7 @@
       listState.tap = { id: id, at: now };
       var w = byId(id) || boxById(id); if (w && w.e) speak(w.e, 'en');
     },
+    'list-word': function (el) { var w = byId(el.getAttribute('data-id')); if (!w) return; speak(w.w, 'en'); if (w.e) speak(w.e, 'en', true); },   // v2.36: 단어 → 예문 이어 읽기 (상세 창은 꾹)
     'list-sent': function (el) { openSentBox(el.getAttribute('data-id')); },
     'list-sent-say': function (el) { var x = boxById(el.getAttribute('data-id')); if (x) speak(x.e, 'en'); },
     'list-sent-yt': function (el) {   // 담은 문장의 영상 화면으로 — 그 문장이 보이게
@@ -4405,27 +4407,35 @@
     if (ACTIONS[a]) { e.preventDefault(); ACTIONS[a](el, e); }
   });
   $('#overlay').addEventListener('click', function () { if (modalOpen) closeModal(null); else if (sheetOpen) closeSheet(); });
-  // 유튜브 문장 꾹 누르기 = 선택창 (v2.17 — 문장 공부에 넣기 · 복사 · 합치기 · 쪼개기). 떼면서 생기는 click 은 버린다 (문장 재생 안 함)
+  // 꾹 누르기(550ms): 유튜브 문장 = 선택창 (v2.17 — 문장 공부에 넣기 · 복사 · 합치기 · 쪼개기) · 단어장 줄 = 단어 상세 창 / 담은 문장 시트 (v2.36 — 한 번 톡은 읽기).
+  // 떼면서 생기는 click 은 버린다 (재생·읽기 안 함)
   (function () {
     var lp = null, fired = false;
     function cancel() { if (lp) { clearTimeout(lp.t); lp = null; } }
+    function find(t) {   // 꾹 누를 수 있는 줄과 할 일 (없으면 null) — go 는 열었으면 true
+      if (!t || !t.closest) return null;
+      var row = t.closest('#ytList .ys');
+      if (row) return t.closest('.ycard') ? null : { row: row, go: function () { var i = +row.getAttribute('data-i'), r = YTV && ytRec(YTV.id); if (!r || !r.sents || !r.sents[i]) return false; ytRowMenu(i); return true; } };
+      row = t.closest('#listBody .item[data-action="list-word"]');
+      if (row) return { row: row, go: function () { if (!byId(row.getAttribute('data-id'))) return false; openWord(row.getAttribute('data-id')); return true; } };
+      row = t.closest('#listBody .item[data-action="list-sent-say"]');
+      if (row) return { row: row, go: function () { if (!boxById(row.getAttribute('data-id'))) return false; openSentBox(row.getAttribute('data-id')); return true; } };
+      return null;
+    }
+    function fire(f) { if (f.go()) { fired = true; bridge.vibrate(20); } }
     document.addEventListener('pointerdown', function (e) {
       cancel(); fired = false;
-      var row = e.target.closest && e.target.closest('#ytList .ys'); if (!row || e.target.closest('.ycard')) return;
-      lp = { x: e.clientX, y: e.clientY, t: setTimeout(function () { lp = null; copyRow(row); }, 550) };
+      var f = find(e.target); if (!f) return;
+      lp = { x: e.clientX, y: e.clientY, t: setTimeout(function () { lp = null; fire(f); }, 550) };
     });
-    function copyRow(row) {   // v2.17: 복사 대신 선택창 (이름은 그대로)
-      var i = +row.getAttribute('data-i'), r = YTV && ytRec(YTV.id); if (!r || !r.sents || !r.sents[i]) return;
-      fired = true; bridge.vibrate(20); ytRowMenu(i);
-    }
     document.addEventListener('pointermove', function (e) { if (lp && (Math.abs(e.clientX - lp.x) > 10 || Math.abs(e.clientY - lp.y) > 10)) cancel(); });
     document.addEventListener('pointerup', cancel);
     document.addEventListener('pointercancel', cancel);   // 스크롤이 시작되면 pointercancel
     document.addEventListener('click', function (e) { if (fired) { fired = false; e.stopPropagation(); e.preventDefault(); } }, true);
-    document.addEventListener('contextmenu', function (e) {   // 안드로이드는 시스템 길게 누르기 시간(≈400ms)에 보낸다 — 메뉴 대신 바로 복사
-      var row = e.target.closest && e.target.closest('#ytList .ys'); if (!row) return;
+    document.addEventListener('contextmenu', function (e) {   // 안드로이드는 시스템 길게 누르기 시간(≈400ms)에 보낸다 — 메뉴 대신 바로 연다
+      var f = find(e.target); if (!f) return;
       e.preventDefault();
-      if (lp && !fired) { cancel(); copyRow(row); }
+      if (lp && !fired) { cancel(); fire(f); }
     });
   })();
 

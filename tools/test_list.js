@@ -66,13 +66,24 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.waitForTimeout(500); await p.dblclick('#listBody .item[data-id="' + wid + '"] .it-k'); await p.waitForTimeout(150);
   eq('다시 두 번 톡 = 가림', await kHid(), true);
   await p.screenshot({ path: OUT + '/371-list-ex.png' });
-  // 단어 줄(예문 밖)을 누르면 예전처럼 단어 시트
+  // v2.36: 단어 줄(예문 밖) 한 번 톡 = 단어 → 예문 읽기(시트 안 열림) · 꾹(550ms) = 단어 시트 (떼면서 생기는 click 은 버림)
+  const sheetUp = () => p.evaluate(() => !!(document.querySelector('#sheet') && document.querySelector('#sheet').classList.contains('show')));
+  const lp = async sel => { const c = await p.$eval(sel, e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }); await p.mouse.move(c.x, c.y); await p.mouse.down(); await p.waitForTimeout(700); await p.mouse.up(); await p.waitForTimeout(300); };
+  const ww = await p.evaluate(() => window.__vocab.state().words[0].w);
+  await p.evaluate(() => { window.__spoken = []; });
   await p.click('#listBody .item[data-id="' + wid + '"] .it-w'); await p.waitForTimeout(300);
-  eq('단어를 누르면 단어 시트', await p.$$eval('#sheet [data-action="stage-set"], #sheet .sh-word', x => x.length > 0), true);
+  eq('단어를 톡 = 단어·예문 읽기 · 시트 안 열림', (await p.evaluate(() => window.__spoken.join('|'))) + ' ' + await sheetUp(), ww + '|' + we + ' false');
+  await p.evaluate(() => { window.__spoken = []; });
+  await lp('#listBody .item[data-id="' + wid + '"] .it-w');
+  eq('단어를 꾹 = 단어 시트 · 읽지 않음', (await p.$$eval('#sheet [data-action="stage-set"], #sheet .sh-word', x => x.length > 0)) + ' ' + await sheetUp() + ' ' + await p.evaluate(() => window.__spoken.length), 'true true 0');
   await p.evaluate(() => { const o = document.getElementById('overlay'); if (o) o.click(); }); await p.waitForTimeout(300);
-  // 담은 문장 시트 → 빼기
+  // 담은 문장도 같게: 톡 = 문장 읽기 · 꾹 = 시트 → 빼기
+  const se2 = await p.evaluate(() => window.__vocab.state().sentBox.filter(x => x.id === 'sb2')[0].e);
+  await p.evaluate(() => { window.__spoken = []; });
   await p.click('#listBody .item[data-id="sb2"] .it-src'); await p.waitForTimeout(300);
-  eq('담은 문장 시트: 출처·담은 날·문장 공부 기록', /Box Talk · 0:30/.test(await p.textContent('#sheet')) + ' ' + /어려움 0 · 쉬움 0/.test(await p.textContent('#sheet')), 'true true');
+  eq('담은 문장을 톡 = 문장 읽기 · 시트 안 열림', (await p.evaluate(() => window.__spoken.join('|'))) + ' ' + await sheetUp(), se2 + ' false');
+  await lp('#listBody .item[data-id="sb2"] .it-src');
+  eq('담은 문장을 꾹 = 시트: 출처·담은 날·문장 공부 기록', /Box Talk · 0:30/.test(await p.textContent('#sheet')) + ' ' + /어려움 0 · 쉬움 0/.test(await p.textContent('#sheet')) + ' ' + await sheetUp(), 'true true true');
   await p.click('#sheet [data-action="list-sent-drop"]'); await p.waitForTimeout(200); await p.click('#modal .btn.primary'); await p.waitForTimeout(300);
   eq('빼면 목록·저장에서 사라짐 (+1)', (await p.evaluate(() => window.__vocab.state().sentBox.map(x => x.id).join())) + ' ' + await p.$eval('.seg button.on small', e => e.textContent), 'sb1 5+1');
   eq('★ 필터 켜면 담은 문장은 안 나옴', await p.evaluate(() => { const s = window.__vocab.state(); s.words[0].star = true; return true; }) && (await p.click('[data-action="list-star"]'), await p.waitForTimeout(150), await p.$$eval('#listBody .item[data-id="sb1"]', x => x.length)), 0);
