@@ -6,26 +6,26 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 800 }, deviceScaleFactor: 2 });
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  // Stub the Gemini endpoints before any script runs
+  // Stub the OpenRouter endpoints before any script runs (v2.37 — Gemini 는 유튜브 정리만)
   await p.addInitScript(() => {
     window.__aiCalls = [];
     window.fetch = (url, opt) => {
-      window.__aiCalls.push({ url, method: opt.method, key: opt.headers['x-goog-api-key'], body: opt.body ? JSON.parse(opt.body) : null });
-      const key = opt.headers['x-goog-api-key'];
+      const auth = opt.headers.Authorization || '', key = auth.replace(/^Bearer /, '');
+      window.__aiCalls.push({ url, method: opt.method, key, goog: opt.headers['x-goog-api-key'], body: opt.body ? JSON.parse(opt.body) : null });
       const ok = (obj) => Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify(obj)) });
-      if (key !== 'TEST-KEY') return Promise.resolve({ status: 400, text: () => Promise.resolve(JSON.stringify({ error: { message: 'API key not valid. Please pass a valid API key.' } })) });
-      if (/\/models\?/.test(url)) return ok({ models: [
-        { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
-        { name: 'models/gemini-2.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
-        { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
-        { name: 'models/gemini-2.5-flash-preview-tts', supportedGenerationMethods: ['generateContent'] },
-        { name: 'models/gemini-2.5-pro', supportedGenerationMethods: ['generateContent'] }] });
-      if (/\/models\/(gemini-flash-lite-latest|gemini-2\.5-flash(-lite)?):generateContent/.test(url)) {
-        const prompt = opt.body ? JSON.parse(opt.body).contents[0].parts[0].text : '';
+      if (/openrouter\.ai\/api\/v1\/models$/.test(url)) return ok({ data: [   // 모델 목록은 키 없이
+        { id: 'openai/gpt-5-mini', architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] }, supported_parameters: ['response_format', 'structured_outputs'] },
+        { id: 'google/gemini-3.1-flash-lite', architecture: { input_modalities: ['text', 'image', 'audio', 'video'], output_modalities: ['text'] }, supported_parameters: ['structured_outputs', 'reasoning'] },
+        { id: 'google/gemini-3.8-flash-lite-tts', architecture: { input_modalities: ['text'], output_modalities: ['audio'] }, supported_parameters: [] },
+        { id: 'some/old-model', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, supported_parameters: ['temperature'] },
+        { id: 'deepseek/deepseek-v4-flash', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, supported_parameters: ['structured_outputs'] }] });
+      if (key !== 'sk-or-TEST') return Promise.resolve({ status: 401, text: () => Promise.resolve(JSON.stringify({ error: { message: 'No auth credentials found', code: 401 } })) });
+      if (/openrouter\.ai\/api\/v1\/chat\/completions$/.test(url)) {
+        const prompt = JSON.parse(opt.body).messages.slice(-1)[0].content;
         const word = (prompt.match(/Word\/expression: "([^"]+)"/) || [])[1] || '?';
-        return ok({ candidates: [{ content: { parts: [{ text: JSON.stringify({ e: `Let me ${word} what went wrong before the meeting.`, k: `회의 전에 뭐가 잘못됐는지 알아볼게요.` }) }] } }] });
+        return ok({ choices: [{ message: { content: JSON.stringify({ e: `Let me ${word} what went wrong before the meeting.`, k: `회의 전에 뭐가 잘못됐는지 알아볼게요.` }) }, finish_reason: 'stop' }] });
       }
-      return Promise.resolve({ status: 404, text: () => Promise.resolve(JSON.stringify({ error: { message: 'model not found' } })) });
+      return Promise.resolve({ status: 404, text: () => Promise.resolve(JSON.stringify({ error: { message: 'not found' } })) });
     };
   });
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
@@ -57,20 +57,25 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   await p.click('#modal .btn.primary'); await p.waitForTimeout(400);
   console.log('→ settings view:', await p.evaluate(() => document.querySelector('#view-settings').classList.contains('active')), '| key field focused:', await p.evaluate(() => document.activeElement && document.activeElement.id));
   // (4) enter key in settings; test connection; model list
-  await p.fill('#ai-key', 'TEST-KEY'); await p.waitForTimeout(100);
-  console.log('key stored separately:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).key), '| in state backup?', await p.evaluate(() => JSON.stringify(window.__vocab.state()).indexOf('TEST-KEY') >= 0));
+  await p.fill('#ai-key', 'sk-or-TEST'); await p.waitForTimeout(100);
+  console.log('key stored separately:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).key), '| in state backup?', await p.evaluate(() => JSON.stringify(window.__vocab.state()).indexOf('sk-or-TEST') >= 0));
   await p.click('[data-action="ai-test"]'); await p.waitForTimeout(300);
   console.log('connection test toast:', (await p.textContent('#toast')).slice(0, 40));
   await p.click('[data-action="ai-models"]'); await p.waitForTimeout(300);
   console.log('model list:', await p.$$eval('.model-list button', bs => bs.map(x => x.textContent)));
-  await p.click('.model-list button[data-model="gemini-2.5-flash-lite"]'); await p.waitForTimeout(200);
+  await p.click('.model-list button[data-model="deepseek/deepseek-v4-flash"]'); await p.waitForTimeout(200);
   console.log('picked model:', await p.inputValue('#ai-model'), '| stored:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).model));
-  await p.click('.model-list button[data-model="gemini-2.5-flash"]').catch(() => { });
-  await p.evaluate(() => { document.querySelector('#ai-model').value = 'models/gemini-flash-lite-latest'; document.querySelector('#ai-model').dispatchEvent(new Event('change')); });
-  console.log('model typed with prefix → stored:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).model));
-  // v1.15 users who saved gemini-2.5-flash are migrated to the alias on load
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-2.5-flash' })); }); await p.reload(); await p.waitForTimeout(300);
-  console.log('migrated stale model:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).model), '(stored file is rewritten on next save)');
+  await p.evaluate(() => { document.querySelector('#ai-model').value = 'gemini-flash-lite-latest'; document.querySelector('#ai-model').dispatchEvent(new Event('change')); });
+  console.log('Gemini-style id typed → default:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).model));
+  // v2.37: 예전 Gemini 키는 유튜브용 gkey 로 옮겨지고 OpenRouter 키는 비고, 모델은 OpenRouter 기본으로
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'AQ.oldgemini', model: 'gemini-2.5-flash', noThink: true })); }); await p.reload(); await p.waitForTimeout(300);
+  await p.click('[data-action="tab"][data-tab="settings"]'); await p.waitForTimeout(250);
+  console.log('migrated Gemini key → gkey:', await p.inputValue('#ai-gkey'), '| OpenRouter key:', JSON.stringify(await p.inputValue('#ai-key')), '| model:', await p.inputValue('#ai-model'));
+  await p.fill('#ai-key', 'sk-or-TEST'); await p.waitForTimeout(100);
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify(Object.assign(JSON.parse(localStorage.getItem('vocab3.ai.v1')), {}))); }); await p.reload(); await p.waitForTimeout(300);
+  console.log('after reload kept:', await p.evaluate(() => { const a = JSON.parse(localStorage.getItem('vocab3.ai.v1')); return a.key + ' / ' + a.gkey + ' / ' + a.model; }));
+  await p.click('[data-action="tab"][data-tab="settings"]'); await p.waitForTimeout(250);
+  await p.evaluate(() => document.querySelector('#ai-settings').scrollIntoView());
   await p.screenshot({ path: OUT + '/71-settings-ai.png' });
   // (5) back to study (session persists) → long-press → AI → save → card updated
   await p.click('[data-action="tab"][data-tab="home"]'); await p.waitForTimeout(150);
@@ -79,9 +84,9 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   await p.fill('#ex-hint', '회의에서');
   await p.click('[data-action="ai-example"]'); await p.waitForTimeout(400);
   const call = await p.evaluate(() => window.__aiCalls[window.__aiCalls.length - 1]);
-  console.log('AI call:', call.method, call.url.replace(/^https:\/\/generativelanguage.googleapis.com/, ''), '| key header:', call.key, '| schema:', JSON.stringify(call.body.generationConfig.responseSchema.required));
-  console.log('default model is the alias:', /gemini-flash-lite-latest:generateContent/.test(call.url) || call.url);
-  console.log('prompt has hint:', /회의에서/.test(call.body.contents[0].parts[0].text), '| has current example:', call.body.contents[0].parts[0].text.indexOf(exampleBefore) >= 0);
+  console.log('AI call:', call.method, call.url, '| bearer:', call.key, '| goog header:', call.goog, '| schema:', JSON.stringify(call.body.response_format.json_schema.schema.required), call.body.response_format.json_schema.strict);
+  console.log('default model:', call.body.model);
+  console.log('prompt has hint:', /회의에서/.test(call.body.messages[0].content), '| has current example:', call.body.messages[0].content.indexOf(exampleBefore) >= 0);
   console.log('filled:', await p.inputValue('#ex-e'), '/', await p.inputValue('#ex-k'));
   await p.screenshot({ path: OUT + '/72-example-ai.png' });
   await p.click('[data-action="ex-save"]'); await p.waitForTimeout(400);
@@ -104,7 +109,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   await p.click('[data-action="ai-edit-example"]'); await p.waitForTimeout(400);
   console.log('edit screen AI:', await p.inputValue('#f-e'), '/', await p.inputValue('#f-k'));
   // (7) invalid key → readable error
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'BAD', model: 'gemini-2.5-flash' })); }); await p.reload(); await p.waitForTimeout(300);
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'sk-or-BAD', or: 1 })); }); await p.reload(); await p.waitForTimeout(300);
   await p.click('#tabbar [data-tab="edit"]'); await p.waitForTimeout(200);
   await p.click('[data-action="add-mode"][data-mode="one"]'); await p.waitForTimeout(150);   // v2.0: 기본은 붙여넣기 탭
   await p.fill('#f-w', 'hectic'); await p.fill('#f-m', '정신없이 바쁜');

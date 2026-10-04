@@ -50,7 +50,7 @@ async function newPage(b, o) {   // o: { android, tourTest(기본 켬) }
     Object.defineProperty(window, 'speechSynthesis', { value: { speak: u => window.__spoken.push(u.text), cancel: () => { }, getVoices: () => [] } });
     delete window.webkitSpeechRecognition; delete window.SpeechRecognition;
     if (!o.android) {   // 브라우저: Gemini 는 fetch — 회화 첫 답은 1.5초 뒤 (실제처럼 안내 타이머 450ms 보다 늦게)
-      window.fetch = () => new Promise(res => setTimeout(() => res({ status: 200, text: () => Promise.resolve(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(o.CHAT) }] } }] })) }), 1500));
+      window.fetch = () => new Promise(res => setTimeout(() => res({ status: 200, text: () => Promise.resolve(JSON.stringify({ choices: [{ message: { content: JSON.stringify(o.CHAT) } }] })) }), 1500));
       return;
     }
     window.__aiQ = []; window.__holdAi = false; window.__dl = [];
@@ -173,7 +173,7 @@ async function walk(p, v, sfx) {
   await walk(p, 'sent');
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(300);
   // 회화: 키를 넣고 → 대화 시작 → 첫 답 전엔 안내 없음 · 답이 오면 시작 (9)
-  await p.evaluate(() => localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })));
+  await p.evaluate(() => localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })));
   await p.reload(); await p.waitForTimeout(900);
   await p.click('#view-home [data-action="talk"]'); await p.waitForTimeout(700);
   eq('회화 설정 화면: 본 안내라 안 뜸', await tourN(p), 0);
@@ -197,7 +197,7 @@ async function walk(p, v, sfx) {
   await p.click('[data-action="tour-skip"]'); await p.waitForTimeout(300);
   eq('건너뛰기 → 닫힘 · home=1', (await tourN(p)) + ' ' + (await tourOf(p, 'home')), '0 1');
   await p.click('#tabbar [data-tab="stats"]'); await p.waitForTimeout(1000);
-  eq('통계 안내 뜸', (await tourN(p)) + ' ' + (await p.textContent('#tourN')), '1 1 / 3');
+  eq('통계 안내 뜸', (await tourN(p)) + ' ' + (await p.textContent('#tourN')), '1 1 / 4');   // v2.37 종합 회화 실력 단계 추가
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(300);
   eq('뒤로 → 안내만 닫고 통계 화면 그대로 · stats=1', (await tourN(p)) + ' ' + (await view(p)) + ' ' + (await tourOf(p, 'stats')), '0 view-stats 1');
   await p.waitForTimeout(700);
@@ -280,7 +280,7 @@ async function walk(p, v, sfx) {
   await p.click('#tabbar [data-tab="settings"]');
   await walk(p, 'settings', '_android');
   // --- 8·9. 유튜브: 키 있음(키 안내 빠짐) → 링크 추가 → 정리 중 첫 방문은 안내 없음 → 문장이 오면 시작 ---
-  await p.evaluate(() => { localStorage.removeItem('T:rel'); window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); });
+  await p.evaluate(() => { localStorage.removeItem('T:rel'); window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); });
   await p.reload(); await p.waitForTimeout(900);
   await p.evaluate(() => window.__vocab.go('yt'));
   await walk(p, 'yt', '_key');

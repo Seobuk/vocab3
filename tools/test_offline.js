@@ -82,7 +82,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   }, { ENV, SENTS });
   await p.goto('https://kr.hyunuk.vocab3/'); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
-  await p.evaluate(() => { window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
+  await p.evaluate(() => { window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
   await p.reload(); await p.waitForTimeout(400);
 
   const dl = fn => p.evaluate(f => window.__dl.filter(c => c.fn === f).map(c => c.vid).join(), fn);

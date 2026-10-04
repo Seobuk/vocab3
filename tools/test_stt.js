@@ -10,13 +10,13 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
     window.fetch = (url, opt) => {
       const body = JSON.parse(opt.body);
       (window.__bodies = window.__bodies || []).push(body);
-      const last = body.contents[body.contents.length - 1].parts[0].text;
+      const last = body.messages[body.messages.length - 1].content;
       const out = {
         reply: /Start the conversation/.test(last) ? 'Hi there! What can I get for you?' : 'Sure, one latte coming up. Anything else?',
         fix: window.__fix || '', note: '', used: [],
         say: [{ e: 'Can I get a latte, please?', k: '라떼 한 잔 주시겠어요?' }, { e: "I'd like a latte with oat milk, please.", k: '오트 밀크 넣은 라떼로 주세요.' }]
       };
-      return Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(out) }] } }] })) });
+      return Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] })) });
     };
     // 가짜 음성인식: 테스트가 window.__say(텍스트, 확정여부) 로 구간을 흘려 넣는다
     function FakeSR() { this.continuous = false; this.interimResults = false; this._res = []; }
@@ -33,7 +33,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   });
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
   await p.reload(); await p.waitForTimeout(400);
   await p.click('[data-action="talk"]'); await p.waitForTimeout(200);
   eq('가이드 토글 기본 켜짐', await p.evaluate(() => window.__vocab.state().settings.talk.guide), 'true');
@@ -115,7 +115,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   eq('인식 오류 → 들은 데까지 입력창에 · 안 보냄 · 안내', (await p.inputValue('#chatIn')) + ' | ' + ((await msgs()) === n0) + ' | ' + /들은 데까지/.test(await p.textContent('#toast')), 'I want to order | true | true');
   await p.evaluate(() => { window.__fix = 'I want to order.'; });
   await p.click('[data-action="talk-send"]'); await p.waitForTimeout(700);
-  const lb = () => p.evaluate(() => { const b = window.__bodies[window.__bodies.length - 1]; return b.contents[b.contents.length - 1].parts[0].text + ' | ' + /speech recognition/.test(b.systemInstruction.parts[0].text); });
+  const lb = () => p.evaluate(() => { const b = window.__bodies[window.__bodies.length - 1]; return b.messages[b.messages.length - 1].content + ' | ' + /speech recognition/.test(b.messages[0].content); });
   eq('인식한 문장은 [spoken] 으로 · 시스템에 인식 오류 안내', await lb(), '[spoken] I want to order | true');
   eq('마침표만 다른 교정은 안 보임', await p.$$eval('.msg.me .fb.fix', x => x.length), 0);
   await p.evaluate(() => { window.__fix = ''; });

@@ -22,11 +22,11 @@ const LINES = [
     window.__calls = []; window.__said = [];
     window.fetch = (url, opt) => {
       const body = opt && opt.body ? JSON.parse(opt.body) : null; window.__calls.push({ url, body });
-      const ok = (obj) => Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] })) });
-      const sys = body && body.systemInstruction ? body.systemInstruction.parts[0].text : '';
+      const ok = (obj) => Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ choices: [{ message: { content: JSON.stringify(obj) } }] })) });
+      const sys = body && body.messages && body.messages[0].role === 'system' ? body.messages[0].content : '';
       if (/dialogues for a Korean adult learner/.test(sys)) {
         if (window.__fail) return Promise.resolve({ status: 500, text: () => Promise.resolve('{"error":{"message":"boom"}}') });
-        const edited = /거절/.test(body.contents[0].parts[0].text);   // 상황 수정 뒤에는 다른 대화(4줄)
+        const edited = /거절/.test(body.messages[body.messages.length - 1].content);   // 상황 수정 뒤에는 다른 대화(4줄)
         return new Promise(r => setTimeout(r, 300)).then(() => edited ? ok({ title: '투어 권하기 — 거절', b: '바쁜 연구원', lines: LINES.slice(0, 4) }) : ok({ title: '새 연구원에게 연구소 투어', b: '새로 온 연구원', lines: LINES }));
       }
       return ok({ reply: 'Hi!', ko: '안녕', fix: '', note: '', used: [], say: [] });
@@ -39,7 +39,7 @@ const LINES = [
   }, LINES);
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.tour = { home: 1, dlg: 1, dlgv: 1, talk: 1, chat: 1, settings: 1 }; window.__vocab.save(); }); await p.reload(); await p.waitForTimeout(400);
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.tour = { home: 1, dlg: 1, dlgv: 1, talk: 1, chat: 1, settings: 1 }; window.__vocab.save(); }); await p.reload(); await p.waitForTimeout(400);
 
   eq('홈 빠른 버튼 4개 (다이얼로그 포함)', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent)), ['회화 연습', '다이얼로그', '유튜브', '듣기 복습']);
   eq('빠른 버튼 크기 같음', await p.$$eval('.quick .q', x => new Set(x.map(e => Math.round(e.getBoundingClientRect().width) + 'x' + Math.round(e.getBoundingClientRect().height))).size), 1);
@@ -72,7 +72,7 @@ const LINES = [
   await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(100);
   eq('만드는 중 화면', await p.evaluate(() => !!document.querySelector('#dlgBody .dl-busy .typing')), true);
   await p.waitForTimeout(500);
-  const sys = await p.evaluate(() => window.__calls[window.__calls.length - 1].body.systemInstruction.parts[0].text);
+  const sys = await p.evaluate(() => window.__calls[window.__calls.length - 1].body.messages[0].content);
   eq('프롬프트: 내 정보 · 6줄 · 번갈아', [/한국기계연구원/.test(sys), /exactly 6 lines/.test(sys), /alternate A, B/.test(sys), /learner \(a man\)/.test(sys)], [true, true, true, true]);
   eq('대화 6줄', await p.$$eval('.dl-line', x => x.length), 6);
   eq('제목', await p.textContent('#dlgT'), '새 연구원에게 연구소 투어');
@@ -140,7 +140,7 @@ const LINES = [
   await p.evaluate(() => { window.__fail = 1; });
   await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(400);
   eq('실패: 기록·화면 그대로', [await rec(), await p.textContent('.dl-sit-t'), await p.$$eval('.dl-line', x => x.length)], [[SIT, 'short', 6], SIT, 6]);
-  eq('실패 안내', await p.textContent('#toast'), '다시 만들기 실패 — Gemini 서버 오류 (500)');
+  eq('실패 안내', await p.textContent('#toast'), '다시 만들기 실패 — OpenRouter 서버 오류 (500)');
   await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
   eq('실패한 수정: 적은 글·길이가 남음', await sheet(), ['상황 수정', SIT2, 'normal', '다시 만들기']);
   await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
@@ -152,7 +152,7 @@ const LINES = [
   await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(100);
   eq('만드는 중: 새 상황 · 수정 버튼 숨김', await p.evaluate(() => [document.querySelector('.dl-sit-t').textContent, !!document.querySelector('#dlgBody .typing'), !!document.querySelector('.dl-sit [data-action="dlg-edit"]')]), [SIT2, true, false]);
   await p.waitForTimeout(500);
-  eq('요청: 새 상황 · 10줄', await p.evaluate(() => { const b = window.__calls[window.__calls.length - 1].body; return [b.contents[0].parts[0].text, /exactly 10 lines/.test(b.systemInstruction.parts[0].text)]; }), ['Situation: ' + SIT2, true]);
+  eq('요청: 새 상황 · 10줄', await p.evaluate(() => { const b = window.__calls[window.__calls.length - 1].body; return [b.messages[b.messages.length - 1].content, /exactly 10 lines/.test(b.messages[0].content)]; }), ['Situation: ' + SIT2, true]);
   eq('같은 기록이 새 상황·새 대화로', await p.evaluate(() => { const d = window.__vocab.state().dlg; return [d.length, d[0].id, d[0].sit, d[0].len, d[0].lines.length, d[0].title, d[0].plays]; }), [1, id0, SIT2, 'normal', 4, '투어 권하기 — 거절', 2]);
   eq('화면도 새 대화', [await p.textContent('#dlgT'), await p.textContent('.dl-sit-t'), await p.$$eval('.dl-line', x => x.length)], ['투어 권하기 — 거절', SIT2, 4]);
   await p.screenshot({ path: OUT + '/dlg-8-edited.png' });
@@ -175,7 +175,7 @@ const LINES = [
   // 회화 연습도 내 정보를 참고
   await p.evaluate(() => window.__vocab.go('talk')); await p.waitForTimeout(150);
   await p.click('[data-action="talk-start"]'); await p.waitForTimeout(400);
-  eq('회화 시스템 프롬프트에 내 정보', await p.evaluate(() => /About the learner.*한국기계연구원/.test(window.__calls[window.__calls.length - 1].body.systemInstruction.parts[0].text)), true);
+  eq('회화 시스템 프롬프트에 내 정보', await p.evaluate(() => /About the learner.*한국기계연구원/.test(window.__calls[window.__calls.length - 1].body.messages[0].content)), true);
   await p.evaluate(() => window.__vocab.go('dlg')); await p.waitForTimeout(150);
 
   // 삭제 · 다시 켜도 남음
@@ -205,7 +205,7 @@ const LINES = [
   eq('대화 없는 기록: 상황·길이 바로 바뀜', await p.evaluate(() => { const r = window.__vocab.state().dlg[0]; return [r.sit, r.len, r.lines]; }), ['투어를 권했는데 거절당하기', 'long', null]);
   await p.evaluate(() => { window.__fail = 0; });
   await p.click('#dlgBody [data-action="dlg-remake"]'); await p.waitForTimeout(700);
-  eq('다시 만들기: 고친 상황 · 16줄로 요청', await p.evaluate(() => { const b = window.__calls[window.__calls.length - 1].body; return [b.contents[0].parts[0].text, /exactly 16 lines/.test(b.systemInstruction.parts[0].text), window.__vocab.state().dlg[0].lines.length]; }), ['Situation: 투어를 권했는데 거절당하기', true, 4]);
+  eq('다시 만들기: 고친 상황 · 16줄로 요청', await p.evaluate(() => { const b = window.__calls[window.__calls.length - 1].body; return [b.messages[b.messages.length - 1].content, /exactly 16 lines/.test(b.messages[0].content), window.__vocab.state().dlg[0].lines.length]; }), ['Situation: 투어를 권했는데 거절당하기', true, 4]);
   await p.reload(); await p.waitForTimeout(400);
   await p.click('.quick [data-action="dlg"]'); await p.waitForTimeout(150);
   await p.click('#view-dlg .yi-del'); await p.waitForTimeout(150); await p.click('#modal .btn.danger'); await p.waitForTimeout(200);

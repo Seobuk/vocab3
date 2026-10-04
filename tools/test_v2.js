@@ -16,15 +16,15 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
     window.AudioContext.prototype.createOscillator = () => new FakeOsc(); window.AudioContext.prototype.createGain = () => new FakeGain(); window.AudioContext.prototype.resume = () => { };
     window.fetch = (url, opt) => {
       const body = JSON.parse(opt.body); window.__calls.push({ url, body });
-      const ok = (obj) => Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] })) });
-      const sys = body.systemInstruction ? body.systemInstruction.parts[0].text : '';
+      const ok = (obj) => Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ choices: [{ message: { content: JSON.stringify(obj) } }] })) });
+      const sys = body.messages[0].role === 'system' ? body.messages[0].content : '';
       if (/reviewing a short practice conversation/.test(sys)) return ok({ score: 5, comment: '좋아요', corrections: [], expressions: [] });
       if (/Translate what they want to say/.test(sys)) return ok({ en: "Could I get a latte with oat milk, please?" });
       if (/complete vocabulary entries/.test(sys)) {
-        const items = JSON.parse(body.contents[0].parts[0].text);
+        const items = JSON.parse(body.messages[body.messages.length - 1].content);
         return ok(items.map(it => ({ w: it.w, p: it.p || 'v.', m: it.m || ('뜻:' + it.w), e: it.e || ('I use ' + it.w + ' every day.'), k: it.k || ('나는 매일 ' + it.w + '를 써요.') })));
       }
-      const last = body.contents[body.contents.length - 1].parts[0].text;
+      const last = body.messages[body.messages.length - 1].content;
       if (/Start the conversation/.test(last)) return ok({ reply: 'Hi there! What can I get for you today?', ko: '안녕하세요! 오늘 뭐 드릴까요?', fix: '', note: '', used: [], say: [] });
       return ok({ reply: 'Oh, you went there yesterday? Nice! Same order?', ko: '오, 어제 거기 갔었군요? 좋네요! 같은 걸로요?', fix: 'I went there yesterday.', note: '과거형 went', used: [], say: [] });
     };
@@ -37,7 +37,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   });
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; s.settings.dailyGoal = 10; window.__vocab.save(); });
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; s.settings.dailyGoal = 10; window.__vocab.save(); });
   await p.reload(); await p.waitForTimeout(400);
 
   // --- 홈: 빠른 실행 3개 ---
@@ -98,8 +98,8 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
 
   // --- 회화: 한글 번역(흐림→탭), 자연 교정 프롬프트, 미션 칩 팝업 in chat ---
   await p.click('[data-action="talk-start"]'); await p.waitForTimeout(500);
-  eq('프롬프트에 자연 교정(recast)', await p.evaluate(() => /recast/.test(window.__calls[0].body.systemInstruction.parts[0].text)), true);
-  eq('스키마에 ko', await p.evaluate(() => 'ko' in window.__calls[0].body.generationConfig.responseSchema.properties), true);
+  eq('프롬프트에 자연 교정(recast)', await p.evaluate(() => /recast/.test(window.__calls[0].body.messages[0].content)), true);
+  eq('스키마에 ko', await p.evaluate(() => 'ko' in window.__calls[0].body.response_format.json_schema.schema.properties), true);
   eq('AI 말풍선 아래 한글 번역 (흐림)', await p.$$eval('.ko-line.blur', x => x.map(e => e.textContent).join()), '안녕하세요! 오늘 뭐 드릴까요?');
   await p.click('.ko-line'); await p.waitForTimeout(100);
   eq('탭하면 선명', await p.$$eval('.ko-line.blur', x => x.length), 0);
@@ -120,7 +120,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.evaluate(() => window.__say('오트 밀크 넣은 라떼 한 잔 주세요', true)); await p.waitForTimeout(100);
   await p.screenshot({ path: OUT + '/207-ko-listening.png' });
   await p.click('#koBtn'); await p.waitForTimeout(500);
-  eq('번역 요청 나감', await p.evaluate(() => window.__calls.some(c => /Translate what they want to say/.test(c.body.systemInstruction.parts[0].text) && /오트 밀크/.test(c.body.contents[0].parts[0].text))), true);
+  eq('번역 요청 나감', await p.evaluate(() => window.__calls.some(c => /Translate what they want to say/.test(c.body.messages[0].content) && /오트 밀크/.test(c.body.messages[c.body.messages.length - 1].content))), true);
   eq('영어가 입력창에', await p.inputValue('#chatIn'), 'Could I get a latte with oat milk, please?');
   eq('원문 표시', await p.textContent('.ko-src'), '“오트 밀크 넣은 라떼 한 잔 주세요”');
   eq('원문은 💡 아래 한 줄 통째로 (안 잘림, v2.1)', await p.evaluate(() => { const s = document.querySelector('.ko-src'), g = document.querySelector('.guide-pill'); return s.scrollWidth <= s.clientWidth && s.getBoundingClientRect().top >= g.getBoundingClientRect().bottom; }), true);
@@ -150,7 +150,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   eq('3개 추가됨', await p.evaluate(() => window.__vocab.state().words.length) - wordsBefore, 3);
   eq('AI가 뜻·예문 채움', await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'mulligan'); return w.m + ' | ' + w.e + ' | ' + w.p + ' | ' + w.stage; }), '뜻:mulligan | I use mulligan every day. | v. | 1');
   eq('있던 값은 유지', await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'tinker with'); return w.m + ' | ' + w.e; }), '만지작거리다 | I use tinker with every day.');
-  eq('AI 요청은 비어 있는 것만', await p.evaluate(() => { const c = window.__calls.filter(c => /complete vocabulary entries/.test(c.body.systemInstruction.parts[0].text)); return c.length + ':' + JSON.parse(c[0].body.contents[0].parts[0].text).map(x => x.w).join(','); }), '1:mulligan,tinker with');
+  eq('AI 요청은 비어 있는 것만', await p.evaluate(() => { const c = window.__calls.filter(c => /complete vocabulary entries/.test(c.body.messages[0].content)); return c.length + ':' + JSON.parse(c[0].body.messages[1].content).map(x => x.w).join(','); }), '1:mulligan,tinker with');
   eq('추가 후 목록으로', await p.evaluate(() => document.querySelector('.view.active').id), 'view-list');
   await p.click('#tabbar [data-tab="edit"]'); await p.waitForTimeout(200);
   await p.click('[data-action="add-mode"][data-mode="one"]'); await p.waitForTimeout(150);

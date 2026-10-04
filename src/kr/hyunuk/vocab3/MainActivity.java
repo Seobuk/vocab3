@@ -644,7 +644,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Gemini 등 HTTPS 요청 (백그라운드 스레드에서). body = pre + mid + post (pre 가 없으면 GET). 어떤 실패든 onAiResult 는 꼭 부른다. */
+    /** OpenRouter·Gemini 등 HTTPS 요청 (백그라운드 스레드에서). body = pre + mid + post (pre 가 없으면 GET). 어떤 실패든 onAiResult 는 꼭 부른다. */
     private void http(String id, String url, String key, byte[] pre, byte[] mid, byte[] post) {
         int status = 0;
         String text = "";
@@ -654,7 +654,15 @@ public class MainActivity extends Activity {
             c.setConnectTimeout(15000);
             c.setReadTimeout(600000);   // 유튜브 영상 받아쓰기(생각 켜기)는 몇 분 걸린다; 기능마다 JS 쪽이 자기 제한 시간을 따로 건다
             c.setRequestProperty("Accept", "application/json");
-            if (key != null && key.length() > 0) c.setRequestProperty("x-goog-api-key", key);
+            if (key != null && key.length() > 0) {
+                if (url.startsWith("https://openrouter.ai/")) {   // v2.37 OpenRouter: Bearer 키 + 앱 표시(선택 헤더)
+                    c.setRequestProperty("Authorization", "Bearer " + key);
+                    c.setRequestProperty("HTTP-Referer", "https://seobuk.github.io/vocab3/");
+                    c.setRequestProperty("X-Title", "vocab3");
+                } else if (url.startsWith("https://generativelanguage.googleapis.com/")) {   // 유튜브 받아쓰기만 Gemini
+                    c.setRequestProperty("x-goog-api-key", key);
+                }   // 다른 주소엔 키를 안 보낸다
+            }
             if (pre != null) {
                 c.setRequestMethod("POST");
                 c.setDoOutput(true);
@@ -1259,9 +1267,9 @@ public class MainActivity extends Activity {
         }
 
         /**
-         * HTTPS JSON call for the AI example feature (Gemini API). Runs on a background thread and
+         * HTTPS JSON call for the AI features (OpenRouter; YouTube transcription = Gemini). Runs on a background thread and
          * reports back through window.onAiResult(id, httpStatus, bodyText). status 0 = network error.
-         * The API key travels in the x-goog-api-key header so it never appears in a URL/log line.
+         * The API key travels in a header (Authorization / x-goog-api-key, chosen by host) so it never appears in a URL/log line.
          */
         @JavascriptInterface
         public void aiCall(String t, final String id, final String url, final String key, final String body) {

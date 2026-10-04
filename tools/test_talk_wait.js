@@ -21,21 +21,21 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
     };
     window.__bt = 'TKN';   // 실제 앱처럼: 브리지는 첫 인자로 토큰을 받고, 틀리면 무시 (v2.2)
     window.Android = {}; for (const k in impl) window.Android[k] = (t, ...a) => { if (t !== 'TKN') { window.__badToken = (window.__badToken || 0) + 1; return undefined; } return impl[k](...a); };
-    window.__reply = (id, status, obj) => window.onAiResult(id, status, typeof obj === 'string' ? obj : JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] }));
+    window.__reply = (id, status, obj) => window.onAiResult(id, status, typeof obj === 'string' ? obj : JSON.stringify({ choices: [{ message: { content: JSON.stringify(obj) } }] }));
     // 시간을 빨리 돌리기: Date.now 를 밀어 두는 오프셋
     window.__skew = 0; const realNow = Date.now; Date.now = () => realNow() + window.__skew;
   });
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   eq('안드로이드 브리지 모드', await p.evaluate(() => typeof window.Android.aiCall), 'function');
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
-  await p.evaluate(() => { window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
+  await p.evaluate(() => { window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
   await p.reload(); await p.waitForTimeout(400);
   await p.click('[data-action="talk"]'); await p.waitForTimeout(200);
   await p.click('[data-action="talk-start"]'); await p.waitForTimeout(300);
 
   // --- 1. 답이 안 온다 ---
   eq('요청 1건 나감', await p.evaluate(() => window.__calls.length), 1);
-  eq('flash 계열은 thinking 끔', await p.evaluate(() => JSON.stringify(window.__calls[0].body.generationConfig.thinkingConfig)), '{"thinkingBudget":0}');
+  eq('OpenRouter 요청 (생각 최소)', await p.evaluate(() => window.__calls[0].url + ' ' + JSON.stringify(window.__calls[0].body.reasoning) + ' ' + window.__calls[0].body.model), 'https://openrouter.ai/api/v1/chat/completions {"effort":"minimal","exclude":true} google/gemini-3.1-flash-lite');
   eq('타이핑 말풍선', await p.$$eval('.bubble.typing', x => x.length), 1);
   eq('4초 전엔 조용', await p.textContent('#waitInfo'), '');
   await p.evaluate(() => { window.__skew = 6000; }); await p.waitForTimeout(1200);
@@ -64,26 +64,26 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   // --- 2. 내 말 → 소켓 타임아웃(status 0) → 인라인 이유 + 다시 보내기 ---
   await p.fill('#chatIn', 'One latte please'); await p.click('[data-action="talk-send"]'); await p.waitForTimeout(200);
   const id3 = await p.evaluate(() => window.__calls[2].id);
-  eq('보낸 문장이 히스토리에 (실패한 건 제외)', await p.evaluate(() => window.__calls[2].body.contents.filter(c => c.role === 'user').length), 2);
+  eq('보낸 문장이 히스토리에 (실패한 건 제외)', await p.evaluate(() => window.__calls[2].body.messages.filter(c => c.role === 'user').length), 2);
   await p.evaluate(id => window.__reply(id, 0, 'SocketTimeoutException: timeout'), id3); await p.waitForTimeout(200);
   eq('전송 실패 표시', await p.$$eval('.fb.err', x => x.length), 1);
   eq('이유 문구', await p.textContent('.fb.err .fb-note'), '응답이 너무 늦어요. 서버가 붐비거나 모델이 느린 것 같아요 — 잠시 후 다시 시도해 주세요');
   eq('설정용 마지막 기록', await p.evaluate(() => { const a = JSON.parse(window.Android.load('TKN', 'vocab3.ai.v1')); return a.last.what + '/' + a.last.status + '/' + (a.last.err ? 'err' : ''); }), 'talk/0/err');
   eq('실패 뒤에도 아직 답할 말의 할 말 칩 (v2.1)', await p.$$eval('.say-bar:not([hidden]) .say', x => x.map(e => e.querySelector('.say-e').textContent).join()), 'A latte, please.');
 
-  // --- 3. thinkingConfig 거부(400) → 빼고 재시도 ---
+  // --- 3. reasoning 거부(400) → 빼고 재시도 ---
   await p.click('[data-action="talk-retry"]'); await p.waitForTimeout(200);
   const id4 = await p.evaluate(() => window.__calls[3].id);
   await p.evaluate(id => window.__reply(id, 400, JSON.stringify({ error: { code: 400, message: 'Thinking is not supported for this model.' } })), id4); await p.waitForTimeout(200);
   eq('400 뒤 자동 재요청', await p.evaluate(() => window.__calls.length), 5);
-  eq('재요청엔 thinkingConfig 없음', await p.evaluate(() => 'thinkingConfig' in window.__calls[4].body.generationConfig), false);
-  eq('noThink 기억', await p.evaluate(() => JSON.parse(window.Android.load('TKN', 'vocab3.ai.v1')).noThink), true);
+  eq('재요청엔 reasoning 없음', await p.evaluate(() => 'reasoning' in window.__calls[4].body), false);
+  eq('noReason 기억', await p.evaluate(() => JSON.parse(window.Android.load('TKN', 'vocab3.ai.v1')).noReason), true);
   const id5 = await p.evaluate(() => window.__calls[4].id);
   await p.evaluate(id => window.__reply(id, 200, { reply: 'Sure, one latte.', fix: '', note: '좋아요', used: [], say: [] }), id5); await p.waitForTimeout(200);
   eq('대화 이어짐', await p.$$eval('.msg', x => x.length), 3);
   await p.click('[data-action="talk-send"]');   // 빈 입력은 무시
   await p.fill('#chatIn', 'Thanks'); await p.click('[data-action="talk-send"]'); await p.waitForTimeout(200);
-  eq('noThink 뒤 요청은 처음부터 thinking 없이', await p.evaluate(() => 'thinkingConfig' in window.__calls[5].body.generationConfig), false);
+  eq('noReason 뒤 요청은 처음부터 reasoning 없이', await p.evaluate(() => 'reasoning' in window.__calls[5].body), false);
   const id6 = await p.evaluate(() => window.__calls[5].id);
   await p.evaluate(id => window.__reply(id, 200, { reply: 'You are welcome!', fix: '', note: '', used: [], say: [] }), id6); await p.waitForTimeout(200);
 

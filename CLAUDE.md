@@ -1,6 +1,6 @@
 # 3단계 단어장 (vocab3) — Claude Code 작업 지침
 
-박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + Gemini 회화 연습.
+박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + AI 회화 연습(v2.37 부터 OpenRouter, 유튜브 정리만 Gemini).
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
 **이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.36 (versionCode 60).
@@ -52,7 +52,19 @@
   - 화면: `RENDER.<view>` 함수 + `go(view, params)` / `goTab()` / `back()` 스택. 클릭은 `data-action="…"` → `ACTIONS` 맵 하나로 처리.
   - 상태 `S` = SharedPreferences 키 `vocab3.state.v1` 의 JSON 한 덩어리. 새 필드는 `defaultSettings()/defaultTalk()/mkWord()` 에 기본값 + `migrate()` 에 옛 데이터 보정.
   - 단어: `{id,w,p,m,e,k,t,stage(0대기·1·2·3·4졸업),star,…}`. `esc()` 로 HTML 이스케이프 필수.
-  - AI: `aiGenerate(bodyObj, what, timeoutMs)` 공용 헬퍼(503 재시도, flash 계열 thinking 끔, `AI.last` 기록). 키·모델은 별도 키 `vocab3.ai.v1` — **코드·저장소·백업에 절대 안 들어감.**
+  - AI(v2.37, 사용자 요청 — Gemini → OpenRouter): `aiChat({system, msgs|user, temperature, schema, name}, what, timeoutMs)` 공용 헬퍼 → POST `https://openrouter.ai/api/v1/chat/completions`
+    (Bearer 키, `response_format` json_schema strict — 스키마는 `jObj/jArr/jS` 로(모든 필드 required·additionalProperties false, 최상위는 객체여야 해서 aiFillWords 는 `{items:[…]}`),
+    `reasoning {effort:'minimal', exclude:true}` — 400 이면 빼고 한 번 더 + `AI.noReason` 기억, 502/503 빠른 실패 한 번 더, 200 인데 본문 error 면 그 코드로, `AI.last` 기록). 답은 `aiText`/`parseAiJson`(choices[0].message.content).
+    기본 모델 `AI_DEFAULT_MODEL = 'google/gemini-3.1-flash-lite'`(한·영 품질·속도·값 — $0.25/$1.50 per 1M, 2026-10 선정), 설정의 "목록" = GET /models(키 없이, 글 입출력 + structured_outputs 만, google/ 먼저).
+    **유튜브 받아쓰기만 Gemini 직접**(`gemGenerate`, `GEM_MODEL` 별칭 gemini-flash-lite-latest, 키 `AI.gkey` — 없으면 status -2 "Gemini 키를 넣어 주세요") — fps·thinkingLevel·mediaResolution·소리 창(aiClip)을 그대로 쓰려고(사용자 결정).
+    키 `vocab3.ai.v1` = {key(OpenRouter sk-or-…), model, gkey, or:1, noReason?, last} — `or` 가 없으면(v2.36 이전) 옛 key 를 gkey 로 옮기고 key 비움. **코드·저장소·백업·동기화에 절대 안 들어감.**
+    Java `http()` 는 URL 로 헤더를 고른다: openrouter.ai → Authorization Bearer + HTTP-Referer/X-Title, generativelanguage → x-goog-api-key, 그 밖엔 키 안 보냄(브라우저 fetch 도 같은 규칙).
+    테스트 스텁: OpenRouter = `{choices:[{message:{content}}]}`(test_ai·talk·talk_wait·stt·v2·dlg·skill), 유튜브 = 예전 `candidates` 그대로. 키는 `{ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 }`.
+  - **v2.37 종합 회화 실력(사용자 요청)**: 통계 탭 #skillCard — 날짜별 꺾은선 하나(30·90일·전체 `S.settings.skillRange`, 70·85 눈금, 추정 구간 점선, 톡 = 그날 점수·영역 값 `skillSel`, "점수 설명" 창 `skillHelp`).
+    이력 `S.hist['YYYY-MM-DD'] = {wy,wn,se,sh,kw,tk:{n,u,f,sc,ns,g,w,x},e?}`(설명 = app.js 의 `histDay` 위 주석): judge/undo → wy/wn, sentJudge/sentUndo(undo 기록에 ez·day) → se/sh,
+    finishTalk → tk(리포트 교정에 `type` grammar/word/natural → 기록엔 `ty`), save()/saveNow() 의 `histKw` → 그날 kw(단계 가중 0·0·.4·.7·1 + 지운 졸업 `S.kwGone`).
+    migrate: 모양 검사 + `histEst` 가 없으면 `histBackfill`(talkLog 30개·studyDays 로 추정, e:1). 산식 `skillAt`(주석 = 정의: 회화 .40·문장 .35·어휘 .25, 최근 30일, 없는 영역은 빼고 다시 나눔, 합 .5 미만이면 점수 없음) — 바꾸면 skillHelp 문구도. 테스트 `tools/test_skill.js`.
+    다음 후보(사용자 확인 필요): 영역별 보조 선 토글, 홈에 점수 한 줄.
   - 회화: `TALK`(진행 중 대화), `talkTurn()`(JSON 스키마 reply/ko/fix/note/used/say), `renderChat()`, STT(`sttStart('en'|'ko')`, 한국어는 `koTranslate()` 로 번역), 리포트 `S.talkLog`.
   - 학습 완료 연출 `celebrate()`(컨페티 canvas·카운트업·WebAudio 효과음), 단어 추가 `aiFillWords()`(8개 배치).
   - 영어 문장 공부(v2.12) `SENT` · 화면 `sent`: 졸업(stage 4) + 예문 e + 해석 k 가 있는 단어만. 한글 → 탭하면 영어 공개·읽기 → ▲ 쉬움 / ▼ 어려움.
@@ -165,7 +177,7 @@ npm test             # 전체 UI 테스트. 개별: node tools/test_v2.js
 /release vX.Y        # 이미 release/ 에 APK·노트가 있을 때 push + 릴리스만
 ```
 - 기능을 바꾸면 관련 `tools/test_*.js` 를 고치거나 새 테스트를 추가하고, 스크린샷을 찍어 눈으로 확인한다.
-- Gemini 프롬프트/스키마를 바꾸면 stub 응답도 맞춰 준다. 실제 API 는 사용자의 무료 키로만 호출된다.
+- AI(OpenRouter·Gemini) 프롬프트/스키마를 바꾸면 stub 응답도 맞춰 준다. 실제 API 는 사용자의 키로만 호출된다(OpenRouter 는 유료).
 - 버전 표기는 세 곳이 항상 같아야 한다: manifest versionName · `APP_VERSION` · 릴리스 태그.
 
 ## 하지 말 것

@@ -48,7 +48,7 @@ const wav = (() => { const n = 8000, b = Buffer.alloc(44 + n * 2); b.write('RIFF
   });
   await p.goto('https://kr.hyunuk.vocab3/'); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
-  await p.evaluate(() => { window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); });
+  await p.evaluate(() => { window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); });
   await p.reload(); await p.waitForTimeout(300);
   await p.evaluate(() => window.__vocab.ytRetry([30, 30], null, 0));
   const reset = () => p.evaluate(OLD => {   // 사용자의 영상과 같은 기록으로 되돌리고 영상 화면을 연다

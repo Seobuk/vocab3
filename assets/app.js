@@ -227,7 +227,9 @@
           return;
         }
         if (clip) { resolve({ status: -1, text: 'no local audio' }); return; }   // 브라우저엔 받은 파일이 없다
-        var opt = { method: body ? 'POST' : 'GET', headers: key ? { 'x-goog-api-key': key } : {} };
+        var opt = { method: body ? 'POST' : 'GET', headers: {} };
+        if (key && url.indexOf(OR_URL) === 0) opt.headers.Authorization = 'Bearer ' + key;   // 키는 그 주인 주소에만 (Java http() 와 같은 규칙)
+        else if (key && url.indexOf(GEM_BASE) === 0) opt.headers['x-goog-api-key'] = key;
         if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = body; }
         fetch(url, opt).then(function (r) { return r.text().then(function (t) { resolve({ status: r.status, text: t }); }); })
           .catch(function (e) { resolve({ status: 0, text: String(e) }); });
@@ -240,75 +242,123 @@
     delete aiPending[id]; r({ status: Number(status) || 0, text: text || '' });
   };
 
-  /* ---------------- AI (Gemini) example generation ---------------- */
-  // The API key lives under its own prefs key (not inside the state JSON), so backups/exports never contain it.
-  // Default is an alias (always the current Flash-Lite), so it never retires; fixed ids like gemini-2.5-flash got 404 for new accounts.
-  var AI_KEY = 'vocab3.ai.v1', AI_DEFAULT_MODEL = 'gemini-flash-lite-latest', AI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+  /* ---------------- AI (OpenRouter · 유튜브 받아쓰기만 Gemini) ---------------- */
+  // 키는 상태 JSON 이 아니라 따로 저장한다 (prefs 'vocab3.ai.v1') — 백업·내보내기·드라이브 동기화에 절대 안 들어간다.
+  // v2.37: 앱의 AI 는 OpenRouter (key = sk-or-…, model = OpenRouter 모델 id). 유튜브 받아쓰기는 영상 링크·fps·생각 수준을
+  // 그대로 쓰려고 Gemini API 를 직접 부른다 (gkey, 선택 — 없으면 유튜브 정리만 못 함).
+  var AI_KEY = 'vocab3.ai.v1', AI_DEFAULT_MODEL = 'google/gemini-3.1-flash-lite', OR_URL = 'https://openrouter.ai/api/v1';
+  var GEM_MODEL = 'gemini-flash-lite-latest', GEM_BASE = 'https://generativelanguage.googleapis.com/v1beta';   // 유튜브 전용 (별칭이라 은퇴하지 않음)
   var AI = (function () {
     var o = null;
     try { o = JSON.parse(bridge.loadRaw(AI_KEY) || 'null'); } catch (e) { o = null; }
     o = o || {};
     if (typeof o.key !== 'string') o.key = '';
-    if (!o.model || typeof o.model !== 'string') o.model = AI_DEFAULT_MODEL;
-    if (o.model === 'gemini-2.5-flash') o.model = AI_DEFAULT_MODEL; // v1.15 default, saved with the key; Google rejects it for accounts made after 2026-09
+    if (typeof o.gkey !== 'string') o.gkey = '';
+    if (!o.or) {   // v2.37 이전: key 는 Gemini 키 → 유튜브용 gkey 로 옮기고, 모델은 OpenRouter 기본으로
+      if (o.key && !/^sk-or-/.test(o.key)) { if (!o.gkey) o.gkey = o.key; o.key = ''; }
+      o.model = AI_DEFAULT_MODEL; delete o.noThink; o.or = 1;
+    }
+    if (!o.model || typeof o.model !== 'string' || o.model.indexOf('/') < 0) o.model = AI_DEFAULT_MODEL;
     return o;
   })();
   function saveAi() { bridge.saveRaw(AI_KEY, JSON.stringify(AI)); }
   function aiErrorMessage(res) {
     var msg = '';
-    try { var j = JSON.parse(res.text); msg = (j.error && j.error.message) || ''; } catch (e) { }
+    try { var j = JSON.parse(res.text); msg = (j.error && (j.error.message || (j.error.metadata && j.error.metadata.raw))) || ''; } catch (e) { }
     if (res.status === -1) return '받은 영상의 소리를 읽지 못했어요';
     if (res.status === -416) return '영상 끝';
+    if (res.status === -2) return '유튜브 문장 정리용 Gemini API 키를 설정에 넣어 주세요';
     if (res.status === 0) {
       var t = String(res.text || '');
       if (t === 'timeout' || /SocketTimeout|timed? ?out/i.test(t)) return '응답이 너무 늦어요. 서버가 붐비거나 모델이 느린 것 같아요 — 잠시 후 다시 시도해 주세요';
       if (/UnknownHost|ConnectException|unreachable|Failed to fetch|NetworkError|SSL|Handshake/i.test(t)) return '인터넷 연결을 확인하세요' + (/SSL|Handshake/i.test(t) ? ' (보안 연결 실패)' : '');
       return '연결 실패' + (t ? ': ' + t.slice(0, 80) : '');
     }
-    if (res.status === 400 && /api key/i.test(msg)) return 'API 키가 올바르지 않아요';
-    if (res.status === 401 || res.status === 403) return 'API 키가 거부됐어요 (' + res.status + ')';
-    var m = res.model || AI.model, mine = m === AI.model;   // 유튜브는 설정과 상관없이 Flash-Lite — 그땐 "설정에서 고르라"고 하지 않는다
+    var gem = res.model === GEM_MODEL, who = gem ? 'Gemini' : 'OpenRouter';   // 유튜브는 Gemini 키 · 나머지는 OpenRouter 키
+    if ((res.status === 400 && /api key/i.test(msg)) || res.status === 401) return who + ' API 키가 올바르지 않아요';
+    if (res.status === 402) return 'OpenRouter 크레딧이 부족해요. openrouter.ai 에서 충전해 주세요';
+    if (res.status === 403) return who + ' API 키가 거부됐어요 (403)';
+    var m = res.model || AI.model, mine = m === AI.model;
     if (res.status === 404) return '모델 "' + m + '"을(를) 찾을 수 없어요' + (mine ? '. 설정 → 모델 목록에서 골라 주세요' : '');
     if (res.status === 429) return '요청 한도를 넘었어요. 잠시 후 다시 시도하세요';
-    if (res.status === 503) return '"' + m + '" 모델이 지금 붐벼요. 잠시 후 다시 ' + (mine ? '하거나 설정에서 다른 모델을 골라 주세요' : '시도해 주세요');
-    if (res.status >= 500) return 'Gemini 서버 오류 (' + res.status + ')';
+    if (res.status === 503 || res.status === 502) return '"' + m + '" 모델이 지금 붐벼요. 잠시 후 다시 ' + (mine ? '하거나 설정에서 다른 모델을 골라 주세요' : '시도해 주세요');
+    if (res.status >= 500) return who + ' 서버 오류 (' + res.status + ')';
     return '오류 ' + res.status + (msg ? ': ' + msg.slice(0, 90) : '');
   }
-  // Gemini generateContent with the app's standard resilience: one retry on 503, flash-family models get
-  // thinking turned off (fast replies; a model that rejects thinkingConfig gets one retry without it), and the
-  // last call is recorded (AI.last) so 설정 → AI 예문 shows what happened when something goes wrong on the phone.
-  function aiGenerate(bodyObj, what, timeoutMs, model, clip) {   // model: 기능별로 고정할 때 (없으면 설정의 모델) · clip: 받은 영상 소리 창 (bridge.aiCall)
-    model = model || AI.model;
-    var url = AI_BASE + '/models/' + encodeURIComponent(model) + ':generateContent';
-    var own = !!(bodyObj.generationConfig && bodyObj.generationConfig.thinkingConfig);   // 부르는 쪽이 생각 설정을 정했다 (유튜브: 생각 켜기, v2.9)
-    var noThink = !own && !AI.noThink && /flash/i.test(model);
-    if (noThink) { bodyObj.generationConfig = bodyObj.generationConfig || {}; bodyObj.generationConfig.thinkingConfig = { thinkingBudget: 0 }; }
-    var t0 = Date.now();
-    function call() { return bridge.aiCall(url, AI.key, JSON.stringify(bodyObj), timeoutMs, clip); }
-    function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function aiRecord(res, what, t0) {
+    AI.last = { at: Date.now(), ms: Date.now() - t0, status: res.status, what: what || '', err: res.status === 200 ? '' : aiErrorMessage(res) };
+    saveAi();
+    return res;
+  }
+  function aiWait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  // JSON 스키마 조각 (OpenRouter structured outputs, strict: 모든 필드 required + additionalProperties false)
+  var jS = { type: 'string' };
+  function jObj(props) { return { type: 'object', properties: props, required: Object.keys(props), additionalProperties: false }; }
+  function jArr(items) { return { type: 'array', items: items }; }
+  // OpenRouter chat/completions — opt = { system, msgs:[{role:'user'|'assistant', text}] 또는 user: '…', temperature, schema(jObj), name }
+  // 503/502 는 빨리 실패했을 때 한 번 더, 생각(reasoning) 설정을 안 받는 모델이면 빼고 한 번 더 (기억), AI.last 에 기록.
+  function aiChat(opt, what, timeoutMs) {
+    var msgs = [];
+    if (opt.system) msgs.push({ role: 'system', content: opt.system });
+    (opt.msgs || [{ role: 'user', text: opt.user || '' }]).forEach(function (m) { msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text }); });
+    var body = { model: AI.model, messages: msgs };
+    if (opt.temperature != null) body.temperature = opt.temperature;
+    if (opt.schema) body.response_format = { type: 'json_schema', json_schema: { name: opt.name || 'out', strict: true, schema: opt.schema } };
+    var think = !AI.noReason;
+    if (think) body.reasoning = { effort: 'minimal', exclude: true };   // 빠른 답 (Flash-Lite 는 생각 최소)
+    var t0 = Date.now(), model = AI.model;
+    function call() { return bridge.aiCall(OR_URL + '/chat/completions', AI.key, JSON.stringify(body), timeoutMs); }
     return call().then(function (res) {
-      if (res.status === 503 && Date.now() - t0 < 60000) return wait(1500).then(call);   // 몇 분 기다린 503 은 되풀이하지 않는다 (v2.23)
+      if ((res.status === 503 || res.status === 502) && Date.now() - t0 < 60000) return aiWait(1500).then(call);
       return res;
     }).then(function (res) {
-      if (res.status === 400 && noThink) {
-        // this model doesn't take thinkingConfig → drop it (remember it for this model) and go again
-        delete bodyObj.generationConfig.thinkingConfig; noThink = false;
-        if (/think/i.test(res.text)) { AI.noThink = true; saveAi(); }
+      if (res.status === 400 && think && /reason|think|effort/i.test(res.text)) { delete body.reasoning; think = false; AI.noReason = true; saveAi(); return call(); }
+      return res;
+    }).then(function (res) {   // 엄격한 JSON 스키마를 못 받는 모델 → JSON 모드 + 스키마를 글로 알려 주고 한 번 더
+      if (res.status === 400 && opt.schema && body.response_format.type === 'json_schema' && /schema|response_format|structured|json/i.test(res.text)) {
+        body.response_format = { type: 'json_object' };
+        msgs.unshift({ role: 'system', content: 'Reply with a single JSON object that matches this JSON schema: ' + JSON.stringify(opt.schema) });
         return call();
       }
-      if (res.status === 400 && own && /think/i.test(res.text)) { delete bodyObj.generationConfig.thinkingConfig; own = false; return call(); }   // 생각 설정을 안 받는 모델 → 빼고 한 번 더
       return res;
     }).then(function (res) {
+      if (res.status === 200 && !aiText(res.text)) {   // 200 인데 본문에 오류만 온 경우 (제공자 오류)
+        try { var j = JSON.parse(res.text), er = j.error || (j.choices && j.choices[0] && j.choices[0].error); if (er) res = { status: Number(er.code) || 502, text: JSON.stringify({ error: er }) }; } catch (e) { }
+      }
       res.model = model;
-      AI.last = { at: Date.now(), ms: Date.now() - t0, status: res.status, what: what || '', err: res.status === 200 ? '' : aiErrorMessage(res) };
-      saveAi();
-      return res;
+      return aiRecord(res, what, t0);
     });
+  }
+  // OpenRouter 답의 글 (choices[0].message.content — 문자열 또는 [{type:'text', text}])
+  function aiText(text) {
+    try {
+      var c = JSON.parse(text).choices[0].message.content;
+      if (Array.isArray(c)) c = c.map(function (p) { return p && p.text || ''; }).join('');
+      return typeof c === 'string' ? c : '';
+    } catch (e) { return ''; }
+  }
+  function parseAiJson(text) {
+    try { return JSON.parse(aiText(text).replace(/^\s*```(?:json)?\s*/, '').replace(/\s*```\s*$/, '').trim()); } catch (e) { return null; }
+  }
+  // 유튜브 받아쓰기 전용 Gemini generateContent (v2.37 부터 여기만 Gemini) — 503 한 번 더, 생각 설정을 안 받으면 빼고 한 번 더
+  function gemGenerate(bodyObj, what, timeoutMs, clip) {   // clip: 받은 영상 소리 창 (bridge.aiCall)
+    var url = GEM_BASE + '/models/' + GEM_MODEL + ':generateContent';
+    var own = !!(bodyObj.generationConfig && bodyObj.generationConfig.thinkingConfig);
+    var t0 = Date.now();
+    if (!AI.gkey) return Promise.resolve(aiRecord({ status: -2, text: '', model: GEM_MODEL }, what, t0));
+    function call() { return bridge.aiCall(url, AI.gkey, JSON.stringify(bodyObj), timeoutMs, clip); }
+    return call().then(function (res) {
+      if (res.status === 503 && Date.now() - t0 < 60000) return aiWait(1500).then(call);   // 몇 분 기다린 503 은 되풀이하지 않는다 (v2.23)
+      return res;
+    }).then(function (res) {
+      if (res.status === 400 && own && /think/i.test(res.text)) { delete bodyObj.generationConfig.thinkingConfig; own = false; return call(); }
+      return res;
+    }).then(function (res) { res.model = GEM_MODEL; return aiRecord(res, what, t0); });
   }
   function aiLastLine() {
     var l = AI.last; if (!l || !l.at) return '';
     var d = new Date(l.at), hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
-    var what = { example: '예문', talk: '회화', summary: '회화 정리', test: '연결 테스트', models: '모델 목록', youtube: '유튜브 정리', word: '단어 뜻', dialog: '다이얼로그' }[l.what] || l.what;
+    var what = { example: '예문', talk: '회화', summary: '회화 정리', translate: '번역', fill: '자동 채우기', test: '연결 테스트', models: '모델 목록', youtube: '유튜브 정리', word: '단어 뜻', dialog: '다이얼로그' }[l.what] || l.what;
     return '마지막 호출 ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh + ' · ' + what + ' · ' + (l.ms / 1000).toFixed(1) + '초 · ' + (l.status === 200 ? '성공 ✓' : '실패 — ' + esc(l.err || ('HTTP ' + l.status)));
   }
   function aiPrompt(w, hint) {
@@ -326,47 +376,33 @@
   // → Promise<{e, k}>; rejects with {nokey:true} or {msg}
   function aiGenerateExample(w, hint, what) {
     if (!AI.key) return Promise.reject({ nokey: true });
-    var body = {
-      contents: [{ role: 'user', parts: [{ text: aiPrompt(w, hint) }] }],
-      generationConfig: {
-        temperature: 1.0,
-        responseMimeType: 'application/json',
-        responseSchema: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] }
-      }
-    };
-    return aiGenerate(body, what || 'example', 45000).then(function (res) {
+    return aiChat({ user: aiPrompt(w, hint), temperature: 1.0, schema: jObj({ e: jS, k: jS }), name: 'example' }, what || 'example', 45000).then(function (res) {
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
-      var out = null;
-      try {
-        var j = JSON.parse(res.text), parts = j.candidates[0].content.parts, txt = '';
-        for (var i = 0; i < parts.length; i++) if (parts[i].text) txt += parts[i].text;
-        txt = txt.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
-        out = JSON.parse(txt);
-      } catch (e) { out = null; }
+      var out = parseAiJson(res.text);
       if (!out || !out.e) throw { msg: '응답을 이해하지 못했어요. 다시 시도해 보세요' };
       return { e: String(out.e).replace(/\s+/g, ' ').trim(), k: String(out.k || '').replace(/\s+/g, ' ').trim() };
     });
   }
-  // → Promise<string[]> of model ids usable with generateContent (text models only)
+  // → Promise<string[]> OpenRouter 모델 id (글 입력·글 출력 + structured outputs 를 받는 것만, google/ 먼저)
   function aiListModels() {
-    if (!AI.key) return Promise.reject({ nokey: true });
-    return bridge.aiCall(AI_BASE + '/models?pageSize=200', AI.key, '').then(function (res) {
+    return bridge.aiCall(OR_URL + '/models', '', '', 30000).then(function (res) {
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var j = JSON.parse(res.text), out = [];
-      (j.models || []).forEach(function (m) {
-        var id = String(m.name || '').replace(/^models\//, '');
-        var ok = (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0;
-        if (!ok || /embedding|image|tts|audio|live|vision|aqa|veo|imagen/i.test(id)) return;
-        out.push(id);
+      (j.data || []).forEach(function (m) {
+        var a = m.architecture || {}, sp = m.supported_parameters || [];
+        if ((a.output_modalities || ['text']).join() !== 'text') return;
+        if ((a.input_modalities || ['text']).indexOf('text') < 0) return;
+        if (sp.length && sp.indexOf('structured_outputs') < 0) return;
+        out.push(String(m.id));
       });
-      out.sort(function (a, b) { var fa = /flash/i.test(a) ? 0 : 1, fb = /flash/i.test(b) ? 0 : 1; return fa - fb || b.localeCompare(a); });
+      out.sort(function (a, b) { var fa = /^google\//.test(a) ? 0 : 1, fb = /^google\//.test(b) ? 0 : 1; return fa - fb || a.localeCompare(b); });
       return out;
     });
   }
   // Shared runner for the sheet / edit-screen buttons: fills the example & translation fields.
   function runAiExample(w, hint, selE, selK, btn) {
     if (!AI.key) {
-      confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) {
+      confirm2('OpenRouter API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) {
         if (ok) { if (sheetOpen) closeSheet(); go('settings', { scroll: 'ai' }); }
       });
       return;
@@ -458,7 +494,7 @@
   }
   function defaultState() {
     var st = defaultSettings(); st.audio = defaultAudio(); st.talk = defaultTalk(); st.tour = {};   // v2.32 기능 안내: 새로 설치하면 빈 기록 → 화면마다 처음 한 번
-    return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now(), yt: [], usage: {}, sentBox: [], dlg: [] };
+    return { v: 1, words: [], settings: st, lastDailyDate: null, studyDays: {}, createdAt: Date.now(), yt: [], usage: {}, sentBox: [], dlg: [], hist: {}, histEst: 1 };
   }
   function mkWord(o) {
     var now = Date.now();
@@ -525,6 +561,15 @@
     if (!s.usage || typeof s.usage !== 'object' || Array.isArray(s.usage)) s.usage = {};   // v2.13 사용 기록 (백업에서 올 수 있어 모양 검사)
     for (var uk in s.usage) { var ue = s.usage[uk]; if (!ue || typeof ue !== 'object' || !/^\d{4}-\d\d-\d\d$/.test(uk)) { delete s.usage[uk]; continue; } ue.t = Number(ue.t) || 0; if (!ue.f || typeof ue.f !== 'object') ue.f = {}; if (!ue.c || typeof ue.c !== 'object') ue.c = {}; }
     s.words.forEach(function (w) { if (typeof w.stage !== 'number') w.stage = 0; if (typeof w.star !== 'boolean') w.star = false; });
+    // v2.37 날짜별 학습 이력 — 백업에서 올 수 있어 모양 검사, 처음이면 예전 기록으로 한 번 추정
+    if (!s.hist || typeof s.hist !== 'object' || Array.isArray(s.hist)) s.hist = {};
+    for (var hk in s.hist) {
+      var he = s.hist[hk]; if (!he || typeof he !== 'object' || !/^\d{4}-\d\d-\d\d$/.test(hk)) { delete s.hist[hk]; continue; }
+      ['wy', 'wn', 'se', 'sh', 'kw'].forEach(function (f) { if (he[f] != null && !(typeof he[f] === 'number' && isFinite(he[f]) && he[f] >= 0)) delete he[f]; });
+      if (he.tk && typeof he.tk !== 'object') delete he.tk;
+    }
+    if (typeof s.kwGone !== 'number' || !(s.kwGone >= 0)) s.kwGone = 0;
+    if (!s.histEst) { histBackfill(s); s.histEst = 1; }
     // v2.0: 연속 학습일 신기록 연출 — 기존 사용자는 지금까지의 최고 기록을 기준선으로
     if (typeof s.streakRecord !== 'number') s.streakRecord = bestStreakOf(s.studyDays);
     return s;
@@ -542,9 +587,9 @@
   var saveTimer = null;
   function save() {
     if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () { saveTimer = null; bridge.save(JSON.stringify(S)); SYNC.dirty = true; }, 60);
+    saveTimer = setTimeout(function () { saveTimer = null; histKw(); bridge.save(JSON.stringify(S)); SYNC.dirty = true; }, 60);
   }
-  function saveNow() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } bridge.save(JSON.stringify(S)); SYNC.dirty = true; }
+  function saveNow() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } histKw(); bridge.save(JSON.stringify(S)); SYNC.dirty = true; }
 
   function byId(id) { for (var i = 0; i < S.words.length; i++) if (S.words[i].id === id) return S.words[i]; return null; }
   function counts() {
@@ -568,6 +613,64 @@
       if (st && st.judged > 0) { n++; d.setDate(d.getDate() - 1); } else break;
     }
     return n;
+  }
+
+  /* ---------------- v2.37 날짜별 학습 이력 (종합 회화 실력 그래프의 재료) ----------------
+     S.hist['YYYY-MM-DD'] = { wy, wn, se, sh, kw, tk:{ n, u, f, sc, ns, g, w, x }, e? }
+       wy/wn  단어 카드 판정 안다(외웠다)/모른다(아직·내리기) 횟수      — judge / undo
+       se/sh  문장 공부(한글 보고 영어로 말하기) 쉬움/어려움 횟수        — sentJudge / sentUndo
+       kw     그날 끝의 '아는 단어 가중합' K (SKILL_STAGE_W, 지운 졸업 단어 S.kwGone 포함) — save() 마다 덮어씀
+       tk     회화 연습: 세션 n · 내 발화 u · 교정된 발화 f · 리포트 점수 합 sc(점수 받은 세션 ns) · 리포트 교정 유형 g 문법 / w 단어 선택 / x 어색한 표현 — finishTalk
+       e      1 = v2.37 이전 기록에서 추정한 날 (talkLog·studyDays 로 다시 그림, 그래프에서 점선) */
+  var SKILL_STAGE_W = { 0: 0, 1: 0, 2: 0.4, 3: 0.7, 4: 1 };   // 1단계 = 오늘 처음 본 단어(아직 모름) … 졸업 = 확실히 앎
+  var CORR_TYPES = ['grammar', 'word', 'natural'];
+  function histDay(k, s) {
+    s = s || S; k = k || localDate();
+    if (!s.hist[k]) s.hist[k] = {};
+    return s.hist[k];
+  }
+  function histAdd(f, n, k) { var h = histDay(k); h[f] = Math.max(0, (h[f] || 0) + n); }
+  function histWord(kind, n) { if (kind) histAdd(kind === 'yes' ? 'wy' : 'wn', n); }
+  function knownK(s) {
+    s = s || S; var k = Number(s.kwGone) || 0;
+    s.words.forEach(function (w) { k += SKILL_STAGE_W[w.stage] || 0; });
+    return Math.round(k * 10) / 10;
+  }
+  function histKw() {   // save() 마다 — 단어가 바뀐 날만 오늘 칸이 생긴다
+    if (!S.hist) return;
+    var k = knownK(), t = localDate(), h = S.hist[t];
+    if (h && h.kw === k) return;
+    var prev = h && typeof h.kw === 'number' ? h.kw : histLastKw(S, t);
+    if (!h && (prev === null ? k === 0 : prev === k)) return;
+    histDay(t).kw = k;
+  }
+  function histLastKw(s, upto) {   // upto 날까지 가장 최근 kw (없으면 null)
+    var best = null, bk = '';
+    for (var k in s.hist) if (k <= upto && typeof s.hist[k].kw === 'number' && k > bk) { bk = k; best = s.hist[k].kw; }
+    return best;
+  }
+  function histTalk(rec, s, est) {
+    var h = histDay(rec.date, s), t = h.tk || (h.tk = { n: 0, u: 0, f: 0, sc: 0, ns: 0, g: 0, w: 0, x: 0 });
+    var msgs = rec.msgs || [];
+    t.n++;
+    t.u += msgs.filter(function (m) { return m.r === 'u'; }).length || Number(rec.turns) || 0;
+    t.f += msgs.filter(function (m) { return m.r === 'u' && m.f; }).length;
+    if (rec.score > 0) { t.sc += Number(rec.score); t.ns++; }
+    (rec.corrections || []).forEach(function (c) { var ty = c.ty || 'grammar'; t[ty === 'word' ? 'w' : ty === 'natural' ? 'x' : 'g']++; });
+    if (est) h.e = 1;
+  }
+  // v2.37 이전 기록에서 한 번 다시 그린다 (migrate): 회화 리포트(최근 30개, 날짜·교정 있음) + 날짜별 학습 횟수(studyDays).
+  // 단어별·문장별 날짜 기록은 없어서 — 단어 kw 는 지금 K 에서 그 뒤 날들의 '외웠다' 수 × 0.33(한 단계 오를 때 평균 가중)을 거꾸로 빼서 짐작, 문장은 비움.
+  function histBackfill(s) {
+    var today = localDate(), K = knownK(s), days = Object.keys(s.studyDays || {}).filter(function (k) { return k < today; }).sort().reverse();
+    days.forEach(function (k) {
+      var d = s.studyDays[k] || {}, h = histDay(k, s);
+      if (h.wy == null && h.wn == null) { h.wy = Number(d.memorized) || 0; h.wn = Math.max(0, (Number(d.judged) || 0) - h.wy); }
+      if (h.kw == null) h.kw = Math.max(0, Math.round(K * 10) / 10);
+      h.e = 1;
+      K -= (Number(d.memorized) || 0) * 0.33;
+    });
+    (s.talkLog || []).forEach(function (r) { if (r && /^\d{4}-\d\d-\d\d$/.test(r.date) && r.date < today) histTalk(r, s, true); });
   }
 
   /* ---------------- daily set ---------------- */
@@ -653,7 +756,7 @@
       { sel: '.review-btn[data-stage="2"]', t: '외우면 한 단계씩', b: '카드에서 "외웠다"를 고르면 2단계, 또 외우면 3단계로 올라가고 3단계를 통과하면 졸업해요. "아직"이면 그 단계에 남아요.' },
       { sel: '.review-btn[data-action="sent"]', t: '졸업하면 문장 공부', b: '졸업한 단어의 예문과 유튜브에서 담은 문장을 우리말만 보고 영어로 말해 봐요. 졸업한 단어나 담은 문장이 생기면 열려요.' },
       { sel: '.quick', t: '회화 · 다이얼로그 · 유튜브 · 듣기', b: '회화 연습은 AI와 영어로 대화해요. 다이얼로그는 필요한 상황의 대화문을 만들어 외워요. 유튜브는 링크를 넣으면 문장마다 나눠 줘요. 듣기 복습은 화면을 꺼도 계속 읽어 줘요.' },
-      { sel: '#tabbar [data-tab="settings"]', t: 'AI 기능은 키가 필요해요', b: '회화 · 유튜브 · AI 채우기는 Gemini API 키가 있어야 돼요. 설정의 "키 발급 페이지 (무료)"에서 받아 넣어요.' }
+      { sel: '#tabbar [data-tab="settings"]', t: 'AI 기능은 키가 필요해요', b: '회화 · 다이얼로그 · AI 채우기는 OpenRouter 키, 유튜브 문장 정리는 Gemini 키가 있어야 돼요. 설정의 "키 발급 페이지"에서 받아 넣어요.' }
     ] },
     study: { steps: [
       { sel: '#cardArea .reveal[data-reveal="m"]', t: '뜻 보기 · 단어 읽기', b: '뜻 칸을 톡 하면 뜻이 보였다 가려져요. 위의 영어 단어를 톡 하면 읽어 줘요.' },
@@ -679,7 +782,8 @@
     ] },
     stats: { steps: [
       { sel: '.home-head + .tiles', t: '학습 기록', b: '연속 학습은 단어 카드에서 "외웠다"나 "아직"을 한 번이라도 고른 날이 며칠째 이어지는지예요. 외움률은 그중 "외웠다"의 비율이에요.' },
-      { sel: '.tiles + .tiles + .card-box', t: '날짜별 사용 시간', b: '막대를 톡 하면 그날 기능별로 몇 분 썼는지 아래에 나와요. 앱이 화면에 떠 있는 시간만 세요.' },
+      { sel: '#skillCard', t: '종합 회화 실력', b: '단어 카드·문장 공부·회화 연습 기록을 합쳐 "외국인과 영어로 소통할 수 있는 수준"을 날마다 0~100 으로 그려요. 계산 방법은 "점수 설명"에 있어요.' },
+      { sel: '#skillCard + .tiles + .card-box', t: '날짜별 사용 시간', b: '막대를 톡 하면 그날 기능별로 몇 분 썼는지 아래에 나와요. 앱이 화면에 떠 있는 시간만 세요.' },
       { sel: '.wrap > .card-box:last-child', t: '자주 틀린 단어', b: '"아직"을 많이 고른 단어가 5개까지 모여요. 단어를 톡 하면 단계를 옮기거나 중요 단어로 표시할 수 있어요.' }
     ] },
     audio: { need: '.seg', steps: [
@@ -690,7 +794,7 @@
     talk: { steps: [
       { sel: '.scen-grid', t: '상황 고르기', b: '고른 상황에서 AI가 점원이나 동료 같은 상대역을 맡아요. "자유 주제"를 고르면 원하는 상황을 직접 적어요.' },
       { sel: '.mission-box', t: '미션 단어', b: '대화 중에 써 볼 단어예요. 단어를 톡 하면 뜻과 예문이 나오고, 대화에서 쓰면 체크 표시가 붙어요.' },
-      { sel: '.tip', t: 'Gemini 키가 필요해요', b: '회화는 Gemini API 키(무료)가 있어야 돼요. 밑줄 친 "설정에서 입력"을 톡 하면 키를 넣는 곳으로 가요.', opt: 1 },
+      { sel: '.tip', t: 'AI 키가 필요해요', b: '회화는 OpenRouter API 키가 있어야 돼요. 밑줄 친 "설정에서 입력"을 톡 하면 키를 넣는 곳으로 가요.', opt: 1 },
       { sel: '[data-action="talk-start"]', t: '대화 시작', b: '누르면 AI가 먼저 영어로 말을 걸고 읽어 줘요. 마이크로 말하거나 입력창에 적어서 답해요.' }
     ] },
     chat: { need: '.msg.ai .spk', steps: [
@@ -724,7 +828,7 @@
       { sel: '.yt-edb', t: '문장 시간 고치기', b: '시계를 누르면 아래에 구간 막대가 떠요. 누른 문장의 시작·끝을 끌거나 ±0.1·0.5초, "지금"으로 옮기고 "완료"를 눌러요.', opt: 1 }
     ] },
     settings: { steps: [
-      { sel: '#ai-settings + .settings-group', t: 'Gemini 키 넣기', b: '회화 연습·유튜브 문장 정리·AI 채우기는 무료 Gemini 키가 있어야 돼요. "키 발급 페이지"에서 키를 만들어 맨 위 칸에 붙여 넣어요.' },
+      { sel: '#ai-settings + .settings-group', t: 'AI 키 넣기', b: '회화 연습·다이얼로그·AI 채우기는 OpenRouter 키가 있어야 돼요. "키 발급 페이지"에서 키를 만들어 맨 위 칸에 붙여 넣어요. 유튜브 문장 정리는 아래 Gemini 키 칸에.' },
       { sel: '.sync-g', t: '드라이브에 자동 저장', b: '"드라이브에 연동하기"로 저장할 곳을 고르면 앱을 내릴 때와 5분마다 학습 기록이 저장돼요. 새 폰에선 "드라이브에서 불러오기".', opt: 1 },
       { sel: '[data-action="restore-start"]', t: '실수로 지웠을 때', b: '잘못 지우거나 고쳤다면 앱을 다시 켜기 전에 "켤 때 상태로"를 누르고 "덮어쓰기"를 골라요. 이번에 켰을 때 기록으로 돌아가요.' },
       { sel: '[data-action="tour-reset"]', t: '안내 다시 보기', b: '누르면 화면마다 처음 들어갈 때처럼 기능 안내가 다시 나와요.' }
@@ -1245,7 +1349,7 @@
     var id = w.id, prevKind = SES.done[id] || null, o = SES.orig[id], now = Date.now();
     SES.undo.push({ id: id, i: SES.i, prevKind: prevKind, before: snap(w) });
     var d = dayStat();
-    if (prevKind) { d.judged = Math.max(0, d.judged - 1); if (prevKind === 'yes') d.memorized = Math.max(0, d.memorized - 1); }
+    if (prevKind) { d.judged = Math.max(0, d.judged - 1); if (prevKind === 'yes') d.memorized = Math.max(0, d.memorized - 1); histWord(prevKind, -1); }
     // re-apply from the original snapshot so a re-judged card never double-counts
     for (var k in o) w[k] = o[k];
     w.seen = o.seen + 1; w.lastSeen = now;
@@ -1253,6 +1357,7 @@
     else if (yes) { w.right = o.right + 1; w.stage = Math.min(4, o.stage + 1); w.stageAt = now; SES.done[id] = 'yes'; }
     else { w.wrong = o.wrong + 1; SES.done[id] = 'no'; }
     d.judged++; if (yes && !demote) d.memorized++;
+    histWord(SES.done[id], 1);
     save();
     var n = SES.ids.length;
     if (judgedCount() >= n) { finishSession(); return; }
@@ -1265,8 +1370,8 @@
     var w = byId(u.id);
     if (w) for (var k in u.before) w[k] = u.before[k];
     var cur = SES.done[u.id], d = dayStat();
-    if (cur) { d.judged = Math.max(0, d.judged - 1); if (cur === 'yes') d.memorized = Math.max(0, d.memorized - 1); }
-    if (u.prevKind) { SES.done[u.id] = u.prevKind; d.judged++; if (u.prevKind === 'yes') d.memorized++; } else delete SES.done[u.id];
+    if (cur) { d.judged = Math.max(0, d.judged - 1); if (cur === 'yes') d.memorized = Math.max(0, d.memorized - 1); histWord(cur, -1); }
+    if (u.prevKind) { SES.done[u.id] = u.prevKind; d.judged++; if (u.prevKind === 'yes') d.memorized++; histWord(u.prevKind, 1); } else delete SES.done[u.id];
     SES.i = Math.min(u.i, SES.ids.length - 1);
     save();
     mountCard('prev');
@@ -1430,9 +1535,10 @@
     if (pu) {   // 옆으로 넘겨 돌아온, 이미 판정한 문장 → 다시 고르면 바꾸기 (학습 카드 judge 처럼 두 번 안 셈)
       SENT.undo.splice(pi, 1);
       ['sw', 'se', 'sh', 'sa'].forEach(function (k) { if (pu[k] === undefined) delete w[k]; else w[k] = pu[k]; });
-      SENT.n--; useCount('sent', -1); sug = sug || pu.sug;
+      SENT.n--; useCount('sent', -1); histAdd(pu.ez ? 'se' : 'sh', -1, pu.day); sug = sug || pu.sug;
     }
-    SENT.undo.push(SENT.done[w.id] = { id: w.id, sw: w.sw, se: w.se, sh: w.sh, sa: w.sa, sug: sug });
+    SENT.undo.push(SENT.done[w.id] = { id: w.id, sw: w.sw, se: w.se, sh: w.sh, sa: w.sa, sug: sug, ez: !!easy, day: localDate() });
+    histAdd(easy ? 'se' : 'sh', 1);
     if (easy) { w.sw = Math.max(1, sentW(w) - 1); w.se = (w.se || 0) + 1; }
     else { w.sw = Math.min(20, sentW(w) + 2); w.sh = (w.sh || 0) + 1; }
     w.sa = Date.now(); SENT.n++; useCount('sent');
@@ -1443,6 +1549,7 @@
   }
   function sentUndo() {
     var u = SENT && SENT.undo.pop(), w = u && sentItem(u.id); if (!w) return;
+    var u0 = u;
     var h = SENT.back.concat([SENT.id], SENT.fwd.slice().reverse()), bi = h.lastIndexOf(u.id); if (bi >= 0) SENT.back = h.slice(0, bi);   // v2.33: 넘긴 길(이전·지금·다음)에서 되돌린 문장 앞까지만 이전 길로
     SENT.fwd = [];
     ['sw', 'se', 'sh', 'sa'].forEach(function (k) { if (u[k] === undefined) delete w[k]; else w[k] = u[k]; });
@@ -1452,7 +1559,7 @@
       SENT.sugs[u.sug.id] = u.sug; u = { id: u.sug.id };
     }
     var j = SENT.recent.lastIndexOf(u.id); if (j >= 0) SENT.recent.length = j + 1;   // 되돌린 뒤 보던 (판정 안 한) 카드는 최근 목록에서 뺀다
-    SENT.n = Math.max(0, SENT.n - 1); SENT.id = u.id; useCount('sent', -1);
+    SENT.n = Math.max(0, SENT.n - 1); SENT.id = u.id; useCount('sent', -1); if (u0.day) histAdd(u0.ez ? 'se' : 'sh', -1, u0.day);
     save(); bridge.stop(); sentMount('prev');
   }
 
@@ -1633,6 +1740,128 @@
       (cnt ? '<div class="use-c">' + cnt + '</div>' : '') + '</div>';
   }
 
+  /* ---------------- v2.37 종합 회화 실력 — "외국인과 영어로 소통할 수 있는 수준" (0~100) ----------------
+     날짜 d 의 점수는 d 까지의 이력(S.hist)으로 계산한다. 회화·문장은 최근 30일(SKILL_WIN)만 본다 — 지금 실력이 반영되게.
+     ① 어휘 V   = 100 × (1 − e^(−Keff / 1500))
+                  K    = Σ 단어 단계 가중 (1단계 0 · 2단계 0.4 · 3단계 0.7 · 졸업 1, 지운 졸업 단어 포함) — 그날 끝 값
+                  acc  = 최근 30일 단어 판정 정답률, (안다 + 7) / (판정 + 10) 로 스무딩 (판정이 적으면 0.7 근처)
+                  Keff = K × (0.6 + 0.4 × acc)        → 아는 단어 2,000개(정답률 80%)면 약 70, 3,000개면 약 84
+     ② 문장 말하기 P = 100 × (쉬움 + 2.5) / (쉬움 + 어려움 + 5)   — 한글 해석을 보고 영어로 말할 수 있었는지 (판정이 적으면 50 쪽)
+     ③ 회화 T   = 0.5 × 리포트 점수(1~5 → 0~100) + 0.5 × 100 × (1 − 가중 교정률)
+                  가중 교정률 = (교정받은 발화 / 내 발화) × 유형 가중 평균 (문법 1.0 · 단어 선택 0.7 · 어색한 표현 0.4, 리포트 교정 유형 비율로)
+                  리포트 점수가 없으면 교정 부분만
+     종합 = 0.40 × T + 0.35 × P + 0.25 × V — 회화·문장 말하기가 실제 소통에 가장 직접적이라 무겁게, 어휘는 바탕.
+     최근 30일에 데이터가 없는 영역은 빼고 남은 가중치로 다시 나눈다. 남은 가중치 합이 0.5 미만(어휘만 있음)이면 그날은 점수 없음.
+     70 = 일상 소통 가능 · 85 = 원활 (그래프 눈금). 산식을 바꾸면 skillHelp() 설명도 같이. */
+  var SKILL_WIN = 30, SKILL_WT = { t: 0.40, p: 0.35, v: 0.25 }, SKILL_TYW = { g: 1, w: 0.7, x: 0.4 };
+  function skillAt(day, keys) {   // keys: 정렬된 S.hist 날짜들 · → { s, t, p, v, e } (s 가 null 이면 점수 없음)
+    var d0 = new Date(day + 'T00:00:00'); d0.setDate(d0.getDate() - SKILL_WIN + 1);
+    var from = dateKey(d0), wy = 0, wn = 0, se = 0, sh = 0, tk = { n: 0, u: 0, f: 0, sc: 0, ns: 0, g: 0, w: 0, x: 0 }, K = null, est = false;
+    for (var i = 0; i < keys.length && keys[i] <= day; i++) {
+      var h = S.hist[keys[i]];
+      if (typeof h.kw === 'number') K = h.kw;
+      est = !!h.e;   // 그날 가장 가까운 기록이 추정이면 추정 (v2.37 뒤 실제 기록부터는 실선)
+      if (keys[i] < from) continue;
+      wy += h.wy || 0; wn += h.wn || 0; se += h.se || 0; sh += h.sh || 0;
+      if (h.tk) for (var f in tk) tk[f] += h.tk[f] || 0;
+    }
+    var o = { t: null, p: null, v: null, e: est, s: null };
+    if (K !== null && K > 0) {
+      var acc = (wy + 7) / (wy + wn + 10);
+      o.v = 100 * (1 - Math.exp(-K * (0.6 + 0.4 * acc) / 1500));
+    }
+    if (se + sh > 0) o.p = 100 * (se + 2.5) / (se + sh + 5);
+    if (tk.n > 0 && tk.u > 0) {
+      var nc = tk.g + tk.w + tk.x, mix = nc ? (SKILL_TYW.g * tk.g + SKILL_TYW.w * tk.w + SKILL_TYW.x * tk.x) / nc : 1;
+      var err = 100 * Math.max(0, 1 - Math.min(1, tk.f / tk.u) * mix);
+      o.t = tk.ns ? 0.5 * ((tk.sc / tk.ns - 1) / 4 * 100) + 0.5 * err : err;
+    }
+    var sum = 0, wt = 0;
+    ['t', 'p', 'v'].forEach(function (a) { if (o[a] !== null) { sum += SKILL_WT[a] * o[a]; wt += SKILL_WT[a]; } });
+    if (wt >= 0.5) o.s = sum / wt;
+    return o;
+  }
+  function skillSeries(range) {   // → [{ d: 'YYYY-MM-DD', s, t, p, v, e }] 첫 기록 날부터 오늘까지 (range 일만)
+    var keys = Object.keys(S.hist || {}).sort(), out = [];
+    if (!keys.length) return out;
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var start = new Date(keys[0] + 'T00:00:00');
+    if (range) { var r0 = new Date(today); r0.setDate(today.getDate() - range + 1); if (r0 > start) start = r0; }
+    for (var d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+      var k = dateKey(d), o = skillAt(k, keys); o.d = k; out.push(o);
+    }
+    return out;
+  }
+  var skillSel = null;   // 그래프에서 톡 한 날
+  function skillHTML() {
+    var rg = S.settings.skillRange || 30, ser = skillSeries(rg === 'all' ? 0 : rg), pts = ser.filter(function (o) { return o.s !== null; });
+    var last = pts.length ? pts[pts.length - 1] : null, todayK = localDate();
+    var head = '<div class="cb-title">종합 회화 실력 <button class="sk-help" data-action="skill-help">점수 설명</button></div>';
+    var chips = '<div class="sk-range">' + [[30, '30일'], [90, '90일'], ['all', '전체']].map(function (o) { return '<button class="' + (String(o[0]) === String(rg) ? 'on' : '') + '" data-action="skill-range" data-r="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>';
+    if (!last) return '<div class="card-box" id="skillCard">' + head + '<div class="empty">회화 연습이나 문장 공부를 하면 점수가 생겨요<br><span class="small">단어 카드 · 문장 공부 · 회화 연습 기록을 모두 합쳐서 매일 계산해요</span></div></div>';
+    var prev = null, ago = new Date(); ago.setDate(ago.getDate() - 30); var agoK = dateKey(ago);
+    pts.forEach(function (o) { if (o.d <= agoK) prev = o; });
+    var diff = prev ? Math.round(last.s) - Math.round(prev.s) : null;
+    var lvl = last.s >= 85 ? '원활하게 소통' : last.s >= 70 ? '일상 소통 가능' : last.s >= 50 ? '간단한 대화' : last.s >= 30 ? '기초 표현' : '첫걸음';
+    // SVG 꺾은선 — x: 날짜, y: 0~100 (70·85 눈금), 추정한 날(e)은 점선
+    var W = 320, H = 150, L = 26, R = 8, T = 8, B = 20, n = ser.length;
+    function X(i) { return L + (n <= 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1)); }
+    function Y(v) { return T + (100 - v) * (H - T - B) / 100; }
+    var solid = '', dash = '', prevI = -1;
+    ser.forEach(function (o, i) {
+      if (o.s === null) { prevI = -1; return; }
+      if (prevI >= 0) {
+        var seg = 'M' + X(prevI).toFixed(1) + ' ' + Y(ser[prevI].s).toFixed(1) + 'L' + X(i).toFixed(1) + ' ' + Y(o.s).toFixed(1);
+        if (o.e || ser[prevI].e) dash += seg; else solid += seg;
+      }
+      prevI = i;
+    });
+    var grid = [0, 50, 70, 85, 100].map(function (v) {
+      return '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" class="' + (v === 70 || v === 85 ? 'sk-mark' : 'sk-grid') + '"/><text x="' + (L - 4) + '" y="' + (Y(v) + 3) + '" class="sk-ax">' + v + '</text>';
+    }).join('');
+    var xl = [0, Math.floor((n - 1) / 2), n - 1].filter(function (v, i, a) { return a.indexOf(v) === i; }).map(function (i) {
+      var dd = new Date(ser[i].d + 'T00:00:00');
+      return '<text x="' + X(i) + '" y="' + (H - 4) + '" class="sk-ax" text-anchor="' + (i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle') + '">' + (dd.getMonth() + 1) + '/' + dd.getDate() + '</text>';
+    }).join('');
+    var sel = null; ser.forEach(function (o, i) { if (o.d === skillSel && o.s !== null) sel = { o: o, i: i }; });
+    var li = ser.lastIndexOf(last);
+    var dot = sel ? '<circle cx="' + X(sel.i) + '" cy="' + Y(sel.o.s) + '" r="4" class="sk-dot"/>' : '<circle cx="' + X(li) + '" cy="' + Y(last.s) + '" r="3.5" class="sk-dot"/>';
+    var svg = '<svg id="skillSvg" class="sk-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="종합 회화 실력 ' + Math.round(last.s) + '점">' + grid + xl +
+      (dash ? '<path d="' + dash + '" class="sk-line est"/>' : '') + (solid ? '<path d="' + solid + '" class="sk-line"/>' : '') + dot + '</svg>';
+    var so = sel ? sel.o : last, sd = new Date(so.d + 'T00:00:00');
+    function part(nm, v) { return '<span>' + nm + ' <b>' + (v === null ? '–' : Math.round(v)) + '</b></span>'; }
+    var info = '<div class="sk-pick" id="skillPick">' + (so.d === todayK ? '오늘' : (sd.getMonth() + 1) + '/' + sd.getDate()) + ' <b>' + Math.round(so.s) + '점</b>' + (so.e ? ' <span class="muted">(추정)</span>' : '') + ' · ' + part('회화', so.t) + part('문장', so.p) + part('어휘', so.v) + '</div>';
+    return '<div class="card-box" id="skillCard">' + head +
+      '<div class="sk-now"><b>' + Math.round(last.s) + '</b><span class="sk-lv">' + lvl + (diff !== null ? ' · 30일 전보다 ' + (diff >= 0 ? '+' : '') + diff : '') + '</span></div>' +
+      chips + svg + info +
+      (dash ? '<div class="legend"><span><i class="sk-k"></i>기록</span><span><i class="sk-k est"></i>예전 기록으로 추정</span></div>' : '') + '</div>';
+  }
+  function skillBind() {   // 그래프를 톡 하면 가장 가까운 날의 점수·영역 값
+    var svg = $('#skillSvg'); if (!svg) return;
+    svg.addEventListener('click', function (e) {
+      var rg = S.settings.skillRange || 30, ser = skillSeries(rg === 'all' ? 0 : rg), r = svg.getBoundingClientRect(), n = ser.length;
+      if (!n || !r.width) return;
+      var x = (e.clientX - r.left) / r.width * 320, i = n <= 1 ? 0 : Math.round((x - 26) / (320 - 34) * (n - 1));
+      i = Math.max(0, Math.min(n - 1, i));
+      for (var k = 0; k < n; k++) { var a = i - k, b = i + k; if (a >= 0 && ser[a].s !== null) { i = a; break; } if (b < n && ser[b].s !== null) { i = b; break; } }
+      skillSel = ser[i].d; skillRefresh();
+    });
+  }
+  function skillRefresh() { var c = $('#skillCard'); if (!c) return; c.outerHTML = skillHTML(); skillBind(); }
+  function skillHelp() {
+    var keys = Object.keys(S.hist || {}).sort(), o = keys.length ? skillAt(localDate(), keys) : { t: null, p: null, v: null, s: null };
+    function v(x) { return x === null ? '데이터 없음' : Math.round(x) + '점'; }
+    openSheet('<div class="sh-word"><span>종합 회화 실력 점수</span></div>' +
+      '<div class="sk-help-b">' +
+      '<p>"외국인과 영어로 소통할 수 있는 수준"을 0~100 으로 나타내요. 앱에 쌓인 학습 기록을 모두 합쳐 날마다 계산해요. <b>70</b> = 일상 소통 가능, <b>85</b> = 원활.</p>' +
+      '<p><b>종합 = 회화 40% + 문장 말하기 35% + 어휘 25%</b><br>최근 30일 기록이 없는 영역은 빼고 나머지로 나눠요. 어휘만 있으면 점수를 내지 않아요.</p>' +
+      '<p><b>회화</b> (지금 ' + v(o.t) + ') — 최근 30일 회화 연습. 리포트 점수(1~5)를 반, 교정받지 않은 말의 비율을 반으로 봐요. 교정은 문법 1.0 · 단어 선택 0.7 · 어색한 표현 0.4 로 무게를 달리 해요.</p>' +
+      '<p><b>문장 말하기</b> (지금 ' + v(o.p) + ') — 최근 30일 문장 공부에서 한글을 보고 영어로 말할 수 있었는지(쉬움) 비율. 판정이 적으면 50 쪽으로 당겨요.</p>' +
+      '<p><b>어휘</b> (지금 ' + v(o.v) + ') — 아는 단어 수(2단계 0.4 · 3단계 0.7 · 졸업 1개로 셈)에 최근 정답률을 곱해, 일상 소통에 필요한 2,000~3,000 단어 기준으로 환산해요.</p>' +
+      '<p class="muted small">v2.37 이전 날짜는 회화 리포트(최근 30개)와 날짜별 학습 횟수로 추정한 값이라 점선으로 그려요. 발음·유창성은 평가하지 않아요.</p>' +
+      '</div><div class="sh-actions"><button class="btn" data-action="close-sheet">닫기</button></div>');
+  }
+
   RENDER.stats = function () {
     var c = counts(), total = S.words.length, days = S.studyDays;
     var totJ = 0, totM = 0, dayCount = 0;
@@ -1699,7 +1928,7 @@
       '<div class="tile"><b>' + bestStreak() + '<small>일</small></b><span>최장 연속</span></div>' +
       '<div class="tile"><b>' + dayCount + '<small>일</small></b><span>총 학습일</span></div>' +
       '<div class="tile"><b>' + rate + '<small>%</small></b><span>외움률 (' + totM + '/' + totJ + ')</span></div>' +
-      '</div>' + useHTML(today) +
+      '</div>' + skillHTML() + useHTML(today) +
       '<div class="card-box"><div class="cb-title">최근 14일 <span class="muted small">이번 주 ' + wkDays + '일 · ' + wk + '개</span></div>' +
       '<div class="bars">' + barsHtml + '</div>' +
       '<div class="legend"><span><i class="sw m"></i>외웠다</span><span><i class="sw j"></i>아직</span></div></div>' +
@@ -1708,12 +1937,13 @@
       '<div class="card-box"><div class="cb-title">단어 분포 <span class="muted small">총 ' + total + '개</span></div>' + stageRows + '</div>' +
       '<div class="card-box"><div class="cb-title">자주 틀린 단어</div><div class="list">' + hardHtml + '</div></div>' +
       '</div>';
+    skillBind();
   };
 
   /* ================= LIST ================= */
   var listState = { stage: 'all', q: '', star: false, rnd: {}, ko: {}, tap: null };   // rnd: 랜덤 순서 열쇠(누를 때마다 새로) · ko: 한글 해석을 펼친 항목 (v2.25)
   /* ================= 회화 연습 (TALK) ================= */
-  // 말하기(기기 음성인식) → Gemini(대화 + 한 줄 교정) → 듣기(기기 TTS). 미션 단어는 1단계 단어에서 뽑는다.
+  // 말하기(기기 음성인식) → AI(OpenRouter, 대화 + 한 줄 교정) → 듣기(기기 TTS). 미션 단어는 1단계 단어에서 뽑는다.
   var SCENARIOS = [
     { id: 'cafe', name: '카페·식당', icon: '☕', role: 'a barista or a server', desc: 'Ordering drinks or food, asking about the menu, small talk with staff' },
     { id: 'work', name: '회의·업무', icon: '💼', role: 'a colleague in a project meeting', desc: 'Discussing a schedule, asking for updates, giving and asking opinions' },
@@ -1727,7 +1957,7 @@
   var TALK = null;          // 진행 중인 대화 { scenario, custom, level, words:[{id,w,m,used}], msgs:[{role,text,fix,note,hidden}], busy, ended, startedAt }
   var talkSetup = null;     // 설정 화면 상태 { custom, words }
   var STT = { on: false, partial: '', wait: false, timer: 0 };   // wait: 멈춘 뒤 결과를 기다리는 중
-  var STT_HEARD = '';   // v2.34 입력창의 영어가 음성 인식에서 온 것 → 보낼 때 Gemini 에 [spoken] 으로 알린다
+  var STT_HEARD = '';   // v2.34 입력창의 영어가 음성 인식에서 온 것 → 보낼 때 AI 에 [spoken] 으로 알린다
 
   // 미션 단어 뽑기 — 'star': ★ 단어 먼저(모자라면 아래 순서로 채움), 'auto': 1단계 → 2단계 → 나머지
   function pickMissionWords(n) {
@@ -1772,7 +2002,7 @@
         : '') +
       '</div>' +
       '<button class="btn primary big" data-action="talk-start">🗣 대화 시작</button>' +
-      (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
+      (AI.key ? '' : '<div class="tip">OpenRouter API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>해 주세요.</div>') +
       (log.length ? '<div class="section-title">최근 연습</div><div class="settings-group">' + log.map(function (l, i) {
         return '<button class="switch-row logrow" data-action="talk-log" data-i="' + ((S.talkLog.length - 1) - i) + '"><div><div class="sw-t">' + esc(scenarioById(l.scenario).icon + ' ' + (l.custom || scenarioById(l.scenario).name)) + '</div><div class="sw-s">' + esc(l.date + (l.time ? ' ' + l.time : '')) + ' · ' + l.turns + '턴 · 미션 ' + l.used + '/' + l.total + (l.score ? ' · ★' + l.score : '') + '</div></div><span class="chev">›</span></button>';
       }).join('') + '</div>' : '') +
@@ -1782,7 +2012,7 @@
 
   function talkStart() {
     if (!AI.key) {
-      confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); });
+      confirm2('OpenRouter API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); });
       return;
     }
     var t = S.settings.talk;
@@ -1821,20 +2051,15 @@
     KO = { src: '', busy: false };
     TALK.busy = true; TALK.reqAt = Date.now(); renderChat();   // TALK.say 는 남겨 둔다 — 실패·취소 뒤에도 아직 답할 AI 말에 대한 할 말 (busy 동안엔 안 보임)
     talkWaitTick();
-    var body;
+    var req;
     try {
-      var hist = TALK.msgs.filter(function (m) { return !m.failed; }).slice(-24).map(function (m) { return { role: m.role, parts: [{ text: (m.spoken ? '[spoken] ' : '') + m.text }] }; });
-      body = {
-        systemInstruction: { parts: [{ text: talkSystem() }] },
-        contents: hist,
-        generationConfig: {
-          temperature: 0.9,
-          responseMimeType: 'application/json',
-          responseSchema: { type: 'OBJECT', properties: { reply: { type: 'STRING' }, ko: { type: 'STRING' }, fix: { type: 'STRING' }, note: { type: 'STRING' }, used: { type: 'ARRAY', items: { type: 'STRING' } }, say: { type: 'ARRAY', items: { type: 'OBJECT', properties: { e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['e', 'k'] } } }, required: ['reply', 'ko', 'fix', 'note', 'used', 'say'] }
-        }
+      var hist = TALK.msgs.filter(function (m) { return !m.failed; }).slice(-24).map(function (m) { return { role: m.role === 'model' ? 'assistant' : 'user', text: (m.spoken ? '[spoken] ' : '') + m.text }; });
+      req = {
+        system: talkSystem(), msgs: hist, temperature: 0.9, name: 'turn',
+        schema: jObj({ reply: jS, ko: jS, fix: jS, note: jS, used: jArr(jS), say: jArr(jObj({ e: jS, k: jS })) })
       };
     } catch (e) { talkFail(myTalk, myReq, '요청을 만들지 못했어요: ' + String(e && e.message || e).slice(0, 60)); return; }
-    aiGenerate(body, 'talk', 80000).then(function (res) {
+    aiChat(req, 'talk', 80000).then(function (res) {
       if (TALK !== myTalk || TALK.req !== myReq) return;
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = parseAiJson(res.text);
@@ -1881,14 +2106,6 @@
     var t = TALK, r = TALK.req;
     TALK.req++;   // 늦게 도착하는 답은 버린다
     talkFail(t, TALK.req, '기다리다 취소했어요');
-  }
-  function parseAiJson(text) {
-    try {
-      var j = JSON.parse(text), parts = j.candidates[0].content.parts, txt = '';
-      for (var i = 0; i < parts.length; i++) if (parts[i].text) txt += parts[i].text;
-      txt = txt.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
-      return JSON.parse(txt);
-    } catch (e) { return null; }
   }
   function markUsed(userText, aiUsed) {
     var txt = ' ' + userText.toLowerCase().replace(/[^a-z' ]+/g, ' ').replace(/\s+/g, ' ') + ' ';
@@ -1978,17 +2195,16 @@
     var lastAi = ''; for (var i = TALK.msgs.length - 1; i >= 0; i--) if (TALK.msgs[i].role === 'model') { lastAi = TALK.msgs[i].text; break; }
     KO = { src: src, busy: true }; renderChat(false);
     var myTalk = TALK, myKo = KO;
-    var body = {
-      systemInstruction: { parts: [{ text: 'A Korean learner is practicing English conversation. Translate what they want to say (given in Korean) into natural spoken English they would say to their partner — first person, same intent and tone, ' + (LEVELS[TALK.level] || LEVELS.normal) + '. One or two short sentences. No explanations.' }] },
-      contents: [{ role: 'user', parts: [{ text: (lastAi ? 'Partner just said: "' + lastAi + '"\n' : '') + 'Learner wants to say (Korean): "' + src + '"' }] }],
-      generationConfig: { temperature: 0.3, responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { en: { type: 'STRING' } }, required: ['en'] } }
-    };
-    aiGenerate(body, 'translate', 30000).then(function (res) {
+    aiChat({
+      system: 'A Korean learner is practicing English conversation. Translate what they want to say (given in Korean) into natural spoken English they would say to their partner — first person, same intent and tone, ' + (LEVELS[TALK.level] || LEVELS.normal) + '. One or two short sentences. No explanations.',
+      user: (lastAi ? 'Partner just said: "' + lastAi + '"\n' : '') + 'Learner wants to say (Korean): "' + src + '"',
+      temperature: 0.3, schema: jObj({ en: jS }), name: 'translation'
+    }, 'translate', 30000).then(function (res) {
       if (TALK !== myTalk || KO !== myKo) return;
       var out = res.status === 200 ? parseAiJson(res.text) : null;
       var en = out && out.en ? String(out.en).replace(/\s+/g, ' ').trim() : '';
       if (!en) { KO = { src: '', busy: false }; renderChat(false); toast(res.status === 200 ? '번역을 이해하지 못했어요. 다시 말해 주세요' : aiErrorMessage(res)); return; }
-      KO = { src: src, busy: false }; STT_HEARD = '';   // Gemini 가 만든 영어 — 인식 결과 아님
+      KO = { src: src, busy: false }; STT_HEARD = '';   // AI 가 만든 영어 — 인식 결과 아님
       if (S.settings.talk.autoSend) { talkTurn(en); return; }
       renderChat(false);
       var inp = $('#chatIn'); if (inp) { inp.value = en; inp.placeholder = '확인하고 ➤ 누르기'; inp.focus(); try { inp.setSelectionRange(en.length, en.length); } catch (e) { } }
@@ -2058,16 +2274,13 @@
     TALK.busy = true; TALK.ended = true; TALK.reqAt = Date.now(); renderChat(); talkWaitTick();
     var transcript = visible.map(function (m) { return (m.role === 'user' ? (m.spoken ? 'Learner (spoken): ' : 'Learner: ') : 'Partner: ') + m.text; }).join('\n');
     var fb = S.settings.talk.feedbackLang === 'en' ? 'English' : 'Korean';
-    var body = ({
-      systemInstruction: { parts: [{ text: 'You are an English tutor reviewing a short practice conversation of a Korean adult learner. Lines marked (spoken) came from speech recognition; do not list recognition errors (misheard similar-sounding words, punctuation) as corrections. Be encouraging and specific. Write "comment" and each "why" in ' + fb + '. "expressions": 2-4 useful natural phrases FROM THE PARTNER\'S LINES worth memorizing, each with a short Korean meaning (m), the sentence it appeared in (e) and its Korean translation (k). "corrections": the learner\'s sentences that had problems, with the corrected version and a one-line reason (at most 5). "score": 1-5 overall.' }] },
-      contents: [{ role: 'user', parts: [{ text: 'Transcript:\n' + transcript } ] }],
-      generationConfig: {
-        temperature: 0.4, responseMimeType: 'application/json',
-        responseSchema: { type: 'OBJECT', properties: { score: { type: 'INTEGER' }, comment: { type: 'STRING' }, corrections: { type: 'ARRAY', items: { type: 'OBJECT', properties: { you: { type: 'STRING' }, better: { type: 'STRING' }, why: { type: 'STRING' } }, required: ['you', 'better', 'why'] } }, expressions: { type: 'ARRAY', items: { type: 'OBJECT', properties: { w: { type: 'STRING' }, m: { type: 'STRING' }, e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['w', 'm', 'e', 'k'] } } }, required: ['score', 'comment', 'corrections', 'expressions'] }
-      }
-    });
+    var req = {
+      system: 'You are an English tutor reviewing a short practice conversation of a Korean adult learner. Lines marked (spoken) came from speech recognition; do not list recognition errors (misheard similar-sounding words, punctuation) as corrections. Be encouraging and specific. Write "comment" and each "why" in ' + fb + '. "expressions": 2-4 useful natural phrases FROM THE PARTNER\'S LINES worth memorizing, each with a short Korean meaning (m), the sentence it appeared in (e) and its Korean translation (k). "corrections": the learner\'s sentences that had problems, with the corrected version and a one-line reason (at most 5). "type" of each correction: "grammar" (tense, articles, agreement, word order …), "word" (wrong or unnatural word choice) or "natural" (understandable but not how people say it). "score": 1-5 overall — how well the learner could communicate with a native speaker.',
+      user: 'Transcript:\n' + transcript, temperature: 0.4, name: 'report',
+      schema: jObj({ score: { type: 'integer' }, comment: jS, corrections: jArr(jObj({ you: jS, better: jS, why: jS, type: { type: 'string', enum: ['grammar', 'word', 'natural'] } })), expressions: jArr(jObj({ w: jS, m: jS, e: jS, k: jS })) })
+    };
     var myTalk = TALK;
-    aiGenerate(body, 'summary', 80000).then(function (res) {
+    aiChat(req, 'summary', 80000).then(function (res) {
       if (TALK !== myTalk) return;
       var out = res.status === 200 ? parseAiJson(res.text) : null;
       finishTalk(out || { score: 0, comment: '', corrections: [], expressions: [] }, out ? '' : aiErrorMessage(res));
@@ -2081,12 +2294,13 @@
       scenario: t.scenario, custom: t.custom, level: t.level, turns: t.turns, used: used, total: t.words.length,
       words: t.words.map(function (w) { return { w: w.w, used: !!w.used }; }),
       score: Number(sum.score) || 0, comment: String(sum.comment || ''), err: err || '',
-      corrections: (sum.corrections || []).filter(function (c) { return c && c.better; }).slice(0, 5).map(function (c) { return { you: String(c.you || ''), better: String(c.better || ''), why: String(c.why || '') }; }),
+      corrections: (sum.corrections || []).filter(function (c) { return c && c.better; }).slice(0, 5).map(function (c) { return { you: String(c.you || ''), better: String(c.better || ''), why: String(c.why || ''), ty: CORR_TYPES.indexOf(c.type) >= 0 ? c.type : 'grammar' }; }),
       expressions: (sum.expressions || []).filter(function (x) { return x && x.w; }).slice(0, 4).map(function (x) { return { w: String(x.w), m: String(x.m || ''), e: String(x.e || ''), k: String(x.k || '') }; }),
       // 대화 전문 — 리포트를 나중에 다시 볼 때 같이 보여 준다
       msgs: t.msgs.filter(function (m) { return !m.hidden && !m.failed; }).map(function (m) { var o = { r: m.role === 'user' ? 'u' : 'a', t: m.text }; if (m.fix) o.f = m.fix; if (m.note) o.n = m.note; if (m.ko) o.k = m.ko; return o; })
     };
     S.talkLog = (S.talkLog || []).concat([rec]).slice(-30);
+    histTalk(rec);   // v2.37 talkLog 는 30개로 잘리니 날짜별 이력에 따로 쌓는다
     var d = dayStat(); d.talk = (d.talk || 0) + 1;
     save();
     go('talk', { reset: true }, true);
@@ -2147,7 +2361,7 @@
   }
 
   /* ================= 다이얼로그 (v2.35, 사용자 요청) =================
-     필요한 상황을 말(한국어 음성 인식)이나 글로 적으면 Gemini 가 짧은 영어 대화문을 만들어 S.dlg 에 모은다 — 외우기 위한 것.
+     필요한 상황을 말(한국어 음성 인식)이나 글로 적으면 AI(OpenRouter) 가 짧은 영어 대화문을 만들어 S.dlg 에 모은다 — 외우기 위한 것.
      A = 나(내 정보 S.settings.profile, 목소리 S.settings.profileG) · B = 상대(반대 성별). ▶ = A·B 를 남자·여자 목소리로 번갈아 끝까지 읽기.
      기록 { id, title, sit, b, lv, len, lines:[{s:'A'|'B', e, k}] | null, date, addedAt, plays }. 만드는 중·실패는 DJOB (저장 안 함). */
   var DLG_LEN = { short: 6, normal: 10, long: 16 };
@@ -2198,8 +2412,8 @@
           '<button class="yi-del" data-action="dlg-del" data-id="' + esc(r.id) + '" aria-label="삭제">' + ICON_X + '</button></div>';
       }).join('') :
         '<div class="empty">아직 만든 다이얼로그가 없어요</div><button class="btn primary big" data-action="dlg-add">+ 다이얼로그 만들기</button>') +
-      (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
-      '<div class="small muted yt-legal">대화는 적은 상황과 내 정보를 내 Gemini 키로 Google에 보내서 만들어요. 읽기는 폰 안의 목소리로 해요.</div>' +
+      (AI.key ? '' : '<div class="tip">OpenRouter API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>해 주세요.</div>') +
+      '<div class="small muted yt-legal">대화는 적은 상황과 내 정보를 내 OpenRouter 키로 OpenRouter(→ Google Gemini 모델)에 보내서 만들어요. 읽기는 폰 안의 목소리로 해요.</div>' +
       '</div>';
   };
   function dlgMicBtn(id) { var on = DSTT && DSTT.el === id; return '<button class="btn dl-mic' + (on ? ' on' : '') + '" data-action="dlg-mic" data-el="' + id + '">' + (on ? (DSTT.wait ? '…' : '■ 다 말했어요') : '🎤 말로 입력') + '</button>'; }
@@ -2230,7 +2444,7 @@
     dlgMicCancel(); closeSheet();   // closeSheet 가 DED 를 버린다 — 위에서 잡아 둔 ed 를 쓴다
     if (!AI.key) {
       if (ed && dlgRec(ed.id)) DJOB[ed.id] = { busy: false, err: (DJOB[ed.id] || {}).err || '', q: { sit: sit, len: ed.len } };   // 고쳐 적은 글은 남긴다 (키를 넣고 수정 창을 다시 열면 채워짐)
-      confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return;
+      confirm2('OpenRouter API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return;
     }
     if (ed) {   // 상황 수정: 있던 대화는 새 대화가 올 때까지 그대로 (dlgMake 가 성공했을 때만 상황·길이를 바꾼다)
       var old = dlgRec(ed.id); if (!old) return;
@@ -2261,15 +2475,10 @@
     q = q || null;
     var sit = q ? q.sit : r.sit, len = q ? q.len : r.len, prev = (DJOB[r.id] || {}).q || null;   // prev: 앞서 실패한 수정이 남긴 글 — 이번에도 실패하면 그대로 둔다
     var job = DJOB[r.id] = { busy: true, err: '', q: q }; dlgRefresh(r.id);
-    var body = {
-      systemInstruction: { parts: [{ text: dlgPrompt(r, len) }] },
-      contents: [{ role: 'user', parts: [{ text: 'Situation: ' + sit }] }],
-      generationConfig: {
-        temperature: 0.8, responseMimeType: 'application/json',
-        responseSchema: { type: 'OBJECT', properties: { title: { type: 'STRING' }, b: { type: 'STRING' }, lines: { type: 'ARRAY', items: { type: 'OBJECT', properties: { s: { type: 'STRING', enum: ['A', 'B'] }, e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['s', 'e', 'k'], propertyOrdering: ['s', 'e', 'k'] } } }, required: ['title', 'b', 'lines'], propertyOrdering: ['title', 'b', 'lines'] }
-      }
-    };
-    aiGenerate(body, 'dialog', 90000).then(function (res) {
+    aiChat({
+      system: dlgPrompt(r, len), user: 'Situation: ' + sit, temperature: 0.8, name: 'dialog',
+      schema: jObj({ title: jS, b: jS, lines: jArr(jObj({ s: { type: 'string', enum: ['A', 'B'] }, e: jS, k: jS })) })
+    }, 'dialog', 90000).then(function (res) {
       if (DJOB[r.id] !== job) return;
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = parseAiJson(res.text), lines = out && Array.isArray(out.lines) ? out.lines : [];
@@ -2461,7 +2670,7 @@
           '<button class="yi-del" data-action="yt-del" data-id="' + esc(r.id) + '" aria-label="삭제">' + ICON_X + '</button></div>';
       }).join('') :
         '<div class="empty">아직 추가한 영상이 없어요</div><button class="btn primary big" data-action="yt-add">+ 영상 추가</button>') +
-      (AI.key ? '' : '<div class="tip">Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
+      (AI.gkey ? '' : '<div class="tip">문장 정리는 Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
       // YouTube API 서비스 이용 조건: 약관·개인정보처리방침 안내
       '<div class="small muted yt-legal">영상 재생은 YouTube API 서비스를 쓰며 <b data-action="open-url" data-url="https://www.youtube.com/t/terms">YouTube 서비스 약관</b>과 <b data-action="open-url" data-url="https://policies.google.com/privacy">Google 개인정보처리방침</b>이 적용돼요. 문장 정리는 영상 링크를 내 Gemini 키로 Google에 보내서 해요.' + (isAndroid ? ' 받은 영상은 이 폰의 앱 안에만 저장되고, 긴 영상은 정리할 때 그 소리를 10분씩 내 Gemini 키로 Google에 보내요.' : '') + '</div>' +
       '</div>';
@@ -2478,7 +2687,7 @@
     if (!vid) { toast('유튜브 링크를 확인해 주세요'); return; }
     inp.blur();   // 시트가 닫혀도 입력칸 포커스가 남아 키보드가 영상 화면을 가리던 것
     closeSheet();
-    if (!AI.key) { confirm2('Gemini API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return; }
+    if (!AI.gkey) { confirm2('유튜브 문장 정리는 Gemini API 키(무료)가 있어야 해요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return; }
     for (var i = 0; i < S.yt.length; i++) if (S.yt[i].vid === vid) { toast('이미 있는 영상이에요'); go('ytv', { id: S.yt[i].id }); return; }
     var r = { id: uid(), vid: vid, title: '', date: localDate(), addedAt: Date.now(), sents: null };
     S.yt.push(r); save();
@@ -2537,7 +2746,7 @@
     if (YTJOB[r.id] !== job || !ytRec(r.id)) return Promise.resolve({ status: 0, text: 'cancel' });   // 취소 — 기다린 뒤에도 다시 보내지 않는다
     var t0 = Date.now();
     ytNote(r, q.clip ? '소리 10분을 듣는 중' : 'Gemini가 영상을 보는 중');
-    return aiGenerate(ytBody(q), 'youtube', q.clip ? YT_WIN_MS : YT_AI_MS, AI_DEFAULT_MODEL, q.clip).then(function (res) {
+    return gemGenerate(ytBody(q), 'youtube', q.clip ? YT_WIN_MS : YT_AI_MS, q.clip).then(function (res) {
       if (YTJOB[r.id] !== job) return res;   // 취소
       var st = res.status, took = Date.now() - t0, room = Date.now() < job.dl;
       var again = st >= 500 ? took < YT_QUICK : st === 0 ? took < (q.clip ? YT_WIN_MS : YT_AI_MS) / 2 : false;   // 15초 연결 실패(SocketTimeoutException)는 다시, 10분 기다린 건 안 함
@@ -3348,13 +3557,13 @@
     if (el && !S.settings.ytPause && YTP.getPlayerState() === 1) el.scrollIntoView({ block: 'nearest' });   // 이어 듣기 중엔 따라 내려간다
   }
 
-  // --- 단어 뜻: 익힐 표현이면 바로, 아니면 그 문장 맥락으로 Gemini 에 묻고 문장에 저장 ---
+  // --- 단어 뜻: 익힐 표현이면 바로, 아니면 그 문장 맥락으로 AI(OpenRouter) 에 묻고 문장에 저장 ---
   function ytWord(i, k) {
     var r = ytRec(YTV.id), x = r && r.sents[i], toks = x ? ytTokens(x.e) : [], tok = toks[k]; if (!tok) return;
     var key = ytNorm(tok), gm = ytGlossMap(x, toks), prevI = YTV.card ? YTV.card.i : -1, lk = x.lk && Object.prototype.hasOwnProperty.call(x.lk, key) ? x.lk[key] : null;
     if (k in gm) { var g = x.x[gm[k]]; YTV.card = { i: i, t: k, g: gm[k], w: g.w, p: g.p, m: g.m }; }   // g: 표현 전체를 칠한다
     else if (lk) YTV.card = { i: i, t: k, w: lk.w, p: lk.p, m: lk.m };
-    else if (!AI.key) YTV.card = { i: i, t: k, err: '뜻을 찾으려면 Gemini API 키가 필요해요 (설정)' };
+    else if (!AI.key) YTV.card = { i: i, t: k, err: '뜻을 찾으려면 OpenRouter API 키가 필요해요 (설정)' };
     else { YTV.card = { i: i, t: k, loading: true }; ytLookup(x, i, k, tok); }
     if (prevI >= 0 && prevI !== i) ytRow(prevI);
     ytRow(i); ytShowCard(i);
@@ -3362,10 +3571,9 @@
   function ytShowCard(i) { var cd = $('#ys' + i + ' .ycard'); if (cd && cd.scrollIntoView) cd.scrollIntoView({ block: 'nearest' }); }
   function ytLookup(x, i, k, tok) {
     var myCard = YTV.card;
-    aiGenerate({
-      systemInstruction: { parts: [{ text: 'A Korean learner tapped a word in an English sentence from a video. Give what they should learn: if the word is part of a phrasal verb, idiom or fixed expression in this sentence, give that whole expression in dictionary form; otherwise the word\'s dictionary form. "p" = one of n., v., adj., adv., phr., idiom, prep., conj. "m" = a short natural Korean meaning in this context (under 20 characters).' }] },
-      contents: [{ role: 'user', parts: [{ text: 'Sentence: "' + x.e + '"\nTapped word: "' + tok + '"' }] }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { w: { type: 'STRING' }, p: { type: 'STRING' }, m: { type: 'STRING' } }, required: ['w', 'p', 'm'] } }
+    aiChat({
+      system: 'A Korean learner tapped a word in an English sentence from a video. Give what they should learn: if the word is part of a phrasal verb, idiom or fixed expression in this sentence, give that whole expression in dictionary form; otherwise the word\'s dictionary form. "p" = one of n., v., adj., adv., phr., idiom, prep., conj. "m" = a short natural Korean meaning in this context (under 20 characters).',
+      user: 'Sentence: "' + x.e + '"\nTapped word: "' + tok + '"', schema: jObj({ w: jS, p: jS, m: jS }), name: 'word'
     }, 'word', 30000).then(function (res) {
       var o = res.status === 200 ? parseAiJson(res.text) : null;
       if (!o || !o.w) throw { msg: res.status === 200 ? '뜻을 찾지 못했어요' : aiErrorMessage(res) };
@@ -3483,7 +3691,7 @@
     );
   }
 
-  // 예문 수정 시트 — 학습 카드의 예문을 길게 누르면 열림. AI(Gemini)로 새 예문을 받아 고친 뒤 저장.
+  // 예문 수정 시트 — 학습 카드의 예문을 길게 누르면 열림. AI(OpenRouter)로 새 예문을 받아 고친 뒤 저장.
   function openExampleEditor(id) {
     var w = byId(id); if (!w) return;
     openSheet(
@@ -3528,7 +3736,7 @@
   }
 
   /* ================= ADD / EDIT ================= */
-  // v2.0: "추가" 탭은 여러 단어 붙여넣기가 기본 — 단어만 적어도 AI(Gemini)가 뜻·예문·해석을 채운다. 한 단어 폼은 보조 탭.
+  // v2.0: "추가" 탭은 여러 단어 붙여넣기가 기본 — 단어만 적어도 AI(OpenRouter)가 뜻·예문·해석을 채운다. 한 단어 폼은 보조 탭.
   var addState = { text: '', target: 1, ai: true, busy: false };
   function singleFormHTML(v, isNew) {
     return '<div class="field"><label>단어 / 표현 *</label><input id="f-w" value="' + esc(v.w) + '" placeholder="예: figure out" autocapitalize="off" autocomplete="off"></div>' +
@@ -3569,7 +3777,7 @@
       '<div class="imp-prev" id="impPrev"></div>' +
       '<div class="settings-group">' +
       '<div class="switch-row"><div><div class="sw-t">가져올 위치</div><div class="sw-s">1단계면 오늘 학습에 바로 포함돼요</div></div><div class="pick" id="imp-target"><button class="' + (addState.target === 1 ? 'on' : '') + '" data-action="imp-target" data-value="1">1단계</button><button class="' + (addState.target === 0 ? 'on' : '') + '" data-action="imp-target" data-value="0">대기</button></div></div>' +
-      '<div class="switch-row"><div><div class="sw-t">AI로 뜻·예문 자동 채우기</div><div class="sw-s">' + (AI.key ? '비어 있는 뜻·예문·해석·품사를 Gemini가 채워요' : 'Gemini API 키가 필요해요 — <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>') + '</div></div><button class="toggle' + (addState.ai && AI.key ? ' on' : '') + '" data-action="imp-ai"' + (AI.key ? '' : ' disabled') + '></button></div>' +
+      '<div class="switch-row"><div><div class="sw-t">AI로 뜻·예문 자동 채우기</div><div class="sw-s">' + (AI.key ? '비어 있는 뜻·예문·해석·품사를 AI 가 채워요' : 'OpenRouter API 키가 필요해요 — <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>') + '</div></div><button class="toggle' + (addState.ai && AI.key ? ' on' : '') + '" data-action="imp-ai"' + (AI.key ? '' : ' disabled') + '></button></div>' +
       '</div>' +
       '<button class="btn primary big" id="impGo" data-action="do-import">추가하기</button>';
   }
@@ -3622,20 +3830,20 @@
     });
     return out;
   }
-  // 비어 있는 뜻·예문·해석·품사를 Gemini가 채운다 (8개씩 묶어서). onProgress(done, total)
+  // 비어 있는 뜻·예문·해석·품사를 AI 가 채운다 (8개씩 묶어서). onProgress(done, total)
   function aiFillWords(rows, onProgress) {
     var batches = [], i;
     for (i = 0; i < rows.length; i += 8) batches.push(rows.slice(i, i + 8));
     var done = 0;
     function one(batch) {
-      var body = {
-        systemInstruction: { parts: [{ text: 'You complete vocabulary entries for a Korean adult learner of everyday spoken English. For each item return: "w" exactly as given; "p" part of speech — one of n., v., adj., adv., phr., idiom, prep., conj., interj.; "m" a concise Korean meaning like a dictionary entry (main senses separated by commas, under 30 characters); "e" ONE natural sentence a person would actually say (8-16 words) using the word in that meaning; "k" a colloquial Korean translation of "e". If an item already provides a field, copy it unchanged. Return a JSON array in the same order.' }] },
-        contents: [{ role: 'user', parts: [{ text: JSON.stringify(batch.map(function (r) { return { w: r.w, p: r.p, m: r.m, e: r.e, k: r.k }; })) }] }],
-        generationConfig: { temperature: 0.7, responseMimeType: 'application/json', responseSchema: { type: 'ARRAY', items: { type: 'OBJECT', properties: { w: { type: 'STRING' }, p: { type: 'STRING' }, m: { type: 'STRING' }, e: { type: 'STRING' }, k: { type: 'STRING' } }, required: ['w', 'p', 'm', 'e', 'k'] } } }
+      var req = {
+        system: 'You complete vocabulary entries for a Korean adult learner of everyday spoken English. For each item return: "w" exactly as given; "p" part of speech — one of n., v., adj., adv., phr., idiom, prep., conj., interj.; "m" a concise Korean meaning like a dictionary entry (main senses separated by commas, under 30 characters); "e" ONE natural sentence a person would actually say (8-16 words) using the word in that meaning; "k" a colloquial Korean translation of "e". If an item already provides a field, copy it unchanged. Return {"items": [...]} in the same order.',
+        user: JSON.stringify(batch.map(function (r) { return { w: r.w, p: r.p, m: r.m, e: r.e, k: r.k }; })),
+        temperature: 0.7, name: 'words', schema: jObj({ items: jArr(jObj({ w: jS, p: jS, m: jS, e: jS, k: jS })) })
       };
-      return aiGenerate(body, 'fill', 60000).then(function (res) {
+      return aiChat(req, 'fill', 60000).then(function (res) {
         if (res.status !== 200) throw { msg: aiErrorMessage(res) };
-        var arr = parseAiJson(res.text);
+        var out = parseAiJson(res.text), arr = Array.isArray(out) ? out : out && out.items;
         if (!Array.isArray(arr)) throw { msg: '응답을 이해하지 못했어요' };
         var byW = {}; arr.forEach(function (x) { if (x && x.w) byW[String(x.w).toLowerCase()] = x; });
         batch.forEach(function (r, idx) {
@@ -3732,11 +3940,14 @@
       apick('pauseBetween', '다음 단어까지 대기', '', [[1000, '1초'], [1500, '1.5초'], [2000, '2초'], [3000, '3초']], au.pauseBetween) +
       asw('loop', '끝나면 처음부터 반복', '', au.loop) +
       '</div>' +
-      '<div class="section-title" id="ai-settings">AI 예문 (Gemini)</div><div class="settings-group">' +
-      '<div class="field" style="padding-top:12px"><label>Gemini API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="AQ.…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" style="flex:none">보기</button></div></div>' +
+      '<div class="section-title" id="ai-settings">AI (OpenRouter)</div><div class="settings-group">' +
+      '<div class="field" style="padding-top:12px"><label>OpenRouter API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="sk-or-…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" data-for="ai-key" style="flex:none">보기</button></div></div>' +
       '<div class="field"><label>모델</label><div class="row"><input id="ai-model" value="' + esc(AI.model) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-models" style="flex:none">목록</button></div></div>' +
-      '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://aistudio.google.com/apikey">키 발급 페이지 (무료)</button></div>' +
-      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">키는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. AI 버튼을 누를 때만 단어·뜻·예문이 Google Gemini로 전송돼요.</div>' +
+      '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://openrouter.ai/keys">키 발급 페이지</button></div>' +
+      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">예문·회화·번역·다이얼로그·자동 채우기·단어 뜻에 써요 (OpenRouter 는 유료 — 쓴 만큼 크레딧이 줄어요). 기본 모델 ' + AI_DEFAULT_MODEL + '. 키는 이 기기에만 저장되고 백업·드라이브에는 들어가지 않아요. AI 를 쓸 때만 그 글이 OpenRouter 를 거쳐 모델 제공자(기본: Google)로 전송돼요.</div>' +
+      '<div class="field"><label>유튜브 문장 정리용 Gemini API 키 (선택)</label><div class="row"><input id="ai-gkey" type="password" value="' + esc(AI.gkey) + '" placeholder="AQ.…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" data-for="ai-gkey" style="flex:none">보기</button></div></div>' +
+      '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="open-url" data-url="https://aistudio.google.com/apikey">Gemini 키 발급 (무료)</button></div>' +
+      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">유튜브 정리는 영상 시간을 정확히 맞추려고 Google Gemini 를 직접 써요. 영상 링크(받은 영상은 소리)만 Google 로 가요.</div>' +
       '<div class="small muted ai-last" id="ai-last">' + aiLastLine() + '</div>' +
       '</div>' +
       '<div class="section-title">회화 연습</div><div class="settings-group">' +
@@ -3744,7 +3955,7 @@
       '<div class="switch-row"><div><div class="sw-t">교정 설명 언어</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === st.talk.feedbackLang ? 'on' : '') + '" data-action="talk-set-s" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
       '<div class="switch-row"><div><div class="sw-t">AI 답변 읽어 주기</div></div><button class="toggle' + (st.talk.speak ? ' on' : '') + '" data-action="talk-toggle" data-key="speak"></button></div>' +
       '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (st.talk.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>' +
-      '<div class="small muted" style="padding:6px 0 12px;line-height:1.5">말하기는 기기의 음성 인식 서비스(마이크 권한)를 쓰고, 인식된 문장과 대화 내용만 Google Gemini로 전송돼요. 오디오는 저장하지 않아요.</div>' +
+      '<div class="small muted" style="padding:6px 0 12px;line-height:1.5">말하기는 기기의 음성 인식 서비스(마이크 권한)를 쓰고, 인식된 문장과 대화 내용만 OpenRouter(→ AI 모델)로 전송돼요. 오디오는 저장하지 않아요.</div>' +
       '</div>' +
       '<div class="section-title">화면</div><div class="settings-group">' +
       pick('theme', '밝기', '', [['light', '라이트'], ['dark', '다크']], st.theme) +
@@ -3772,7 +3983,8 @@
     if (keepScroll != null) $('#view-settings').scrollTop = keepScroll;
     $('#rate').addEventListener('input', function (e) { S.settings.rate = Number(e.target.value); $('#rateVal').textContent = S.settings.rate.toFixed(1) + 'x'; save(); });
     $('#ai-key').addEventListener('input', function (e) { AI.key = e.target.value.trim(); saveAi(); });
-    $('#ai-model').addEventListener('change', function (e) { AI.model = e.target.value.trim().replace(/^models\//, '') || AI_DEFAULT_MODEL; e.target.value = AI.model; AI.noThink = false; saveAi(); });
+    $('#ai-gkey').addEventListener('input', function (e) { AI.gkey = e.target.value.trim(); saveAi(); });
+    $('#ai-model').addEventListener('change', function (e) { AI.model = e.target.value.trim() || AI_DEFAULT_MODEL; if (AI.model.indexOf('/') < 0) AI.model = AI_DEFAULT_MODEL; e.target.value = AI.model; AI.noReason = false; saveAi(); });
     if (p && (p.scroll === 'audio' || p.scroll === 'ai')) { var el = $('#' + p.scroll + '-settings'); if (el) setTimeout(function () { el.scrollIntoView({ block: 'start' }); }, 30); }
     if (p && p.scroll === 'ai' && !AI.key) setTimeout(function () { var k = $('#ai-key'); if (k) k.focus(); }, 350);
   };
@@ -4012,6 +4224,8 @@
     },
     'undo': function () { undo(); },
     'sent': function () { sentStart(); },
+    'skill-range': function (el) { var r = el.getAttribute('data-r'); S.settings.skillRange = r === 'all' ? 'all' : Number(r) || 30; save(); skillRefresh(); },
+    'skill-help': function () { skillHelp(); },
     'use-day': function (el) { useSel = el.getAttribute('data-d'); var y = $('#view-stats').scrollTop; RENDER.stats(); $('#view-stats').scrollTop = y; },
     'sent-judge': function (el) {
       var card = $('#sentArea .card'); if (!card || flying) return;
@@ -4103,7 +4317,7 @@
       if (!f.w || !f.m) { toast('단어와 뜻을 먼저 입력해 주세요'); return; }
       runAiExample(f, $('#f-hint').value.trim(), '#f-e', '#f-k', el);
     },
-    'ai-key-eye': function (el) { var i = $('#ai-key'); var show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? '숨김' : '보기'; },
+    'ai-key-eye': function (el) { var i = $('#' + (el.getAttribute('data-for') || 'ai-key')); var show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? '숨김' : '보기'; },
     'ai-test': function (el) {
       if (!AI.key) { toast('API 키를 먼저 입력해 주세요'); $('#ai-key').focus(); return; }
       var orig = el.textContent; el.disabled = true; el.textContent = '확인 중…';
@@ -4112,16 +4326,15 @@
       }, function (err) { toast(err && err.msg ? err.msg : '연결 실패'); }).then(function () { if (el.isConnected) { el.disabled = false; el.textContent = orig; } var n = $('#ai-last'); if (n) n.innerHTML = aiLastLine(); });
     },
     'ai-models': function (el) {
-      if (!AI.key) { toast('API 키를 먼저 입력해 주세요'); $('#ai-key').focus(); return; }
       var orig = el.textContent; el.disabled = true; el.textContent = '불러오는 중…';
       aiListModels().then(function (list) {
         if (!list.length) { toast('사용 가능한 모델을 찾지 못했어요'); return; }
-        openSheet('<div class="sh-word"><span>모델 선택</span></div><div class="small muted" style="margin-top:4px">무료 사용량은 Flash 계열이 넉넉해요. 현재: <b>' + esc(AI.model) + '</b></div><div class="model-list">' +
+        openSheet('<div class="sh-word"><span>모델 선택</span></div><div class="small muted" style="margin-top:4px">값·속도는 openrouter.ai/models 에서 볼 수 있어요. 기본 ' + esc(AI_DEFAULT_MODEL) + ' · 현재: <b>' + esc(AI.model) + '</b></div><div class="model-list">' +
           list.map(function (m) { return '<button class="' + (m === AI.model ? 'on' : '') + '" data-action="ai-pick-model" data-model="' + esc(m) + '">' + esc(m) + '</button>'; }).join('') +
           '</div><div class="sh-actions"><button class="btn" data-action="close-sheet">닫기</button></div>');
       }, function (err) { toast(err && err.msg ? err.msg : '모델 목록을 가져오지 못했어요'); }).then(function () { if (el.isConnected) { el.disabled = false; el.textContent = orig; } });
     },
-    'ai-pick-model': function (el) { AI.model = el.getAttribute('data-model'); AI.noThink = false; saveAi(); closeSheet(); RENDER.settings({ scroll: 'ai' }); toast('모델: ' + AI.model); },
+    'ai-pick-model': function (el) { AI.model = el.getAttribute('data-model'); AI.noReason = false; saveAi(); closeSheet(); RENDER.settings({ scroll: 'ai' }); toast('모델: ' + AI.model); },
     'open-url': function (el) { bridge.openUrl(el.getAttribute('data-url')); },
     /* --- 회화 연습 --- */
     'talk': function () { go('talk'); },
@@ -4384,6 +4597,7 @@
       var n = counts()[4]; if (!n) { toast('졸업 단어가 없어요'); return; }
       confirm2('졸업한 단어 ' + n + '개를 완전히 삭제할까요?', '삭제', true).then(function (ok) {
         if (!ok) return;
+        S.kwGone = (S.kwGone || 0) + n * SKILL_STAGE_W[4];   // v2.37 지운 졸업 단어도 어휘 점수엔 남긴다
         S.words = S.words.filter(function (w) { return w.stage !== 4; }); save(); toast('삭제했어요'); RENDER.settings();
       });
     },
@@ -4452,14 +4666,14 @@
   });
 
   /* ---------------- Google 드라이브 연동 (v2.28) ---------------- */
-  // 폰을 바꿔도 이어지게: 사용자가 고른 Google 드라이브 파일 하나(SAF 문서, 로그인 없이 폰의 드라이브 앱이 올림)에 학습 기록(S, Gemini 키 제외)을 자동 저장.
+  // 폰을 바꿔도 이어지게: 사용자가 고른 Google 드라이브 파일 하나(SAF 문서, 로그인 없이 폰의 드라이브 앱이 올림)에 학습 기록(S, AI 키 제외)을 자동 저장.
   // 저장 시점: 앱이 내려갈 때 + 켜져 있는 동안 5분마다 (바뀐 게 있을 때만). 새 폰: "드라이브에서 불러오기" → 덮어쓰기/병합 → 그 파일에 이어서 저장.
   // ponytail: 두 폰을 번갈아 쓰면 나중에 저장한 쪽이 이긴다 (합치지 않음) — 동시에 쓰는 폰이 생기면 날짜 비교·병합을 넣을 것
   var SYNC = { dirty: false, busy: false, at: 0, err: '' }, SYNC_EVERY = 5 * 60000, SYNC_AT_KEY = 'vocab3.sync.at';
   function syncLinked() { var i = bridge.syncInfo(); return i && i.uri ? i : null; }
   function syncHTML() {
     var i = syncLinked(), at = SYNC.at || +(bridge.loadRaw(SYNC_AT_KEY) || 0);
-    if (!i) return '<div class="tip-s small muted">Gemini 키는 드라이브에 올리지 않아요.</div>' +
+    if (!i) return '<div class="tip-s small muted">AI 키는 드라이브에 올리지 않아요.</div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn primary" data-action="sync-new">드라이브에 연동하기</button><button class="btn" data-action="sync-open">드라이브에서 불러오기</button></div>';
     return '<div class="switch-row"><div><div class="sw-t">연동됨 · ' + esc(i.name || '드라이브 파일') + '</div><div class="sw-s">' + (SYNC.err ? '⚠ ' + esc(SYNC.err) : at ? '마지막 저장 ' + agoText(at) : '아직 저장 전') + ' · 앱이 내려갈 때와 5분마다 자동 저장</div></div></div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="sync-now">지금 저장</button><button class="btn danger" data-action="sync-unlink">연동 끊기</button></div>';
@@ -4507,7 +4721,7 @@
     UPD.busy = true;
     bridge.aiCall(UPD_API, '', '', 15000).then(function (res) {
       UPD.busy = false;
-      if (res.status !== 200) { if (manual) toast('업데이트를 확인하지 못했어요 — ' + (res.status === 0 ? aiErrorMessage(res) : 'GitHub 응답 ' + res.status + (res.status === 403 || res.status === 429 ? ' (요청이 많아요 — 잠시 후 다시)' : ''))); return; }   // aiErrorMessage 의 4xx 문구는 Gemini 용(모델·API 키)
+      if (res.status !== 200) { if (manual) toast('업데이트를 확인하지 못했어요 — ' + (res.status === 0 ? aiErrorMessage(res) : 'GitHub 응답 ' + res.status + (res.status === 403 || res.status === 429 ? ' (요청이 많아요 — 잠시 후 다시)' : ''))); return; }   // aiErrorMessage 의 4xx 문구는 AI 용(모델·API 키)
       var j = null; try { j = JSON.parse(res.text); } catch (e) { }
       var tag = j && String(j.tag_name || ''), apk = j && (j.assets || []).filter(function (x) { return x && /\.apk$/i.test(x.name || '') && /^https:\/\/github\.com\/Seobuk\/vocab3\/releases\/download\//.test(x.browser_download_url || ''); })[0];
       if (!tag || !apk || !(verNum(tag) > verNum(APP_VERSION))) { if (manual) toast('최신 버전이에요 (v' + APP_VERSION + ')'); return; }
@@ -4543,7 +4757,7 @@
   window.addEventListener('pagehide', saveNow);
 
   // debugging / testing hooks
-  window.__vocab = { state: function () { return S; }, save: saveNow, go: go, startSession: startSession, judge: judge, applyTheme: applyTheme, themes: function () { return THEMES.map(function (t) { return t.id; }); }, reload: function () { S = loadState(); goTab('home'); }, sentPick: sentPick, ytSnapCalc: ytSnapCalc, ytRange: ytRange, ytRetry: function (a, quick, w429) { YT_RETRY = a; if (quick != null) YT_QUICK = quick; if (w429 != null) YT_429 = w429; } };
+  window.__vocab = { state: function () { return S; }, save: saveNow, undo: undo, skillAt: function (d) { return skillAt(d || localDate(), Object.keys(S.hist).sort()); }, skillSeries: skillSeries, go: go, startSession: startSession, judge: judge, applyTheme: applyTheme, themes: function () { return THEMES.map(function (t) { return t.id; }); }, reload: function () { S = loadState(); goTab('home'); }, sentPick: sentPick, ytSnapCalc: ytSnapCalc, ytRange: ytRange, ytRetry: function (a, quick, w429) { YT_RETRY = a; if (quick != null) YT_QUICK = quick; if (w429 != null) YT_429 = w429; } };
 
   SID = uid(); bridge.saveRaw(OWN_KEY, SID);   // 이제 이 페이지가 저장 주인 — 상태를 읽기 전에 (그 뒤 옛 페이지 쓰기는 거부)
   S = loadState();

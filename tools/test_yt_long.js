@@ -23,7 +23,7 @@ const body = (txt, fin) => JSON.stringify({ candidates: [{ content: { parts: [{ 
   });
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-flash-lite-latest' })); });
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); });
   await p.reload(); await p.waitForTimeout(400);
   await p.evaluate(() => window.__vocab.ytRetry([30, 30], null, 0));   // 429 는 기다리지 않고 (retryDelay 없을 때)
   const add = async vid => {

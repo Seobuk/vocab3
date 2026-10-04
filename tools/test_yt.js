@@ -20,8 +20,11 @@ const SENTS = [
     window.fetch = (url, opt) => {
       if (/oembed/.test(url)) { window.__calls.push({ url }); return Promise.resolve({ status: window.__oembed, text: () => Promise.resolve(window.__oembed === 200 ? JSON.stringify({ title: 'Test Talk', author_name: 'Tech' }) : 'Not Found') }); }
       const body = JSON.parse(opt.body); window.__calls.push({ url, body, headers: opt.headers });
+      if (body.messages) {   // v2.37 단어 뜻은 OpenRouter
+        if (/tapped a word/.test(body.messages[0].content)) return Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ w: 'really', p: 'adv.', m: '정말로' }) } }] })) });
+        return Promise.resolve({ status: 404, text: () => Promise.resolve('{}') });
+      }
       const sys = body.systemInstruction.parts[0].text;
-      if (/tapped a word/.test(sys)) return ok({ w: 'really', p: 'adv.', m: '정말로' });
       if (window.__gemEmpty) return ok([]);
       if (window.__gemFail && window.__gemFail.length) { const f = window.__gemFail.shift(); return Promise.resolve({ status: f[0], text: () => Promise.resolve(JSON.stringify({ error: { message: f[1] } })) }); }
       return ok(sents);
@@ -44,7 +47,7 @@ const SENTS = [
   }, SENTS);
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', model: 'gemini-3.8-flash' })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
   await p.reload(); await p.waitForTimeout(400);
   const yt = fn => p.evaluate(f => window.__yt.filter(c => c.fn === f), fn);
   const view = () => p.evaluate(() => document.querySelector('.view.active').id);
@@ -77,7 +80,7 @@ const SENTS = [
   eq('프롬프트: 문장을 쪼개지 말 것 · 화면 자막 줄바꿈 무시 (v2.3)', /Never split a sentence/.test(sysT) && /Ignore on-screen subtitles/.test(sysT) && !/at most about 20 words/.test(sysT), true);
   eq('저해상도 (받아쓰기)', gem.body.generationConfig.mediaResolution, 'MEDIA_RESOLUTION_LOW');
   eq('Gemini 키는 헤더로', gem.headers['x-goog-api-key'], 'TEST-KEY');
-  eq('유튜브 정리는 설정 모델(3.8 Flash)과 상관없이 Flash-Lite (v2.7)', /models\/gemini-flash-lite-latest:generateContent/.test(gem.url), true);
+  eq('유튜브 정리는 OpenRouter 모델과 상관없이 Gemini Flash-Lite 직접 (v2.37)', /models\/gemini-flash-lite-latest:generateContent/.test(gem.url), true);
   eq('답 순서 s→e→t→k→x (v2.7)', gem.body.generationConfig.responseSchema.items.propertyOrdering.join(','), 's,e,t,k,x');
   eq('제목', await p.textContent('#ytTitle'), 'Test Talk');
   eq('문장 3개', await p.$$eval('#ytList .ys', x => x.length), 3);
@@ -155,7 +158,7 @@ const SENTS = [
   // --- 재생한 문장의 단어: 익힐 표현은 바로 뜻 ---
   await p.dblclick('#ys1 .yw[data-t="5"]'); await p.waitForTimeout(150);   // v2.18: 두 번 톡 = 뜻
   eq('표현 카드', await p.textContent('#ys1 .ycard .yc-h b') + ' = ' + await p.textContent('#ys1 .ycard .yc-m'), 'dig into = 파고들다');
-  eq('표현은 Gemini 안 부름', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)).length), 0);
+  eq('표현은 Gemini 안 부름', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test((c.body.messages ? c.body.messages[0].content : c.body.systemInstruction.parts[0].text))).length), 0);
   eq('두 번 톡: 첫 톡이 문장을 한 번 다시 재생, 둘째 톡은 뜻만', (await yt('seek')).length - skW2, 1);
   await p.screenshot({ path: OUT + '/302-yt-word.png' });
   await p.click('#ys1 [data-action="yt-add-word"][data-stage="1"]'); await p.waitForTimeout(150);
@@ -165,16 +168,16 @@ const SENTS = [
 
   // --- 표현이 아닌 단어: Gemini 로 뜻 → 대기에 추가 · 다시 누르면 저장된 뜻 ---
   await p.dblclick('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(300);
-  const look = await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)));
-  eq('뜻 요청에 문장·단어', look.length + ' ' + /Tapped word: "really"/.test(look[0].body.contents[0].parts[0].text), '1 true');
-  eq('단어 뜻은 설정 모델(3.8 Flash) 그대로', /models\/gemini-3\.8-flash:generateContent/.test(look[0].url), true);
+  const look = await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test((c.body.messages ? c.body.messages[0].content : c.body.systemInstruction.parts[0].text))));
+  eq('뜻 요청에 문장·단어', look.length + ' ' + /Tapped word: "really"/.test(look[0].body.messages[1].content), '1 true');
+  eq('단어 뜻은 OpenRouter 설정 모델로', look[0].url + ' ' + look[0].body.model + ' ' + look[0].headers.Authorization, 'https://openrouter.ai/api/v1/chat/completions google/gemini-3.1-flash-lite Bearer TEST-KEY');
   eq('뜻 카드', await p.textContent('#ys1 .ycard .yc-m'), '정말로');
   await p.click('#ys1 [data-action="yt-add-word"][data-stage="0"]'); await p.waitForTimeout(150);
   eq('대기에 추가', await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'really'); return w && w.stage; }), 0);
   await p.click('#ys1 [data-action="yt-card-close"]'); await p.waitForTimeout(100);
   eq('카드 닫힘', await p.$$eval('.ycard', x => x.length), 0);
   await p.dblclick('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(150);
-  eq('다시 누르면 저장된 뜻 (요청 없음)', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)).length), 1);
+  eq('다시 누르면 저장된 뜻 (요청 없음)', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test((c.body.messages ? c.body.messages[0].content : c.body.systemInstruction.parts[0].text))).length), 1);
   eq('이미 있는 단어 표시', await p.textContent('#ys1 .ycard .small'), '이미 단어장에 있어요 · 대기');
 
   // --- 기본 단어장에 이미 있는 표현 ---
@@ -237,11 +240,11 @@ const SENTS = [
   await p.evaluate(() => { window.__ytT = 7.7; }); await p.waitForTimeout(400);
   eq('다시 들어와 영상 ▶로 보면 옛 지점에서 안 멈춤', (await yt('pause')).length, pz);
   // --- 다시 정리하기 (v2.3): 확인 → 새로 요청 → 문장 교체 ---
-  const g0 = await p.evaluate(() => window.__calls.filter(c => c.body && c.body.contents[0].parts[0].fileData).length);
+  const g0 = await p.evaluate(() => window.__calls.filter(c => c.body && c.body.contents && c.body.contents[0].parts[0].fileData).length);
   await p.click('[data-action="yt-redo"]'); await p.waitForTimeout(200);
   eq('확인 창이 뜨면 오른쪽 아래 버튼은 어두운 막 아래 (못 누름)', await p.evaluate(() => { const r = document.querySelector('[data-action="yt-replay"]').getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2).id; }), 'overlay');
   await p.click('#modal .btn.primary'); await p.waitForTimeout(500);
-  eq('다시 정리 = Gemini 한 번 더', await p.evaluate(() => window.__calls.filter(c => c.body && c.body.contents[0].parts[0].fileData).length) - g0, 1);
+  eq('다시 정리 = Gemini 한 번 더', await p.evaluate(() => window.__calls.filter(c => c.body && c.body.contents && c.body.contents[0].parts[0].fileData).length) - g0, 1);
   eq('문장 다시 표시', await p.$$eval('#ytList .ys', x => x.length), 3);
   eq('새로 정리한 영상엔 다시 정리 안내 없음 (tv 3)', await p.$$eval('.yt-old', x => x.length) + ' ' + await p.evaluate(() => window.__vocab.state().yt.find(r => r.vid === 'H5h_GUaR-bU').tv), '0 3');
   // --- 거절되면 한 번 더 (v2.9): 생각 설정 거부(400) → 생각 빼고, 한도(429) → 1초 1장으로 ---
@@ -307,9 +310,9 @@ const SENTS = [
   await p.click('#ys0 .ys-t'); await p.waitForTimeout(150);
   await p.dblclick('#ys0 .yw[data-t="5"]'); await p.waitForTimeout(150);
   eq('저장된 뜻 캐시(said)', await p.textContent('#ys0 .ycard .yc-m'), '말하다');
-  const before = await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)).length);
+  const before = await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test((c.body.messages ? c.body.messages[0].content : c.body.systemInstruction.parts[0].text))).length);
   await p.dblclick('#ys0 .yw[data-t="3"]'); await p.waitForTimeout(300);
-  eq('constructor 는 캐시(프로토타입)로 착각하지 않고 뜻을 물음', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test(c.body.systemInstruction.parts[0].text)).length) - before, 1);
+  eq('constructor 는 캐시(프로토타입)로 착각하지 않고 뜻을 물음', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test((c.body.messages ? c.body.messages[0].content : c.body.systemInstruction.parts[0].text))).length) - before, 1);
   await p.dblclick('#ys0 .yw[data-t="9"]'); await p.waitForTimeout(150);
   await p.click('#ys0 [data-action="yt-add-word"][data-stage="0"]'); await p.waitForTimeout(150);
   eq('목록에 없는 품사(phrasal verb)는 비워서 저장', await p.evaluate(() => JSON.stringify(window.__vocab.state().words.find(w => w.w === "let's go").p)), '""');
