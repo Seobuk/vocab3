@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.37';
+  var APP_VERSION = '2.38';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -242,12 +242,13 @@
     delete aiPending[id]; r({ status: Number(status) || 0, text: text || '' });
   };
 
-  /* ---------------- AI (OpenRouter · 유튜브 받아쓰기만 Gemini) ---------------- */
+  /* ---------------- AI (Gemini 무료 키 먼저 → 안 되면 OpenRouter · 유튜브 받아쓰기는 Gemini 만) ---------------- */
   // 키는 상태 JSON 이 아니라 따로 저장한다 (prefs 'vocab3.ai.v1') — 백업·내보내기·드라이브 동기화에 절대 안 들어간다.
   // v2.37: 앱의 AI 는 OpenRouter (key = sk-or-…, model = OpenRouter 모델 id). 유튜브 받아쓰기는 영상 링크·fps·생각 수준을
   // 그대로 쓰려고 Gemini API 를 직접 부른다 (gkey, 선택 — 없으면 유튜브 정리만 못 함).
+  // v2.38(사용자 요청): gkey 가 있으면 나머지 AI 도 무료 Gemini 를 먼저 쓰고, 실패하면(한도·오류·연결) key 가 있을 때 OpenRouter 로 넘어간다 (aiChat).
   var AI_KEY = 'vocab3.ai.v1', AI_DEFAULT_MODEL = 'google/gemini-3.1-flash-lite', OR_URL = 'https://openrouter.ai/api/v1';
-  var GEM_MODEL = 'gemini-flash-lite-latest', GEM_BASE = 'https://generativelanguage.googleapis.com/v1beta';   // 유튜브 전용 (별칭이라 은퇴하지 않음)
+  var GEM_MODEL = 'gemini-flash-lite-latest', GEM_BASE = 'https://generativelanguage.googleapis.com/v1beta';   // 유튜브 + v2.38 먼저 쓰는 무료 모델 (별칭이라 은퇴하지 않음)
   var AI = (function () {
     var o = null;
     try { o = JSON.parse(bridge.loadRaw(AI_KEY) || 'null'); } catch (e) { o = null; }
@@ -262,6 +263,7 @@
     return o;
   })();
   function saveAi() { bridge.saveRaw(AI_KEY, JSON.stringify(AI)); }
+  function aiHas() { return !!(AI.gkey || AI.key); }   // AI 기능을 쓸 키가 하나라도 있나
   function aiErrorMessage(res) {
     var msg = '';
     try { var j = JSON.parse(res.text); msg = (j.error && (j.error.message || (j.error.metadata && j.error.metadata.raw))) || ''; } catch (e) { }
@@ -280,13 +282,13 @@
     if (res.status === 403) return who + ' API 키가 거부됐어요 (403)';
     var m = res.model || AI.model, mine = m === AI.model;
     if (res.status === 404) return '모델 "' + m + '"을(를) 찾을 수 없어요' + (mine ? '. 설정 → 모델 목록에서 골라 주세요' : '');
-    if (res.status === 429) return '요청 한도를 넘었어요. 잠시 후 다시 시도하세요';
+    if (res.status === 429) return gem && !AI.key && res.chat ? 'Gemini 무료 한도를 넘었어요. 잠시 후 다시 하거나, 설정에 OpenRouter 키를 넣으면 그쪽으로 넘어가요' : '요청 한도를 넘었어요. 잠시 후 다시 시도하세요';
     if (res.status === 503 || res.status === 502) return '"' + m + '" 모델이 지금 붐벼요. 잠시 후 다시 ' + (mine ? '하거나 설정에서 다른 모델을 골라 주세요' : '시도해 주세요');
     if (res.status >= 500) return who + ' 서버 오류 (' + res.status + ')';
     return '오류 ' + res.status + (msg ? ': ' + msg.slice(0, 90) : '');
   }
   function aiRecord(res, what, t0) {
-    AI.last = { at: Date.now(), ms: Date.now() - t0, status: res.status, what: what || '', err: res.status === 200 ? '' : aiErrorMessage(res) };
+    AI.last = { at: Date.now(), ms: Date.now() - t0, status: res.status, what: what || '', err: res.status === 200 ? '' : aiErrorMessage(res), by: res.model === GEM_MODEL ? 'Gemini' : 'OpenRouter' };
     saveAi();
     return res;
   }
@@ -297,7 +299,7 @@
   function jArr(items) { return { type: 'array', items: items }; }
   // OpenRouter chat/completions — opt = { system, msgs:[{role:'user'|'assistant', text}] 또는 user: '…', temperature, schema(jObj), name }
   // 503/502 는 빨리 실패했을 때 한 번 더, 생각(reasoning) 설정을 안 받는 모델이면 빼고 한 번 더 (기억), AI.last 에 기록.
-  function aiChat(opt, what, timeoutMs) {
+  function orChat(opt, what, timeoutMs) {
     var msgs = [];
     if (opt.system) msgs.push({ role: 'system', content: opt.system });
     (opt.msgs || [{ role: 'user', text: opt.user || '' }]).forEach(function (m) { msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text }); });
@@ -329,6 +331,48 @@
       return aiRecord(res, what, t0);
     });
   }
+  // OpenRouter 스키마(jObj) → Gemini responseSchema: type 대문자, additionalProperties 빼고, 필드 순서 고정
+  function gemSchema(s) {
+    var o = {};
+    Object.keys(s).forEach(function (k) { if (k !== 'additionalProperties') o[k] = s[k]; });
+    o.type = String(s.type).toUpperCase();
+    if (s.items) o.items = gemSchema(s.items);
+    if (s.properties) {
+      o.properties = {};
+      Object.keys(s.properties).forEach(function (k) { o.properties[k] = gemSchema(s.properties[k]); });
+      o.propertyOrdering = Object.keys(s.properties);
+    }
+    return o;
+  }
+  // 같은 opt 를 Gemini generateContent 로 (무료 키) — 답은 OpenRouter 모양({choices:[{message:{content}}]})으로 바꿔 돌려줘서 부르는 쪽은 그대로
+  function gemChat(opt, what, timeoutMs) {
+    var body = {
+      contents: (opt.msgs || [{ role: 'user', text: opt.user || '' }]).map(function (m) { return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.text }] }; }),
+      generationConfig: { thinkingConfig: { thinkingBudget: 0 } }   // 빠른 답 (안 받는 모델이면 gemGenerate 가 빼고 한 번 더)
+    };
+    if (opt.system) body.systemInstruction = { parts: [{ text: opt.system }] };
+    if (opt.temperature != null) body.generationConfig.temperature = opt.temperature;
+    if (opt.schema) { body.generationConfig.responseMimeType = 'application/json'; body.generationConfig.responseSchema = gemSchema(opt.schema); }
+    return gemGenerate(body, what, timeoutMs).then(function (res) {
+      if (res.status !== 200) { res.chat = 1; return res; }   // chat: 오류 문구가 OpenRouter 로 넘어갈 길을 알려 준다
+      var txt = '';
+      try { JSON.parse(res.text).candidates[0].content.parts.forEach(function (p) { if (p && p.text) txt += p.text; }); } catch (e) { }
+      res.text = JSON.stringify({ choices: [{ message: { content: txt } }] });
+      return res;
+    });
+  }
+  // v2.38: 무료 Gemini 키 먼저 → 안 되면(200 이 아니거나 빈 답) OpenRouter. 키가 하나뿐이면 그쪽만. 둘 다 실패하면 OpenRouter 쪽 오류를 보여 준다.
+  // ponytail: 한도(429)가 찬 날에도 매번 Gemini 를 한 번 두드린다(바로 거절돼 1초 안쪽) — 거슬리면 429 뒤 얼마간 건너뛰기를 넣을 것.
+  function aiChat(opt, what, timeoutMs) {
+    if (!AI.gkey) return orChat(opt, what, timeoutMs);
+    // 넘어갈 곳이 있으면 Gemini 는 30초까지만 기다린다 (멈춘 서버 때문에 기다림이 두 배가 되지 않게 — 보통 실패는 1초 안에 온다)
+    // ponytail: 취소한 요청도 Gemini 가 뒤늦게 실패하면 OpenRouter 를 한 번 부른다(답은 버려짐) — 거슬리면 opt.live() 검사를 넣을 것.
+    return gemChat(opt, what, AI.key ? Math.min(timeoutMs, 30000) : timeoutMs).then(function (res) {
+      if ((res.status === 200 && aiText(res.text)) || !AI.key) return res;
+      var why = res.status === 200 ? '빈 답' : aiErrorMessage(res);   // 왜 넘어갔는지 — 설정의 '마지막 호출'·연결 테스트에 보여 준다 (틀린 Gemini 키로 조용히 유료만 쓰지 않게)
+      return orChat(opt, what, timeoutMs).then(function (r) { if (AI.last) { AI.last.via = 'Gemini 실패(' + why + ') → OpenRouter'; saveAi(); } return r; });
+    });
+  }
   // OpenRouter 답의 글 (choices[0].message.content — 문자열 또는 [{type:'text', text}])
   function aiText(text) {
     try {
@@ -340,7 +384,7 @@
   function parseAiJson(text) {
     try { return JSON.parse(aiText(text).replace(/^\s*```(?:json)?\s*/, '').replace(/\s*```\s*$/, '').trim()); } catch (e) { return null; }
   }
-  // 유튜브 받아쓰기 전용 Gemini generateContent (v2.37 부터 여기만 Gemini) — 503 한 번 더, 생각 설정을 안 받으면 빼고 한 번 더
+  // Gemini generateContent (유튜브 받아쓰기 · v2.38 gemChat) — 503 한 번 더, 생각 설정을 안 받으면 빼고 한 번 더
   function gemGenerate(bodyObj, what, timeoutMs, clip) {   // clip: 받은 영상 소리 창 (bridge.aiCall)
     var url = GEM_BASE + '/models/' + GEM_MODEL + ':generateContent';
     var own = !!(bodyObj.generationConfig && bodyObj.generationConfig.thinkingConfig);
@@ -359,7 +403,7 @@
     var l = AI.last; if (!l || !l.at) return '';
     var d = new Date(l.at), hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
     var what = { example: '예문', talk: '회화', summary: '회화 정리', translate: '번역', fill: '자동 채우기', test: '연결 테스트', models: '모델 목록', youtube: '유튜브 정리', word: '단어 뜻', dialog: '다이얼로그' }[l.what] || l.what;
-    return '마지막 호출 ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh + ' · ' + what + ' · ' + (l.ms / 1000).toFixed(1) + '초 · ' + (l.status === 200 ? '성공 ✓' : '실패 — ' + esc(l.err || ('HTTP ' + l.status)));
+    return '마지막 호출 ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh + ' · ' + what + ' · ' + (l.ms / 1000).toFixed(1) + '초 · ' + (l.by ? l.by + ' ' : '') + (l.status === 200 ? '성공 ✓' : '실패 — ' + esc(l.err || ('HTTP ' + l.status))) + (l.via ? ' · ' + esc(l.via) : '');
   }
   function aiPrompt(w, hint) {
     return [
@@ -375,7 +419,7 @@
   }
   // → Promise<{e, k}>; rejects with {nokey:true} or {msg}
   function aiGenerateExample(w, hint, what) {
-    if (!AI.key) return Promise.reject({ nokey: true });
+    if (!aiHas()) return Promise.reject({ nokey: true });
     return aiChat({ user: aiPrompt(w, hint), temperature: 1.0, schema: jObj({ e: jS, k: jS }), name: 'example' }, what || 'example', 45000).then(function (res) {
       if (res.status !== 200) throw { msg: aiErrorMessage(res) };
       var out = parseAiJson(res.text);
@@ -402,8 +446,8 @@
   }
   // Shared runner for the sheet / edit-screen buttons: fills the example & translation fields.
   function runAiExample(w, hint, selE, selK, btn) {
-    if (!AI.key) {
-      confirm2('OpenRouter API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) {
+    if (!aiHas()) {
+      confirm2('AI 키가 아직 없어요 (Gemini 무료 키 또는 OpenRouter 키).\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) {
         if (ok) { if (sheetOpen) closeSheet(); go('settings', { scroll: 'ai' }); }
       });
       return;
@@ -757,7 +801,7 @@
       { sel: '.review-btn[data-stage="2"]', t: '외우면 한 단계씩', b: '카드에서 "외웠다"를 고르면 2단계, 또 외우면 3단계로 올라가고 3단계를 통과하면 졸업해요. "아직"이면 그 단계에 남아요.' },
       { sel: '.review-btn[data-action="sent"]', t: '졸업하면 문장 공부', b: '졸업한 단어의 예문과 유튜브에서 담은 문장을 우리말만 보고 영어로 말해 봐요. 졸업한 단어나 담은 문장이 생기면 열려요.' },
       { sel: '.quick', t: '회화 · 다이얼로그 · 유튜브 · 듣기', b: '회화 연습은 AI와 영어로 대화해요. 다이얼로그는 필요한 상황의 대화문을 만들어 외워요. 유튜브는 링크를 넣으면 문장마다 나눠 줘요. 듣기 복습은 화면을 꺼도 계속 읽어 줘요.' },
-      { sel: '#tabbar [data-tab="settings"]', t: 'AI 기능은 키가 필요해요', b: '회화 · 다이얼로그 · AI 채우기는 OpenRouter 키, 유튜브 문장 정리는 Gemini 키가 있어야 돼요. 설정의 키 발급 버튼에서 받아 넣어요.' }
+      { sel: '#tabbar [data-tab="settings"]', t: 'AI 기능은 키가 필요해요', b: '회화 · 다이얼로그 · AI 채우기 · 유튜브 문장 정리는 Gemini 키(무료)가 있으면 돼요. 설정의 키 발급 버튼에서 받아 넣어요.' }
     ] },
     study: { steps: [
       { sel: '#cardArea .reveal[data-reveal="m"]', t: '뜻 보기 · 단어 읽기', b: '뜻 칸을 톡 하면 뜻이 보였다 가려져요. 위의 영어 단어를 톡 하면 읽어 줘요.' },
@@ -795,7 +839,7 @@
     talk: { steps: [
       { sel: '.scen-grid', t: '상황 고르기', b: '고른 상황에서 AI가 점원이나 동료 같은 상대역을 맡아요. "자유 주제"를 고르면 원하는 상황을 직접 적어요.' },
       { sel: '.mission-box', t: '미션 단어', b: '대화 중에 써 볼 단어예요. 단어를 톡 하면 뜻과 예문이 나오고, 대화에서 쓰면 체크 표시가 붙어요.' },
-      { sel: '.tip', t: 'AI 키가 필요해요', b: '회화는 OpenRouter API 키가 있어야 돼요. 밑줄 친 "설정에서 입력"을 톡 하면 키를 넣는 곳으로 가요.', opt: 1 },
+      { sel: '.tip', t: 'AI 키가 필요해요', b: '회화는 AI 키가 있어야 돼요 (Gemini 무료 키면 돼요). 밑줄 친 "설정에서 입력"을 톡 하면 키를 넣는 곳으로 가요.', opt: 1 },
       { sel: '[data-action="talk-start"]', t: '대화 시작', b: '누르면 AI가 먼저 영어로 말을 걸고 읽어 줘요. 마이크로 말하거나 입력창에 적어서 답해요.' }
     ] },
     chat: { need: '.msg.ai .spk', steps: [
@@ -829,7 +873,7 @@
       { sel: '.yt-edb', t: '문장 시간 고치기', b: '시계를 누르면 아래에 구간 막대가 떠요. 누른 문장의 시작·끝을 끌거나 ±0.1·0.5초, "지금"으로 옮기고 "완료"를 눌러요.', opt: 1 }
     ] },
     settings: { steps: [
-      { sel: '#ai-settings + .settings-group', t: 'AI 키 넣기', b: '회화 연습·다이얼로그·AI 채우기는 OpenRouter 키가 있어야 돼요. "키 발급 페이지"에서 키를 만들어 맨 위 칸에 붙여 넣어요. 유튜브 문장 정리는 아래 Gemini 키 칸에.' },
+      { sel: '#ai-gkey', t: 'AI 키 넣기', b: '"Gemini 키 발급 (무료)"에서 키를 만들어 Gemini 키 칸에 넣으면 AI 기능을 다 쓸 수 있어요. OpenRouter 키(유료)까지 넣어 두면 Gemini 가 안 될 때 그쪽으로 넘어가요.' },
       { sel: '.sync-g', t: '드라이브에 자동 저장', b: '"드라이브에 연동하기"로 저장할 곳을 고르면 앱을 내릴 때와 5분마다 학습 기록이 저장돼요. 새 폰에선 "드라이브에서 불러오기".', opt: 1 },
       { sel: '[data-action="restore-start"]', t: '실수로 지웠을 때', b: '잘못 지우거나 고쳤다면 앱을 다시 켜기 전에 "켤 때 상태로"를 누르고 "덮어쓰기"를 골라요. 이번에 켰을 때 기록으로 돌아가요.' },
       { sel: '[data-action="tour-reset"]', t: '안내 다시 보기', b: '누르면 화면마다 처음 들어갈 때처럼 기능 안내가 다시 나와요.' }
@@ -2003,7 +2047,7 @@
         : '') +
       '</div>' +
       '<button class="btn primary big" data-action="talk-start">🗣 대화 시작</button>' +
-      (AI.key ? '' : '<div class="tip">OpenRouter API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>해 주세요.</div>') +
+      (aiHas() ? '' : '<div class="tip">AI 키가 필요해요 (Gemini 무료 키 또는 OpenRouter 키). <b data-action="go-settings-ai" data-gem="1" style="text-decoration:underline">설정에서 입력</b>해 주세요.</div>') +
       (log.length ? '<div class="section-title">최근 연습</div><div class="settings-group">' + log.map(function (l, i) {
         return '<button class="switch-row logrow" data-action="talk-log" data-i="' + ((S.talkLog.length - 1) - i) + '"><div><div class="sw-t">' + esc(scenarioById(l.scenario).icon + ' ' + (l.custom || scenarioById(l.scenario).name)) + '</div><div class="sw-s">' + esc(l.date + (l.time ? ' ' + l.time : '')) + ' · ' + l.turns + '턴 · 미션 ' + l.used + '/' + l.total + (l.score ? ' · ★' + l.score : '') + '</div></div><span class="chev">›</span></button>';
       }).join('') + '</div>' : '') +
@@ -2012,8 +2056,8 @@
   };
 
   function talkStart() {
-    if (!AI.key) {
-      confirm2('OpenRouter API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); });
+    if (!aiHas()) {
+      confirm2('AI 키가 아직 없어요 (Gemini 무료 키 또는 OpenRouter 키).\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); });
       return;
     }
     var t = S.settings.talk;
@@ -2413,8 +2457,8 @@
           '<button class="yi-del" data-action="dlg-del" data-id="' + esc(r.id) + '" aria-label="삭제">' + ICON_X + '</button></div>';
       }).join('') :
         '<div class="empty">아직 만든 다이얼로그가 없어요</div><button class="btn primary big" data-action="dlg-add">+ 다이얼로그 만들기</button>') +
-      (AI.key ? '' : '<div class="tip">OpenRouter API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>해 주세요.</div>') +
-      '<div class="small muted yt-legal">대화는 적은 상황과 내 정보를 내 OpenRouter 키로 OpenRouter(→ Google Gemini 모델)에 보내서 만들어요. 읽기는 폰 안의 목소리로 해요.</div>' +
+      (aiHas() ? '' : '<div class="tip">AI 키가 필요해요 (Gemini 무료 키 또는 OpenRouter 키). <b data-action="go-settings-ai" data-gem="1" style="text-decoration:underline">설정에서 입력</b>해 주세요.</div>') +
+      '<div class="small muted yt-legal">대화는 적은 상황과 내 정보를 내 Gemini 키로 Google 에(안 되면 내 OpenRouter 키로 OpenRouter 에) 보내서 만들어요. 읽기는 폰 안의 목소리로 해요.</div>' +
       '</div>';
   };
   function dlgMicBtn(id) { var on = DSTT && DSTT.el === id; return '<button class="btn dl-mic' + (on ? ' on' : '') + '" data-action="dlg-mic" data-el="' + id + '">' + (on ? (DSTT.wait ? '…' : '■ 다 말했어요') : '🎤 말로 입력') + '</button>'; }
@@ -2443,9 +2487,9 @@
     if (!sit) { toast('어떤 상황인지 적거나 말해 주세요'); return; }
     if (i) i.blur();
     dlgMicCancel(); closeSheet();   // closeSheet 가 DED 를 버린다 — 위에서 잡아 둔 ed 를 쓴다
-    if (!AI.key) {
+    if (!aiHas()) {
       if (ed && dlgRec(ed.id)) DJOB[ed.id] = { busy: false, err: (DJOB[ed.id] || {}).err || '', q: { sit: sit, len: ed.len } };   // 고쳐 적은 글은 남긴다 (키를 넣고 수정 창을 다시 열면 채워짐)
-      confirm2('OpenRouter API 키가 아직 없어요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return;
+      confirm2('AI 키가 아직 없어요 (Gemini 무료 키 또는 OpenRouter 키).\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return;
     }
     if (ed) {   // 상황 수정: 있던 대화는 새 대화가 올 때까지 그대로 (dlgMake 가 성공했을 때만 상황·길이를 바꾼다)
       var old = dlgRec(ed.id); if (!old) return;
@@ -3564,7 +3608,7 @@
     var key = ytNorm(tok), gm = ytGlossMap(x, toks), prevI = YTV.card ? YTV.card.i : -1, lk = x.lk && Object.prototype.hasOwnProperty.call(x.lk, key) ? x.lk[key] : null;
     if (k in gm) { var g = x.x[gm[k]]; YTV.card = { i: i, t: k, g: gm[k], w: g.w, p: g.p, m: g.m }; }   // g: 표현 전체를 칠한다
     else if (lk) YTV.card = { i: i, t: k, w: lk.w, p: lk.p, m: lk.m };
-    else if (!AI.key) YTV.card = { i: i, t: k, err: '뜻을 찾으려면 OpenRouter API 키가 필요해요 (설정)' };
+    else if (!aiHas()) YTV.card = { i: i, t: k, err: '뜻을 찾으려면 AI 키가 필요해요 (설정)' };
     else { YTV.card = { i: i, t: k, loading: true }; ytLookup(x, i, k, tok); }
     if (prevI >= 0 && prevI !== i) ytRow(prevI);
     ytRow(i); ytShowCard(i);
@@ -3778,7 +3822,7 @@
       '<div class="imp-prev" id="impPrev"></div>' +
       '<div class="settings-group">' +
       '<div class="switch-row"><div><div class="sw-t">가져올 위치</div><div class="sw-s">1단계면 오늘 학습에 바로 포함돼요</div></div><div class="pick" id="imp-target"><button class="' + (addState.target === 1 ? 'on' : '') + '" data-action="imp-target" data-value="1">1단계</button><button class="' + (addState.target === 0 ? 'on' : '') + '" data-action="imp-target" data-value="0">대기</button></div></div>' +
-      '<div class="switch-row"><div><div class="sw-t">AI로 뜻·예문 자동 채우기</div><div class="sw-s">' + (AI.key ? '비어 있는 뜻·예문·해석·품사를 AI 가 채워요' : 'OpenRouter API 키가 필요해요 — <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>') + '</div></div><button class="toggle' + (addState.ai && AI.key ? ' on' : '') + '" data-action="imp-ai"' + (AI.key ? '' : ' disabled') + '></button></div>' +
+      '<div class="switch-row"><div><div class="sw-t">AI로 뜻·예문 자동 채우기</div><div class="sw-s">' + (aiHas() ? '비어 있는 뜻·예문·해석·품사를 AI 가 채워요' : 'AI 키가 필요해요 — <b data-action="go-settings-ai" data-gem="1" style="text-decoration:underline">설정에서 입력</b>') + '</div></div><button class="toggle' + (addState.ai && aiHas() ? ' on' : '') + '" data-action="imp-ai"' + (aiHas() ? '' : ' disabled') + '></button></div>' +
       '</div>' +
       '<button class="btn primary big" id="impGo" data-action="do-import">추가하기</button>';
   }
@@ -3787,7 +3831,7 @@
     var rows = parseLines(addState.text), noM = 0, noE = 0;
     rows.forEach(function (r) { if (!r.m) noM++; if (!r.e) noE++; });
     if (!rows.length) { el.innerHTML = ''; return; }
-    var useAi = addState.ai && !!AI.key;
+    var useAi = addState.ai && aiHas();
     el.innerHTML = '<b>' + rows.length + '개</b> 인식' + (noM ? ' · 뜻 없음 ' + noM + '개' : '') + (noE ? ' · 예문 없음 ' + noE + '개' : '') +
       ((noM || noE) ? (useAi ? ' → <span class="ai-mark">AI가 채워요</span>' : (noM ? ' → 뜻 없는 단어는 <b>건너뛰어요</b> (AI 채우기를 켜 보세요)' : '')) : '');
     var go = $('#impGo'); if (go && !addState.busy) go.textContent = '추가하기 (' + rows.length + '개)';
@@ -3864,7 +3908,7 @@
     if (addState.busy) return;
     var rows = parseLines(addState.text);
     if (!rows.length) { toast('추가할 줄이 없어요. 한 줄에 한 단어씩 적어 주세요'); return; }
-    var target = addState.target, useAi = addState.ai && !!AI.key;
+    var target = addState.target, useAi = addState.ai && aiHas();
     var need = rows.filter(function (r) { return !r.m || !r.e; });
     function finish() {
       var have = {}; S.words.forEach(function (w) { have[w.w.toLowerCase()] = true; });
@@ -3941,14 +3985,14 @@
       apick('pauseBetween', '다음 단어까지 대기', '', [[1000, '1초'], [1500, '1.5초'], [2000, '2초'], [3000, '3초']], au.pauseBetween) +
       asw('loop', '끝나면 처음부터 반복', '', au.loop) +
       '</div>' +
-      '<div class="section-title" id="ai-settings">AI (OpenRouter)</div><div class="settings-group">' +
-      '<div class="field" style="padding-top:12px"><label>OpenRouter API 키</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="sk-or-…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" data-for="ai-key" style="flex:none">보기</button></div></div>' +
-      '<div class="field"><label>모델</label><div class="row"><input id="ai-model" value="' + esc(AI.model) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-models" style="flex:none">목록</button></div></div>' +
-      '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://openrouter.ai/keys">키 발급 페이지</button></div>' +
-      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">예문·회화·번역·다이얼로그·자동 채우기·단어 뜻에 써요 (OpenRouter 는 유료 — 쓴 만큼 크레딧이 줄어요). 기본 모델 ' + AI_DEFAULT_MODEL + '. 키는 이 기기에만 저장되고 백업·드라이브에는 들어가지 않아요. AI 를 쓸 때만 그 글이 OpenRouter 를 거쳐 모델 제공자(기본: Google)로 전송돼요.</div>' +
-      '<div class="field"><label>유튜브 문장 정리용 Gemini API 키 (선택)</label><div class="row"><input id="ai-gkey" type="password" value="' + esc(AI.gkey) + '" placeholder="AQ.…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" data-for="ai-gkey" style="flex:none">보기</button></div></div>' +
+      '<div class="section-title" id="ai-settings">AI</div><div class="settings-group">' +
+      '<div class="field" style="padding-top:12px"><label>Gemini API 키 (무료 — 먼저 써요)</label><div class="row"><input id="ai-gkey" type="password" value="' + esc(AI.gkey) + '" placeholder="AQ.…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" data-for="ai-gkey" style="flex:none">보기</button></div></div>' +
       '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="open-url" data-url="https://aistudio.google.com/apikey">Gemini 키 발급 (무료)</button></div>' +
-      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">유튜브 정리는 영상 시간을 정확히 맞추려고 Google Gemini 를 직접 써요. 영상 링크(받은 영상은 소리)만 Google 로 가요.</div>' +
+      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">예문·회화·번역·다이얼로그·자동 채우기·단어 뜻·유튜브 문장 정리에 써요. AI 를 쓸 때만 그 글(유튜브는 영상 링크 · 받은 영상은 소리)이 Google 로 전송돼요. 유튜브 문장 정리는 이 키로만 돼요.</div>' +
+      '<div class="field"><label>OpenRouter API 키 (선택 — Gemini 가 안 될 때)</label><div class="row"><input id="ai-key" type="password" value="' + esc(AI.key) + '" placeholder="sk-or-…" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-key-eye" data-for="ai-key" style="flex:none">보기</button></div></div>' +
+      '<div class="field"><label>모델</label><div class="row"><input id="ai-model" value="' + esc(AI.model) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn" data-action="ai-models" style="flex:none">목록</button></div></div>' +
+      '<div class="btn-row" style="border-bottom:0"><button class="btn" data-action="ai-test">연결 테스트</button><button class="btn" data-action="open-url" data-url="https://openrouter.ai/keys">OpenRouter 키 발급</button></div>' +
+      '<div class="small muted" style="padding:0 0 12px;line-height:1.5">위 Gemini 키(무료)를 먼저 쓰고, 한도를 넘거나 오류가 나면 이 키로 넘어가요 (Gemini 키가 없으면 처음부터 이 키). OpenRouter 는 유료 — 쓴 만큼 크레딧이 줄어요. 모델은 OpenRouter 로 갈 때 쓰는 것, 기본 ' + AI_DEFAULT_MODEL + '. 키는 이 기기에만 저장되고 백업·드라이브에는 들어가지 않아요. 넘어갈 때만 그 글이 OpenRouter 를 거쳐 모델 제공자(기본: Google)로 전송돼요.</div>' +
       '<div class="small muted ai-last" id="ai-last">' + aiLastLine() + '</div>' +
       '</div>' +
       '<div class="section-title">회화 연습</div><div class="settings-group">' +
@@ -3956,7 +4000,7 @@
       '<div class="switch-row"><div><div class="sw-t">교정 설명 언어</div></div><div class="pick">' + [['ko', '한국어'], ['en', '영어']].map(function (o) { return '<button class="' + (o[0] === st.talk.feedbackLang ? 'on' : '') + '" data-action="talk-set-s" data-key="feedbackLang" data-value="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></div>' +
       '<div class="switch-row"><div><div class="sw-t">AI 답변 읽어 주기</div></div><button class="toggle' + (st.talk.speak ? ' on' : '') + '" data-action="talk-toggle" data-key="speak"></button></div>' +
       '<div class="switch-row"><div><div class="sw-t">말하면 바로 보내기</div><div class="sw-s">끄면 인식된 문장을 고친 뒤 보낼 수 있어요</div></div><button class="toggle' + (st.talk.autoSend ? ' on' : '') + '" data-action="talk-toggle" data-key="autoSend"></button></div>' +
-      '<div class="small muted" style="padding:6px 0 12px;line-height:1.5">말하기는 기기의 음성 인식 서비스(마이크 권한)를 쓰고, 인식된 문장과 대화 내용만 OpenRouter(→ AI 모델)로 전송돼요. 오디오는 저장하지 않아요.</div>' +
+      '<div class="small muted" style="padding:6px 0 12px;line-height:1.5">말하기는 기기의 음성 인식 서비스(마이크 권한)를 쓰고, 인식된 문장과 대화 내용만 Google Gemini(안 되면 OpenRouter)로 전송돼요. 오디오는 저장하지 않아요.</div>' +
       '</div>' +
       '<div class="section-title">화면</div><div class="settings-group">' +
       pick('theme', '밝기', '', [['light', '라이트'], ['dark', '다크']], st.theme) +
@@ -3987,7 +4031,7 @@
     $('#ai-gkey').addEventListener('input', function (e) { AI.gkey = e.target.value.trim(); saveAi(); });
     $('#ai-model').addEventListener('change', function (e) { AI.model = e.target.value.trim() || AI_DEFAULT_MODEL; if (AI.model.indexOf('/') < 0) AI.model = AI_DEFAULT_MODEL; e.target.value = AI.model; AI.noReason = false; saveAi(); });
     if (p && (p.scroll === 'audio' || p.scroll === 'ai')) { var el = $('#' + p.scroll + '-settings'); if (el) setTimeout(function () { el.scrollIntoView({ block: 'start' }); }, 30); }
-    if (p && p.scroll === 'ai' && !(p.gem ? AI.gkey : AI.key)) setTimeout(function () { var k = $(p.gem ? '#ai-gkey' : '#ai-key'); if (k) k.focus(); }, 350);   // 유튜브에서 온 길(gem)은 Gemini 키 칸으로
+    if (p && p.scroll === 'ai' && !(p.gem ? AI.gkey : aiHas())) setTimeout(function () { var k = $('#ai-gkey'); if (k) k.focus(); }, 350);   // 키가 없어서 온 길 → 무료 Gemini 키 칸으로 (유튜브(gem)는 Gemini 키가 꼭 있어야)
   };
 
   function backupJSON() { return JSON.stringify(S); }
@@ -4320,10 +4364,14 @@
     },
     'ai-key-eye': function (el) { var i = $('#' + (el.getAttribute('data-for') || 'ai-key')); var show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? '숨김' : '보기'; },
     'ai-test': function (el) {
-      if (!AI.key) { toast('API 키를 먼저 입력해 주세요'); $('#ai-key').focus(); return; }
+      if (!aiHas()) { toast('API 키를 먼저 입력해 주세요'); $('#ai-gkey').focus(); return; }
       var orig = el.textContent; el.disabled = true; el.textContent = '확인 중…';
       aiGenerateExample({ w: 'figure out', p: 'phr.', m: '알아내다, 해결하다', e: '' }, '', 'test').then(function (r) {
-        toast('연결 성공 ✓  ' + r.e);
+        var l = AI.last || {}, head = '연결 성공 ✓ (' + (l.by || 'AI') + ')' + (l.via ? '\n' + l.via : '');
+        if (!(AI.gkey && AI.key) || l.via) { toast(head + '\n' + r.e); return; }
+        return bridge.aiCall(OR_URL + '/key', AI.key, '', 30000).then(function (res) {   // 돈 안 드는 키 확인
+          toast(head + '\nOpenRouter 키 ' + (res.status === 200 ? '✓' : '✗ ' + aiErrorMessage(res)));
+        });
       }, function (err) { toast(err && err.msg ? err.msg : '연결 실패'); }).then(function () { if (el.isConnected) { el.disabled = false; el.textContent = orig; } var n = $('#ai-last'); if (n) n.innerHTML = aiLastLine(); });
     },
     'ai-models': function (el) {
@@ -4368,7 +4416,7 @@
     'dlg-open': function (el) {
       var r = dlgRec(el.getAttribute('data-id')); if (!r) return;
       go('dlgv', { id: r.id });
-      if (!r.lines && !(DJOB[r.id] && DJOB[r.id].busy) && AI.key) dlgMake(r);
+      if (!r.lines && !(DJOB[r.id] && DJOB[r.id].busy) && aiHas()) dlgMake(r);
     },
     'dlg-del': function (el) {
       var id = el.getAttribute('data-id'), r = dlgRec(id); if (!r) return;
@@ -4378,7 +4426,7 @@
         S.dlg = S.dlg.filter(function (x) { return x.id !== id; }); delete DJOB[id]; if (DLGV && DLGV.id === id) DLGV = null; save(); render();
       });
     },
-    'dlg-remake': function () { var r = DLGV && dlgRec(DLGV.id); if (!r) return; if (!AI.key) { go('settings', { scroll: 'ai' }); return; } dlgStop(); dlgMake(r); },
+    'dlg-remake': function () { var r = DLGV && dlgRec(DLGV.id); if (!r) return; if (!aiHas()) { go('settings', { scroll: 'ai', gem: 1 }); return; } dlgStop(); dlgMake(r); },
     'dlg-menu': function () {
       var r = DLGV && dlgRec(DLGV.id); if (!r) return;
       openSheet('<div class="sh-word"><span>' + esc(r.title || '다이얼로그') + '</span></div><div class="yt-menu">' +

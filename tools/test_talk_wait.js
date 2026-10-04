@@ -28,7 +28,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   eq('안드로이드 브리지 모드', await p.evaluate(() => typeof window.Android.aiCall), 'function');
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
-  await p.evaluate(() => { window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
+  await p.evaluate(() => { window.Android.save('TKN', 'vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); });
   await p.reload(); await p.waitForTimeout(400);
   await p.click('[data-action="talk"]'); await p.waitForTimeout(200);
   await p.click('[data-action="talk-start"]'); await p.waitForTimeout(300);
@@ -98,7 +98,7 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);   // talk → home (탭바는 홈에서만)
   await p.click('[data-action="tab"][data-tab="settings"]'); await p.waitForTimeout(300);
   console.log('settings last line:', await p.textContent('#ai-last'));
-  eq('마지막 호출 줄', await p.textContent('#ai-last').then(t => /회화 정리 · .*초 · 성공/.test(t)), true);
+  eq('마지막 호출 줄', await p.textContent('#ai-last').then(t => /회화 정리 · .*초 · OpenRouter 성공/.test(t)), true);
   // v2.2: 브리지 토큰 — 앱은 모든 호출에 토큰을 싣고, 토큰 없는 호출(유튜브 iframe 흉내)은 키를 못 읽는다
   eq('앱의 브리지 호출은 전부 토큰 포함', await p.evaluate(() => window.__badToken || 0), 0);
   eq('토큰 없이 키 읽기 → 막힘', await p.evaluate(() => window.Android.load('vocab3.ai.v1') === undefined), true);

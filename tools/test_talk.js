@@ -24,7 +24,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   });
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400);
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); }); await p.reload(); await p.waitForTimeout(400);
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.colorTheme = 'sky'; window.__vocab.save(); }); await p.reload(); await p.waitForTimeout(400);
   await p.click('[data-action="talk"]'); await p.waitForTimeout(250);
   console.log('setup: scenarios', await p.$$eval('.scen', x => x.length), '| mission words', await p.$$eval('.mission .mchip', x => x.map(c => c.textContent)));
   await p.click('.scen[data-id="cafe"]'); await p.waitForTimeout(150);

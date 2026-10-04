@@ -1,9 +1,9 @@
 # 3단계 단어장 (vocab3) — Claude Code 작업 지침
 
-박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + AI 회화 연습(v2.37 부터 OpenRouter, 유튜브 정리만 Gemini).
+박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + AI 회화 연습(v2.38: 무료 Gemini 키 먼저 → 안 되면 OpenRouter, 유튜브 정리는 Gemini 만).
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.37 (versionCode 61).
+**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.38 (versionCode 62).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -60,6 +60,10 @@
     키 `vocab3.ai.v1` = {key(OpenRouter sk-or-…), model, gkey, or:1, noReason?, last} — `or` 가 없으면(v2.36 이전) 옛 key 를 gkey 로 옮기고 key 비움. **코드·저장소·백업·동기화에 절대 안 들어감.**
     Java `http()` 는 URL 로 헤더를 고른다: openrouter.ai → Authorization Bearer + HTTP-Referer/X-Title, generativelanguage → x-goog-api-key, 그 밖엔 키 안 보냄(브라우저 fetch 도 같은 규칙).
     테스트 스텁: OpenRouter = `{choices:[{message:{content}}]}`(test_ai·talk·talk_wait·stt·v2·dlg·skill), 유튜브 = 예전 `candidates` 그대로. 키는 `{ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 }`.
+  - **v2.38 Gemini 먼저(사용자 요청 "무료 제미나이 키 먼저 쓰고 안 되면 오픈라우터")**: `aiChat` = `AI.gkey` 가 있으면 `gemChat`(같은 opt 를 generateContent 로 — `gemSchema` 가 jObj 를 대문자 type·additionalProperties 없이·propertyOrdering,
+    thinkingBudget 0, 답은 OpenRouter 모양 `{choices:[{message:{content}}]}` 으로 바꿔 돌려줌) → 200 이 아니거나 빈 답이고 `AI.key` 가 있으면 `orChat`(v2.37 의 aiChat 그대로). 키가 하나뿐이면 그쪽만, 둘 다 실패하면 OpenRouter 오류를 보여 줌.
+    "키 있나"는 `aiHas()`(gkey || key) — 기능 분기에 `AI.key` 를 직접 쓰지 말 것. 설정은 Gemini 키 칸이 위(키 없어서 온 길은 #ai-gkey 에 포커스), "모델"은 OpenRouter 로 갈 때만 쓰임. Gemini 만 쓰다 429 면 OpenRouter 키 안내(`res.chat`).
+    한도가 찬 날에도 매번 Gemini 를 한 번 두드린다(바로 거절) — 거슬리면 429 뒤 건너뛰기. 테스트 `tools/test_gemfirst.js`; OpenRouter 길을 보는 테스트(talk·stt·talk_wait·v2·dlg)는 gkey 없이.
   - v2.37 키 저장: Java 가 `vocab3.ai.v1` 을 prefs 대신 `no_backup/ai.json` 에 둔다(`isKey`/`keyFile` — prefs 는 안드로이드 자동 백업·폰 옮기기에 따라가서 "키는 백업에 안 들어간다"가 거짓이었음). 옛 prefs 값은 처음 읽을 때 옮기고 지움 → 새 폰에선 키를 다시 넣어야 함.
     모델 목록은 `:batch`(비동기 전용) 제외. 유튜브에서 "키 필요"로 설정에 오면(`params.gem`) Gemini 키 칸에 포커스.
   - **v2.37 종합 회화 실력(사용자 요청)**: 통계 탭 #skillCard — 날짜별 꺾은선 하나(30·90일·전체 `S.settings.skillRange`, 70·85 눈금, 추정 구간 점선, 톡 = 그날 점수·영역 값 `skillSel`, "점수 설명" 창 `skillHelp`).

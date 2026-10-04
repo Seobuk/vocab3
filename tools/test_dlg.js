@@ -39,7 +39,7 @@ const LINES = [
   }, LINES);
   await p.goto(require('url').pathToFileURL(path.resolve(__dirname, '..', 'assets', 'index.html')).href); await p.waitForTimeout(300);
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
-  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', gkey: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.tour = { home: 1, dlg: 1, dlgv: 1, talk: 1, chat: 1, settings: 1 }; window.__vocab.save(); }); await p.reload(); await p.waitForTimeout(400);
+  await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.tour = { home: 1, dlg: 1, dlgv: 1, talk: 1, chat: 1, settings: 1 }; window.__vocab.save(); }); await p.reload(); await p.waitForTimeout(400);
 
   eq('홈 빠른 버튼 4개 (다이얼로그 포함)', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent)), ['회화 연습', '다이얼로그', '유튜브', '듣기 복습']);
   eq('빠른 버튼 크기 같음', await p.$$eval('.quick .q', x => new Set(x.map(e => Math.round(e.getBoundingClientRect().width) + 'x' + Math.round(e.getBoundingClientRect().height))).size), 1);
@@ -188,7 +188,7 @@ const LINES = [
   await p.reload(); await p.waitForTimeout(400); await open1();
   await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
   await p.fill('#dlgSit', '키 없이 고친 글'); await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(250);
-  eq('키 없음: 키를 넣으라는 창', /API 키가 아직 없어요/.test(await p.textContent('#modal')), true);
+  eq('키 없음: 키를 넣으라는 창', /AI 키가 아직 없어요/.test(await p.textContent('#modal')), true);
   await p.click('#modal [data-value=""]'); await p.waitForTimeout(250);
   await p.click('.dl-sit [data-action="dlg-edit"]'); await p.waitForTimeout(250);
   eq('키 없음: 적은 글이 남음 · 기록은 그대로', [await p.inputValue('#dlgSit'), await rec()], ['키 없이 고친 글', [SIT2, 'normal', 4]]);

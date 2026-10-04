@@ -25,6 +25,7 @@ const SENTS = [
         return Promise.resolve({ status: 404, text: () => Promise.resolve('{}') });
       }
       const sys = body.systemInstruction.parts[0].text;
+      if (/tapped a word/.test(sys)) return ok({ w: 'really', p: 'adv.', m: '정말로' });   // v2.38 단어 뜻도 Gemini 먼저
       if (window.__gemEmpty) return ok([]);
       if (window.__gemFail && window.__gemFail.length) { const f = window.__gemFail.shift(); return Promise.resolve({ status: f[0], text: () => Promise.resolve(JSON.stringify({ error: { message: f[1] } })) }); }
       return ok(sents);
@@ -169,8 +170,8 @@ const SENTS = [
   // --- 표현이 아닌 단어: Gemini 로 뜻 → 대기에 추가 · 다시 누르면 저장된 뜻 ---
   await p.dblclick('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(300);
   const look = await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test((c.body.messages ? c.body.messages[0].content : c.body.systemInstruction.parts[0].text))));
-  eq('뜻 요청에 문장·단어', look.length + ' ' + /Tapped word: "really"/.test(look[0].body.messages[1].content), '1 true');
-  eq('단어 뜻은 OpenRouter 설정 모델로', look[0].url + ' ' + look[0].body.model + ' ' + look[0].headers.Authorization, 'https://openrouter.ai/api/v1/chat/completions google/gemini-3.1-flash-lite Bearer TEST-KEY');
+  eq('뜻 요청에 문장·단어', look.length + ' ' + /Tapped word: "really"/.test(look[0].body.contents[0].parts[0].text), '1 true');
+  eq('단어 뜻도 무료 Gemini 먼저 (v2.38 · OpenRouter 안 부름)', /gemini-flash-lite-latest:generateContent$/.test(look[0].url) + ' ' + look[0].headers['x-goog-api-key'] + ' ' + look[0].headers.Authorization, 'true TEST-KEY undefined');
   eq('뜻 카드', await p.textContent('#ys1 .ycard .yc-m'), '정말로');
   await p.click('#ys1 [data-action="yt-add-word"][data-stage="0"]'); await p.waitForTimeout(150);
   eq('대기에 추가', await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'really'); return w && w.stage; }), 0);
