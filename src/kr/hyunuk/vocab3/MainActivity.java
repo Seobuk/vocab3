@@ -274,6 +274,12 @@ public class MainActivity extends Activity {
     // "켤 때 상태" 한 벌(vocab3.bak.*)은 자동 백업에 안 들어가는 파일로 — shared_prefs 에 두면 클라우드 백업(25MB 한도)이 두 배가 됐다 (v2.24)
     private boolean isBak(String key) { return key != null && key.startsWith("vocab3.bak"); }
     private java.io.File bakFile() { return new java.io.File(getNoBackupFilesDir(), "bak-start.json"); }
+    // v2.37: AI 키(OpenRouter 는 유료)는 no_backup 파일에 — prefs 에 두면 안드로이드 자동 백업·폰 옮기기에 따라간다 ("키는 백업에 안 들어간다"는 약속)
+    private boolean isKey(String key) { return "vocab3.ai.v1".equals(key); }
+    private java.io.File keyFile() { return new java.io.File(getNoBackupFilesDir(), "ai.json"); }
+    private boolean writeFile(java.io.File f, String value) {
+        try { OutputStream o = new java.io.FileOutputStream(f); o.write(value.getBytes(StandardCharsets.UTF_8)); o.close(); return true; } catch (IOException e) { return false; }
+    }
 
     private WebResourceResponse asset(Uri u, boolean mainFrame) {
         String p = u.getPath();
@@ -870,6 +876,12 @@ public class MainActivity extends Activity {
         public String load(String t, String key) {
             if (!ok(t)) return null;   // 토큰 없는 호출(유튜브 iframe·광고 프레임)은 무시
             if (isBak(key)) { try { return readAll(new java.io.FileInputStream(bakFile())); } catch (IOException e) { return null; } }
+            if (isKey(key)) {
+                if (keyFile().exists()) { try { return readAll(new java.io.FileInputStream(keyFile())); } catch (IOException e) { return null; } }
+                String old = prefs.getString(key, null);   // 예전 버전이 prefs 에 둔 키 — 파일로 옮기고 prefs 에서 지운다 (못 쓰면 그대로 둠)
+                if (old != null && writeFile(keyFile(), old)) prefs.edit().remove(key).apply();
+                return old;
+            }
             return prefs.getString(key, null);
         }
 
@@ -877,9 +889,10 @@ public class MainActivity extends Activity {
         public void save(String t, String key, String value) {
             if (!ok(t) || !bt.equals(sLive)) return;   // v2.23: 옛 페이지는 옛 S 로 덮지 못한다
             if (isBak(key)) {
-                try { OutputStream o = new java.io.FileOutputStream(bakFile()); o.write(value.getBytes(StandardCharsets.UTF_8)); o.close(); } catch (IOException ignored) { }
+                writeFile(bakFile(), value);
                 return;
             }
+            if (isKey(key) && writeFile(keyFile(), value)) { prefs.edit().remove(key).apply(); return; }   // 파일을 못 쓰면 예전처럼 prefs 에
             prefs.edit().putString(key, value).apply();
         }
 
@@ -887,6 +900,7 @@ public class MainActivity extends Activity {
         public void remove(String t, String key) {
             if (!ok(t) || !bt.equals(sLive)) return;
             if (isBak(key)) { bakFile().delete(); return; }
+            if (isKey(key)) keyFile().delete();
             prefs.edit().remove(key).apply();
         }
 

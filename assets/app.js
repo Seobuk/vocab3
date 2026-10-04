@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.36';
+  var APP_VERSION = '2.37';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -393,6 +393,7 @@
         if ((a.output_modalities || ['text']).join() !== 'text') return;
         if ((a.input_modalities || ['text']).indexOf('text') < 0) return;
         if (sp.length && sp.indexOf('structured_outputs') < 0) return;
+        if (/:batch$/.test(String(m.id))) return;   // 비동기 Batch API 전용 — chat/completions 로는 못 씀
         out.push(String(m.id));
       });
       out.sort(function (a, b) { var fa = /^google\//.test(a) ? 0 : 1, fb = /^google\//.test(b) ? 0 : 1; return fa - fb || a.localeCompare(b); });
@@ -569,7 +570,7 @@
       if (he.tk && typeof he.tk !== 'object') delete he.tk;
     }
     if (typeof s.kwGone !== 'number' || !(s.kwGone >= 0)) s.kwGone = 0;
-    if (!s.histEst) { histBackfill(s); s.histEst = 1; }
+    if (!s.histEst) { try { histBackfill(s); } catch (e) { } s.histEst = 1; }   // 그래프용 짐작이 틀어져도 기록 불러오기는 막지 않는다
     // v2.0: 연속 학습일 신기록 연출 — 기존 사용자는 지금까지의 최고 기록을 기준선으로
     if (typeof s.streakRecord !== 'number') s.streakRecord = bestStreakOf(s.studyDays);
     return s;
@@ -655,22 +656,22 @@
     t.n++;
     t.u += msgs.filter(function (m) { return m.r === 'u'; }).length || Number(rec.turns) || 0;
     t.f += msgs.filter(function (m) { return m.r === 'u' && m.f; }).length;
-    if (rec.score > 0) { t.sc += Number(rec.score); t.ns++; }
+    if (rec.score > 0) { t.sc += Math.min(5, Math.max(1, Number(rec.score))); t.ns++; }   // 모델이 1~5 밖 점수를 줘도 그래프가 안 튀게
     (rec.corrections || []).forEach(function (c) { var ty = c.ty || 'grammar'; t[ty === 'word' ? 'w' : ty === 'natural' ? 'x' : 'g']++; });
     if (est) h.e = 1;
   }
   // v2.37 이전 기록에서 한 번 다시 그린다 (migrate): 회화 리포트(최근 30개, 날짜·교정 있음) + 날짜별 학습 횟수(studyDays).
   // 단어별·문장별 날짜 기록은 없어서 — 단어 kw 는 지금 K 에서 그 뒤 날들의 '외웠다' 수 × 0.33(한 단계 오를 때 평균 가중)을 거꾸로 빼서 짐작, 문장은 비움.
   function histBackfill(s) {
-    var today = localDate(), K = knownK(s), days = Object.keys(s.studyDays || {}).filter(function (k) { return k < today; }).sort().reverse();
+    var today = localDate(), K = knownK(s), days = Object.keys(s.studyDays || {}).filter(function (k) { return k <= today; }).sort().reverse();   // 오늘 = 올리기 전에 한 공부(짐작 아님)
     days.forEach(function (k) {
       var d = s.studyDays[k] || {}, h = histDay(k, s);
       if (h.wy == null && h.wn == null) { h.wy = Number(d.memorized) || 0; h.wn = Math.max(0, (Number(d.judged) || 0) - h.wy); }
       if (h.kw == null) h.kw = Math.max(0, Math.round(K * 10) / 10);
-      h.e = 1;
+      if (k !== today) h.e = 1;
       K -= (Number(d.memorized) || 0) * 0.33;
     });
-    (s.talkLog || []).forEach(function (r) { if (r && /^\d{4}-\d\d-\d\d$/.test(r.date) && r.date < today) histTalk(r, s, true); });
+    (s.talkLog || []).forEach(function (r) { if (r && /^\d{4}-\d\d-\d\d$/.test(r.date) && r.date <= today) histTalk(r, s, r.date !== today); });
   }
 
   /* ---------------- daily set ---------------- */
@@ -756,7 +757,7 @@
       { sel: '.review-btn[data-stage="2"]', t: '외우면 한 단계씩', b: '카드에서 "외웠다"를 고르면 2단계, 또 외우면 3단계로 올라가고 3단계를 통과하면 졸업해요. "아직"이면 그 단계에 남아요.' },
       { sel: '.review-btn[data-action="sent"]', t: '졸업하면 문장 공부', b: '졸업한 단어의 예문과 유튜브에서 담은 문장을 우리말만 보고 영어로 말해 봐요. 졸업한 단어나 담은 문장이 생기면 열려요.' },
       { sel: '.quick', t: '회화 · 다이얼로그 · 유튜브 · 듣기', b: '회화 연습은 AI와 영어로 대화해요. 다이얼로그는 필요한 상황의 대화문을 만들어 외워요. 유튜브는 링크를 넣으면 문장마다 나눠 줘요. 듣기 복습은 화면을 꺼도 계속 읽어 줘요.' },
-      { sel: '#tabbar [data-tab="settings"]', t: 'AI 기능은 키가 필요해요', b: '회화 · 다이얼로그 · AI 채우기는 OpenRouter 키, 유튜브 문장 정리는 Gemini 키가 있어야 돼요. 설정의 "키 발급 페이지"에서 받아 넣어요.' }
+      { sel: '#tabbar [data-tab="settings"]', t: 'AI 기능은 키가 필요해요', b: '회화 · 다이얼로그 · AI 채우기는 OpenRouter 키, 유튜브 문장 정리는 Gemini 키가 있어야 돼요. 설정의 키 발급 버튼에서 받아 넣어요.' }
     ] },
     study: { steps: [
       { sel: '#cardArea .reveal[data-reveal="m"]', t: '뜻 보기 · 단어 읽기', b: '뜻 칸을 톡 하면 뜻이 보였다 가려져요. 위의 영어 단어를 톡 하면 읽어 줘요.' },
@@ -1800,7 +1801,7 @@
     var chips = '<div class="sk-range">' + [[30, '30일'], [90, '90일'], ['all', '전체']].map(function (o) { return '<button class="' + (String(o[0]) === String(rg) ? 'on' : '') + '" data-action="skill-range" data-r="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>';
     if (!last) return '<div class="card-box" id="skillCard">' + head + '<div class="empty">회화 연습이나 문장 공부를 하면 점수가 생겨요<br><span class="small">단어 카드 · 문장 공부 · 회화 연습 기록을 모두 합쳐서 매일 계산해요</span></div></div>';
     var prev = null, ago = new Date(); ago.setDate(ago.getDate() - 30); var agoK = dateKey(ago);
-    pts.forEach(function (o) { if (o.d <= agoK) prev = o; });
+    skillSeries(0).forEach(function (o) { if (o.s !== null && o.d <= agoK) prev = o; });   // 보는 기간(30일)과 상관없이 30일 전과 비교
     var diff = prev ? Math.round(last.s) - Math.round(prev.s) : null;
     var lvl = last.s >= 85 ? '원활하게 소통' : last.s >= 70 ? '일상 소통 가능' : last.s >= 50 ? '간단한 대화' : last.s >= 30 ? '기초 표현' : '첫걸음';
     // SVG 꺾은선 — x: 날짜, y: 0~100 (70·85 눈금), 추정한 날(e)은 점선
@@ -1817,7 +1818,7 @@
       prevI = i;
     });
     var grid = [0, 50, 70, 85, 100].map(function (v) {
-      return '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" class="' + (v === 70 || v === 85 ? 'sk-mark' : 'sk-grid') + '"/><text x="' + (L - 4) + '" y="' + (Y(v) + 3) + '" class="sk-ax">' + v + '</text>';
+      return '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" class="' + (v === 70 || v === 85 ? 'sk-mark' : 'sk-grid') + '"/><text x="' + (L - 4) + '" y="' + (Y(v) + 3) + '" class="sk-ax" text-anchor="end">' + v + '</text>';
     }).join('');
     var xl = [0, Math.floor((n - 1) / 2), n - 1].filter(function (v, i, a) { return a.indexOf(v) === i; }).map(function (i) {
       var dd = new Date(ser[i].d + 'T00:00:00');
@@ -2670,7 +2671,7 @@
           '<button class="yi-del" data-action="yt-del" data-id="' + esc(r.id) + '" aria-label="삭제">' + ICON_X + '</button></div>';
       }).join('') :
         '<div class="empty">아직 추가한 영상이 없어요</div><button class="btn primary big" data-action="yt-add">+ 영상 추가</button>') +
-      (AI.gkey ? '' : '<div class="tip">문장 정리는 Gemini API 키가 필요해요. <b data-action="go-settings-ai" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
+      (AI.gkey ? '' : '<div class="tip">문장 정리는 Gemini API 키가 필요해요. <b data-action="go-settings-ai" data-gem="1" style="text-decoration:underline">설정에서 입력</b>하면 무료로 쓸 수 있어요.</div>') +
       // YouTube API 서비스 이용 조건: 약관·개인정보처리방침 안내
       '<div class="small muted yt-legal">영상 재생은 YouTube API 서비스를 쓰며 <b data-action="open-url" data-url="https://www.youtube.com/t/terms">YouTube 서비스 약관</b>과 <b data-action="open-url" data-url="https://policies.google.com/privacy">Google 개인정보처리방침</b>이 적용돼요. 문장 정리는 영상 링크를 내 Gemini 키로 Google에 보내서 해요.' + (isAndroid ? ' 받은 영상은 이 폰의 앱 안에만 저장되고, 긴 영상은 정리할 때 그 소리를 10분씩 내 Gemini 키로 Google에 보내요.' : '') + '</div>' +
       '</div>';
@@ -2687,7 +2688,7 @@
     if (!vid) { toast('유튜브 링크를 확인해 주세요'); return; }
     inp.blur();   // 시트가 닫혀도 입력칸 포커스가 남아 키보드가 영상 화면을 가리던 것
     closeSheet();
-    if (!AI.gkey) { confirm2('유튜브 문장 정리는 Gemini API 키(무료)가 있어야 해요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai' }); }); return; }
+    if (!AI.gkey) { confirm2('유튜브 문장 정리는 Gemini API 키(무료)가 있어야 해요.\n설정에서 키를 입력할까요?', '설정으로').then(function (ok) { if (ok) go('settings', { scroll: 'ai', gem: 1 }); }); return; }
     for (var i = 0; i < S.yt.length; i++) if (S.yt[i].vid === vid) { toast('이미 있는 영상이에요'); go('ytv', { id: S.yt[i].id }); return; }
     var r = { id: uid(), vid: vid, title: '', date: localDate(), addedAt: Date.now(), sents: null };
     S.yt.push(r); save();
@@ -3986,7 +3987,7 @@
     $('#ai-gkey').addEventListener('input', function (e) { AI.gkey = e.target.value.trim(); saveAi(); });
     $('#ai-model').addEventListener('change', function (e) { AI.model = e.target.value.trim() || AI_DEFAULT_MODEL; if (AI.model.indexOf('/') < 0) AI.model = AI_DEFAULT_MODEL; e.target.value = AI.model; AI.noReason = false; saveAi(); });
     if (p && (p.scroll === 'audio' || p.scroll === 'ai')) { var el = $('#' + p.scroll + '-settings'); if (el) setTimeout(function () { el.scrollIntoView({ block: 'start' }); }, 30); }
-    if (p && p.scroll === 'ai' && !AI.key) setTimeout(function () { var k = $('#ai-key'); if (k) k.focus(); }, 350);
+    if (p && p.scroll === 'ai' && !(p.gem ? AI.gkey : AI.key)) setTimeout(function () { var k = $(p.gem ? '#ai-gkey' : '#ai-key'); if (k) k.focus(); }, 350);   // 유튜브에서 온 길(gem)은 Gemini 키 칸으로
   };
 
   function backupJSON() { return JSON.stringify(S); }
@@ -4531,7 +4532,7 @@
     'yt-add-word': function (el) { ytAddWord(+el.getAttribute('data-stage')); },
     'yt-pause-mode': function (el) { var on = S.settings.ytPause = !S.settings.ytPause; save(); el.classList.toggle('on', on); el.setAttribute('aria-pressed', String(on)); if (!on && YTV) YTV.stopAt = null; },
     'yt-replay': function () { if (YTV && YTV.act >= 0) ytPlaySent(YTV.act); },
-    'go-settings-ai': function () { go('settings', { scroll: 'ai' }); },
+    'go-settings-ai': function (el) { go('settings', { scroll: 'ai', gem: el && el.getAttribute('data-gem') ? 1 : 0 }); },
     'talk-scenario': function (el) { S.settings.talk.scenario = el.getAttribute('data-id'); save(); RENDER.talk(); },
     'talk-mission-n': function (el) { S.settings.talk.missionN = Number(el.getAttribute('data-n')); talkSetup.words = pickMissionWords(S.settings.talk.missionN); save(); RENDER.talk(); },
     'talk-reroll': function () { talkSetup.words = pickMissionWords(S.settings.talk.missionN); RENDER.talk(); },

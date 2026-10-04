@@ -17,6 +17,7 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
         { id: 'openai/gpt-5-mini', architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] }, supported_parameters: ['response_format', 'structured_outputs'] },
         { id: 'google/gemini-3.1-flash-lite', architecture: { input_modalities: ['text', 'image', 'audio', 'video'], output_modalities: ['text'] }, supported_parameters: ['structured_outputs', 'reasoning'] },
         { id: 'google/gemini-3.8-flash-lite-tts', architecture: { input_modalities: ['text'], output_modalities: ['audio'] }, supported_parameters: [] },
+        { id: 'google/gemini-3.1-flash-lite:batch', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, supported_parameters: ['structured_outputs'] },
         { id: 'some/old-model', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, supported_parameters: ['temperature'] },
         { id: 'deepseek/deepseek-v4-flash', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, supported_parameters: ['structured_outputs'] }] });
       if (key !== 'sk-or-TEST') return Promise.resolve({ status: 401, text: () => Promise.resolve(JSON.stringify({ error: { message: 'No auth credentials found', code: 401 } })) });
@@ -62,7 +63,9 @@ const OUT = path.resolve(__dirname, '..', 'build', 'shots');
   await p.click('[data-action="ai-test"]'); await p.waitForTimeout(300);
   console.log('connection test toast:', (await p.textContent('#toast')).slice(0, 40));
   await p.click('[data-action="ai-models"]'); await p.waitForTimeout(300);
-  console.log('model list:', await p.$$eval('.model-list button', bs => bs.map(x => x.textContent)));
+  const mlist = await p.$$eval('.model-list button', bs => bs.map(x => x.textContent));
+  console.log('model list:', mlist);
+  console.log(mlist.some(x => /:batch/.test(x)) ? 'FAIL :batch 모델이 목록에 보임' : 'ok   :batch(비동기 전용) 모델은 목록에서 뺌');
   await p.click('.model-list button[data-model="deepseek/deepseek-v4-flash"]'); await p.waitForTimeout(200);
   console.log('picked model:', await p.inputValue('#ai-model'), '| stored:', await p.evaluate(() => JSON.parse(localStorage.getItem('vocab3.ai.v1')).model));
   await p.evaluate(() => { document.querySelector('#ai-model').value = 'gemini-flash-lite-latest'; document.querySelector('#ai-model').dispatchEvent(new Event('change')); });
