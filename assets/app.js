@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.38';
+  var APP_VERSION = '2.39';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -3860,7 +3860,7 @@
   RENDER.import = function (p) { if (p && p.text) addState.text = p.text; S.settings.addMode = 'bulk'; go('edit', { mode: 'bulk' }, true); };   // 예전 진입점 → 추가 탭(붙여넣기)
   // 한 줄 = 한 단어. 구분자: | · 탭 · " - " · " – " · " — " · " : ". 단어만 있어도 OK (뜻·예문은 AI가 채움)
   function parseLines(text) {
-    var out = [], seen = {};
+    var out = [];
     String(text || '').split(/\r?\n/).forEach(function (line) {
       line = line.replace(/^\s*(?:[-*•·▪]|\d+[.)])\s+/, '').trim(); if (!line) return;
       var parts;
@@ -3870,7 +3870,6 @@
       else parts = [line];
       parts = parts.map(function (x) { return x.trim(); });
       var w = parts[0]; if (!w || w.length > 60) return;
-      var key = w.toLowerCase(); if (seen[key]) return; seen[key] = true;
       out.push({ w: w, m: parts[1] || '', e: parts[2] || '', k: parts[3] || '', p: parts[4] || '' });
     });
     return out;

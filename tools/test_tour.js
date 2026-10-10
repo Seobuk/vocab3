@@ -2,6 +2,7 @@
 // 확인 창이 뜨면 숨었다가 닫히면 다시 · 가린 화면은 못 누름 · 모든 화면 안내를 끝까지 걸어 보며 요소·구멍·말풍선 확인 + 스크린샷 (build/shots/tour/).
 // 안내 목록(TOURS)은 app.js 소스에서 읽는다 — 앱에 테스트용으로 새로 연 것은 없다. Gemini(fetch · 가짜 Android aiCall)·유튜브 플레이어는 stub.
 const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
 const fs = require('fs'), path = require('path'), url = require('url');
 const ASSETS = path.resolve(__dirname, '..', 'assets'), SHOTS = path.resolve(__dirname, '..', 'build', 'shots', 'tour');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -22,7 +23,7 @@ const wav = Buffer.alloc(44 + 16000 * 12 * 2);
 wav.write('RIFF', 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVE', 8); wav.write('fmt ', 12); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
 wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
 
-async function newPage(b, o) {   // o: { android, tourTest(기본 켬) }
+async function newPage(b, o) {   // o: { android, tourTest(기본 켬), legacyState }
   const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   p.errs = []; p.on('pageerror', e => p.errs.push(e.message));
   await p.route(/youtube\.com|ytimg\.com|api\.github\.com/, r => r.abort());
@@ -37,7 +38,7 @@ async function newPage(b, o) {   // o: { android, tourTest(기본 켬) }
   await p.addInitScript(o => {
     const LS = localStorage;
     if (o.tourTest !== false && LS.getItem('T:tour') !== 'off') window.__tourTest = true;
-    const inj = LS.getItem('T:inject'); if (inj) { LS.setItem('vocab3.state.v1', inj); LS.removeItem('T:inject'); }   // 기존 사용자 상태를 앱보다 먼저 넣는다
+    const inj = o.legacyState || LS.getItem('T:inject'); if (inj) { LS.setItem('vocab3.state.v1', inj); LS.removeItem('T:inject'); }   // 기존 사용자 상태를 앱보다 먼저 넣는다
     window.__tel = (v, sel) => {   // 앱의 tourEl 과 같은 규칙: 그 화면 안(#tabbar·#ytFab 은 밖) · 크기 있음 · 안 숨김
       if (!sel) return null;
       const root = document.getElementById('view-' + v); let el = null;
@@ -238,8 +239,14 @@ async function walk(p, v, sfx) {
   // --- 3. 기존 사용자(안내 기록 없는 저장) → 어디서도 안 뜸 · 모든 화면 본 것으로 ---
   await fresh(p, false);
   const old = await p.evaluate(() => { const s = JSON.parse(JSON.stringify(window.__vocab.state())); delete s.settings.tour; s.words.slice(0, 6).forEach(w => { w.stage = 4; }); return JSON.stringify(s); });
-  await p.evaluate(j => { localStorage.setItem('T:inject', j); localStorage.removeItem('T:tour'); }, old);
-  await p.reload(); await p.waitForTimeout(1200);
+  const priorErrors = p.errs.slice();
+  await p.close();
+  p = await newPage(b, { legacyState: old });   // 기존 사용자 검사는 새 context 의 첫 로드에서 상태를 넣는다
+  await p.goto(FILE); await p.waitForTimeout(1200);
+  const fixture = JSON.parse(old);
+  const loaded = await p.evaluate(() => { const s = window.__vocab.state(); return { createdAt: s.createdAt, count: s.words.length, graduated: s.words.filter(w => w.stage === 4).map(w => w.id) }; });
+  assert.deepEqual(loaded, { createdAt: fixture.createdAt, count: fixture.words.length, graduated: fixture.words.filter(w => w.stage === 4).map(w => w.id) }, '기존 사용자 fixture 가 실제로 로드돼야 함');
+  console.log('ok   기존 사용자: fixture 로드 · 생성일/전체 단어/졸업 단어 유지');
   eq('기존 사용자: 홈 안내 안 뜸', (await tourN(p)) + ' ' + (await p.evaluate(() => window.__tourTest)), '0 true');
   eq('기존 사용자: TOURS 모든 화면 = 1 (저장소도)', await p.evaluate(keys => { const a = window.__vocab.state().settings.tour, b = JSON.parse(localStorage.getItem('vocab3.state.v1')).settings.tour; return keys.filter(k => a[k] !== 1 || b[k] !== 1).join(',') || 'all ' + keys.length; }, Object.keys(TOURS)), 'all ' + Object.keys(TOURS).length);
   const shownOld = [];
@@ -250,7 +257,7 @@ async function walk(p, v, sfx) {
     if (await tourN(p)) { shownOld.push(v); await p.evaluate(() => window.__appBack()); }
   }
   eq('기존 사용자: 10개 화면 어디서도 안 뜸', shownOld.join(',') || '없음', '없음');
-  eq('A 페이지 오류 없음', JSON.stringify(p.errs), '[]');
+  eq('A 페이지 오류 없음', JSON.stringify(priorErrors.concat(p.errs)), '[]');
   await p.close();
 
   // ===== 4. navigator.webdriver 인데 __tourTest 없음 → 안내 전혀 없음 =====

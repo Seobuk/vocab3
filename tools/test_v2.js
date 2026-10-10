@@ -1,6 +1,7 @@
 // v2.0: ★ 중요 단어 → 회화 미션 우선, 미션 칩 팝업, AI 답변 한글 번역(흐림→탭), 자연 교정 프롬프트, 한국어로 말하기(번역),
 //       학습 완료 축하(컨페티·카운트업·효과음·신기록), 단어 추가 붙여넣기 기본 + AI 채우기, 홈 빠른 실행, 회화 설정 접기. Gemini·음성인식 stub.
 const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
 const path = require('path');
 const OUT = path.resolve(__dirname, '..', 'build', 'shots');
 const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok  ' : 'FAIL') + ' ' + name + ': ' + got + (String(got) === String(want) ? '' : ' (기대: ' + want + ')'));
@@ -143,15 +144,33 @@ const eq = (name, got, want) => console.log((String(got) === String(want) ? 'ok 
   await p.click('#tabbar [data-tab="edit"]'); await p.waitForTimeout(300);
   eq('기본 탭 = 붙여넣기', await p.$$eval('#imp', x => x.length), 1);
   await p.fill('#imp', 'mulligan\ntinker with | 만지작거리다\n- ballpark figure | 대략적인 수치 | Can you give me a ballpark figure? | 대략 얼마쯤이야?\nmulligan'); await p.waitForTimeout(100);
-  eq('미리보기', await p.textContent('#impPrev'), '3개 인식 · 뜻 없음 1개 · 예문 없음 2개 → AI가 채워요');
+  eq('미리보기', await p.textContent('#impPrev'), '4개 인식 · 뜻 없음 2개 · 예문 없음 3개 → AI가 채워요');
   await p.screenshot({ path: OUT + '/209-add-bulk.png' });
   const wordsBefore = await p.evaluate(() => window.__vocab.state().words.length);
   await p.click('#impGo'); await p.waitForTimeout(600);
-  eq('3개 추가됨', await p.evaluate(() => window.__vocab.state().words.length) - wordsBefore, 3);
+  assert.equal(await p.evaluate(() => window.__vocab.state().words.length) - wordsBefore, 4, '같은 붙여넣기의 반복 단어도 모두 추가');
+  assert.equal(await p.evaluate(() => window.__vocab.state().words.filter(w => w.w === 'mulligan').length), 2, 'AI 채우기도 반복된 두 단어를 모두 유지');
+  console.log('ok   같은 붙여넣기 반복 4개 추가 · mulligan 2개 유지');
   eq('AI가 뜻·예문 채움', await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'mulligan'); return w.m + ' | ' + w.e + ' | ' + w.p + ' | ' + w.stage; }), '뜻:mulligan | I use mulligan every day. | v. | 1');
   eq('있던 값은 유지', await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'tinker with'); return w.m + ' | ' + w.e; }), '만지작거리다 | I use tinker with every day.');
-  eq('AI 요청은 비어 있는 것만', await p.evaluate(() => { const c = window.__calls.filter(c => /complete vocabulary entries/.test(c.body.messages[0].content)); return c.length + ':' + JSON.parse(c[0].body.messages[1].content).map(x => x.w).join(','); }), '1:mulligan,tinker with');
+  eq('AI 요청은 비어 있는 것만', await p.evaluate(() => { const c = window.__calls.filter(c => /complete vocabulary entries/.test(c.body.messages[0].content)); return c.length + ':' + JSON.parse(c[0].body.messages[1].content).map(x => x.w).join(','); }), '1:mulligan,tinker with,mulligan');
   eq('추가 후 목록으로', await p.evaluate(() => document.querySelector('.view.active').id), 'view-list');
+  await p.click('#tabbar [data-tab="edit"]'); await p.waitForTimeout(200);
+  const existing = await p.evaluate(() => window.__vocab.state().words.filter(w => w.w.toLowerCase() === 'mulligan').map(w => w.id));
+  const duplicateRows = [
+    ['mulligan', '첫 뜻', 'This is the first mulligan.', '첫 해석'],
+    ['mulligan', '둘째 뜻', 'This is the second mulligan.', '둘째 해석'],
+    ['MULLIGAN', '셋째 뜻', 'This is the third mulligan.', '셋째 해석']
+  ];
+  const duplicateBefore = await p.evaluate(() => window.__vocab.state().words.length);
+  await p.fill('#imp', duplicateRows.map(r => r.join(' | ')).join('\n'));
+  assert.equal(await p.textContent('#impPrev'), '3개 인식', '기존 단어와 대소문자/붙여넣기 내 중복도 미리보기에 모두 포함');
+  await p.click('#impGo'); await p.waitForTimeout(600);
+  const duplicateResult = await p.evaluate(n => { const words = window.__vocab.state().words; return { added: words.slice(n).map(w => [w.w, w.m, w.e, w.k]), ids: words.slice(n).map(w => w.id), originals: words.filter(w => w.w.toLowerCase() === 'mulligan').slice(0, 2).map(w => w.id) }; }, duplicateBefore);
+  assert.deepEqual(duplicateResult.added, duplicateRows, '기존 단어와 중복인 각 줄의 순서/뜻/예문/해석 모두 유지');
+  assert.equal(new Set(duplicateResult.ids).size, 3, '각 중복 단어를 독립된 항목으로 추가');
+  assert.deepEqual(duplicateResult.originals, existing, '원래 단어를 덮어쓰지 않음');
+  console.log('ok   기존 단어/붙여넣기 내 중복 3개 독립 추가 · 원래 단어 유지');
   await p.click('#tabbar [data-tab="edit"]'); await p.waitForTimeout(200);
   await p.click('[data-action="add-mode"][data-mode="one"]'); await p.waitForTimeout(150);
   eq('한 단어 탭', await p.$$eval('#f-w', x => x.length), 1);
