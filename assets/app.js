@@ -816,7 +816,7 @@
       { sel: '.search', t: '검색 · ★ · 예문', b: '단어·뜻·예문으로 찾을 수 있어요. ★을 누르면 중요 단어만, "예문"을 누르면 예문 줄을 숨기거나 다시 보여 줘요.' }
     ] },
     edit: { need: '#imp', steps: [
-      { sel: '#imp', t: '목록 그대로 붙여넣기', b: '한 줄에 한 단어씩 적거나 복사한 목록을 그대로 붙여 넣어요. 번호·글머리표는 알아서 떼고, 이미 있는 단어는 건너뛰어요.' },
+      { sel: '#imp', t: '목록 그대로 붙여넣기', b: '한 줄에 한 단어씩 적거나 복사한 목록을 그대로 붙여 넣어요. 번호·글머리표는 알아서 떼고, 이미 있는 단어도 그대로 추가돼요.' },
       { sel: '.settings-group > .switch-row:first-child', t: '1단계 또는 대기', b: '"1단계"는 오늘 학습에 바로 들어가요. "대기"는 대기 단어장 맨 뒤에 붙어 날마다 차례로 1단계로 넘어와요.' },
       { sel: '.settings-group > .switch-row:last-child', t: 'AI로 뜻 채우기', b: '켜면 비어 있는 뜻·예문·해석을 AI가 채워요. 꺼져 있으면 뜻을 안 적은 줄은 건너뛰어요. 키가 없으면 설정에서 먼저 넣어요.' }
     ] },
@@ -3911,19 +3911,16 @@
     var target = addState.target, useAi = addState.ai && aiHas();
     var need = rows.filter(function (r) { return !r.m || !r.e; });
     function finish() {
-      var have = {}; S.words.forEach(function (w) { have[w.w.toLowerCase()] = true; });
-      var added = 0, skipped = 0, noMeaning = 0, today = localDate();
+      var added = 0, noMeaning = 0, today = localDate();
       rows.forEach(function (r) {
-        if (have[r.w.toLowerCase()]) { skipped++; return; }
         if (!r.m) { noMeaning++; return; }
-        have[r.w.toLowerCase()] = true;
         var nw = mkWord({ w: r.w, m: r.m, e: r.e, k: r.k, p: r.p, t: r.ai ? 'AI 채움' : '' });
         if (target === 1) { nw.stage = 1; nw.dailyDate = today; }
         S.words.push(nw); added++;
       });
       save();
       addState.text = ''; addState.busy = false;
-      toast(added + '개 추가' + (skipped ? ' · 중복 ' + skipped : '') + (noMeaning ? ' · 뜻 없음 ' + noMeaning + '개 건너뜀' : ''));
+      toast(added + '개 추가' + (noMeaning ? ' · 뜻 없음 ' + noMeaning + '개 건너뜀' : ''));
       stack = [{ view: 'home', params: {} }];
       go('list', { stage: target });
     }
