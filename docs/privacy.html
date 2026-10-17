@@ -24,7 +24,7 @@
 <main class="wrap">
   <article class="doc">
     <h1>3단계 단어장 개인정보처리방침</h1>
-    <p>시행일: 2026년 9월 18일 (개정: 2026년 10월 4일 · v2.38)</p>
+    <p>시행일: 2026년 9월 18일 (개정: 2026년 10월 18일 · v2.40)</p>
 
     <h2>1. 수집하는 개인정보</h2>
     <p>「3단계 단어장」(이하 "앱")은 어떠한 개인정보도 수집하지 않습니다. 회원가입, 로그인, 계정 연동 기능이 없으며, 이름·이메일·기기 식별자·위치 정보 등을 요청하거나 저장하지 않습니다.</p>
@@ -38,7 +38,10 @@
 
     <h2>2-2. 회화 연습 (선택 기능)</h2>
     <p>회화 연습에서 마이크 버튼을 누르면 기기에 내장된 음성 인식 서비스(대개 Google)가 말을 텍스트로 바꿉니다. 앱은 오디오를 저장하거나 자체 서버로 보내지 않으며, 인식된 문장과 대화 내용만 사용자의 OpenRouter API 키로 OpenRouter(→ 고른 모델의 제공자, 기본 Google)에 전송되어 답변·한국어 번역·교정을 받습니다. "한국어로 말하기"를 쓰면 인식된 한국어 문장이 영어로 옮기기 위해 같은 방식으로 전송됩니다. 마이크 권한(RECORD_AUDIO)은 이 기능을 처음 쓸 때 요청되며, 거부해도 텍스트 입력으로 연습할 수 있습니다.</p>
-    <p>다이얼로그(v2.35 이상)에서 상황을 적거나 말하면(한국어 음성 인식은 위와 같은 기기 서비스), 그 상황 문장과 사용자가 "내 정보"에 적어 둔 내용(고른 내 목소리 남/여 포함)이 사용자의 OpenRouter API 키로 OpenRouter(→ 모델 제공자)에 전송되어 짧은 영어 대화문과 번역을 받아옵니다. "내 정보"는 회화 연습 요청에도 함께 전송됩니다. 내 정보는 비워 둘 수 있고, 적은 내용과 만든 대화는 기기 안(과 사용자가 만든 백업 파일·켠 드라이브 연동 파일)에만 저장됩니다. 대화 읽기는 기기 안 음성(TTS)으로 하며 문장을 밖으로 보내지 않습니다.</p>
+    <p>다이얼로그(v2.35 이상)에서 상황을 적거나 말하면(한국어 음성 인식은 위와 같은 기기 서비스), 그 상황 문장과 사용자가 "내 정보"에 적어 둔 내용(고른 내 목소리 남/여 포함)이 사용자의 OpenRouter API 키로 OpenRouter(→ 모델 제공자)에 전송되어 짧은 영어 대화문과 번역을 받아옵니다. "내 정보"는 회화 연습 요청에도 함께 전송됩니다. 내 정보는 비워 둘 수 있고, 적은 내용과 만든 대화는 기기 안(과 사용자가 만든 백업 파일·켠 드라이브 연동 파일)에만 저장됩니다. 기본 읽기는 기기 안 음성(TTS)으로 하며 문장을 밖으로 보내지 않습니다. 선택한 AI 음성 기능은 아래 설명을 따릅니다.</p>
+    <p>영어 노트의 일기·문단은 원문 그대로 기기에 저장할 수 있으며, 이때 외부로 전송하지 않습니다. "원문 살려 정리"를 누르면 입력한 원문이 위 AI 요청 순서에 따라 Google Gemini 또는 OpenRouter와 해당 모델 제공자에게 전송되어 최소한의 교정본과 번역을 받습니다. 원문과 정리본은 학습 데이터에 함께 보관되며 사용자가 만든 JSON 백업과 드라이브 연동 파일에 포함됩니다.</p>
+    <h2>2-2-1. AI 음성 (선택 기능)</h2>
+    <p>설정에서 "AI 음성 · 자연스럽게 읽기"를 켜면 읽을 영어 문장과 음성 스타일 지시가 사용자의 Gemini API 키로 Google Gemini API에 전송되어 음성을 생성합니다. 이 음성 요청은 OpenRouter로 전환하지 않습니다. API 사용량과 요금은 사용자의 Google 계정 정책을 따릅니다. 생성한 음성은 기기의 WebView 저장소에 최대 약 24MB 보관하여 재사용하며 오래된 음성부터 지웁니다. 이 음성 캐시는 앱에서 만드는 JSON 백업·드라이브 연동 파일에 포함하지 않으며, 설정의 "저장한 AI 음성 지우기" 또는 전체 초기화로 삭제할 수 있습니다. AI 음성을 끄거나 생성이 실패하면 폰의 TTS를 사용합니다. 화면을 끈 상태의 듣기 복습은 계속 폰의 TTS를 사용합니다.</p>
     <h2>2-3. 단어 추가 시 AI 채우기 (선택 기능)</h2>
     <p>여러 단어를 붙여넣어 추가할 때 "AI로 뜻·예문 자동 채우기"를 켜 두면, 뜻이나 예문이 비어 있는 단어 목록이 사용자의 OpenRouter API 키로 OpenRouter(→ 모델 제공자)에 전송되어 뜻·예문·해석을 받아옵니다. 끄면 전송되지 않습니다.</p>
 
@@ -56,10 +59,10 @@
     <ul>
       <li>인터넷(INTERNET): 선택 기능인 AI 예문 생성·회화 연습·다이얼로그·유튜브 쉐도잉(영상 재생·받기)과 앱 업데이트 확인에만 사용합니다. 광고·분석·추적 목적의 통신은 없습니다.</li>
       <li>앱 설치 요청(REQUEST_INSTALL_PACKAGES, GitHub 배포 APK 만): 앱 자체 업데이트에서 새 버전 APK 를 설치 화면에 넘길 때만 씁니다. Google Play 빌드에는 없습니다.</li>
-      <li>마이크(RECORD_AUDIO): 회화 연습과 다이얼로그(상황·내 정보를 말로 입력)의 말하기 입력(기기 음성 인식)에만 사용합니다. 오디오는 저장·전송되지 않습니다.</li>
+      <li>마이크(RECORD_AUDIO): 회화 연습과 영어 노트(상황·영어 원문·내 정보를 말로 입력)의 말하기 입력(기기 음성 인식)에만 사용합니다. 앱은 마이크 오디오를 저장하거나 자체 서버로 보내지 않습니다.</li>
       <li>진동(VIBRATE): 카드를 넘길 때 짧은 햅틱 피드백을 주기 위해 사용합니다.</li>
       <li>포그라운드 서비스·알림·절전 방지(FOREGROUND_SERVICE_MEDIA_PLAYBACK, POST_NOTIFICATIONS, WAKE_LOCK): 듣기 복습을 화면이 꺼진 상태에서도 이어서 재생하고 알림으로 제어하기 위해서만 사용합니다.</li>
-      <li>텍스트 음성 변환(TTS): 기기에 설치된 음성 엔진으로 단어와 예문을 읽어 줍니다. 앱이 음성 데이터를 저장하거나 전송하지 않습니다.</li>
+      <li>텍스트 음성 변환(TTS): 기본은 기기에 설치된 음성 엔진으로 읽습니다. 선택적 AI 음성은 위 2-2-1에 따라 문장을 Google에 보내고 생성된 소리를 기기에 보관합니다.</li>
     </ul>
 
     <h2>5. 제3자 서비스, 광고, 분석</h2>
@@ -81,6 +84,7 @@
     <h2>Privacy Policy (English summary)</h2>
     <p>"3단계 단어장" (Three-Stage Vocabulary) does not collect personal data. There is no account, no sign-in, no advertising and no analytics SDK. Words, study history and settings are stored on your device. The app uses the Internet only for optional features: AI requests — example sentences, conversation practice, translation, dialogue generation including the optional "about me" text, word lookups — sent directly to the Google Gemini API with your own Gemini key first (on Google's free tier the content may be used to improve Google products and may be read by human reviewers) and, only if that request fails (quota, error) and you also entered an OpenRouter API key, to OpenRouter, which forwards them to the chosen model provider (default: Google Gemini 3.1 Flash-Lite); with only an OpenRouter key they go to OpenRouter; YouTube transcripts are sent only to the Google Gemini API with your Gemini key, YouTube playback and downloads, an update check against the GitHub API, and Google Drive sync through a file you choose. Your API keys are stored only on the device and are never included in backups or sync. Permissions: INTERNET, RECORD_AUDIO (optional speech input), VIBRATE, foreground service, notifications and wake lock (background listening review), REQUEST_INSTALL_PACKAGES (self-update in the GitHub build). Uninstalling the app or using "Reset all data" removes all stored data. Contact: hseo0102@gmail.com</p>
     </div>
+  <p lang="en">English Notes can store your original diary or prose locally. AI organization sends the source text to Gemini (or OpenRouter on fallback). Optional AI speech sends the text to Google Gemini using your key and caches up to approximately 24 MB of audio on the device. Audio clips are excluded from app JSON exports and Drive sync and can be cleared in settings. API usage may incur charges. Background listening review uses on-device TTS.</p>
   </article>
 </main>
 

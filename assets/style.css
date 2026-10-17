@@ -836,6 +836,13 @@ body { word-break: keep-all; overflow-wrap: break-word; }
 .dl-play svg { width: 26px; height: 26px; }
 .dl-play:disabled { opacity: .4; }
 .dl-play:active { transform: scale(.95); }
+.note-kind { margin: 14px 0 8px; }
+.note-original { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 10px; font-size: 14px; }
+.note-source summary { cursor: pointer; font-weight: 600; }
+.note-lines { margin-top: 18px; }
+.note-lines .dl-bub { max-width: none; flex: 1; }
+.note-lines .dl-e { white-space: pre-wrap; line-height: 1.7; font-weight: 500; }
+.note-lines .dl-tag { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .dl-bub { transition: none; } }
 
 /* v2.37 종합 회화 실력 그래프 (통계) */

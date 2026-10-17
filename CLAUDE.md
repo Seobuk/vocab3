@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + AI 회화 연습(v2.38: 무료 Gemini 키 먼저 → 안 되면 OpenRouter, 유튜브 정리는 Gemini 만).
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 Claude Code 가 개발·빌드·테스트·릴리스를 전부 맡는다.** 현재 v2.38 (versionCode 62).
+**이 PC(윈도우)의 개발 에이전트가 개발·빌드·테스트·릴리스를 맡는다.** 현재 개발 버전 v2.40 (versionCode 64).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -191,3 +191,10 @@ npm test             # 전체 UI 테스트. 개별: node tools/test_v2.js
 - API 키·비밀번호를 코드·문서·커밋 메시지에 적지 않는다.
 - 작업은 main 에 직접 커밋. worktree 브랜치를 만들었으면 끝나고 main 에 합친 뒤 브랜치 삭제.
 - 커밋 메시지는 한국어, 제목에 버전(`v2.1: …`).
+
+## 영어 노트·AI 음성 (2026-10-18)
+- 기존 dlg/dlgv 라우트와 S.dlg 키 유지, 화면 이름은 영어 노트. kind=note는 일기·문단, kind 없는 옛 기록은 migrate에서 dialog로 보정.
+- 추가 창 기본 note: 그대로 저장은 AI 없이 sit 원문(줄바꿈 포함)+문단별 lines 저장. 원문 살려 정리는 최소 교정/번역. 원문 sit는 정리본과 별도 보관. 기존 A/B 생성은 dialog 모드. DED에도 kind 보존, 실패 수정 q 유지.
+- assets/expressive.js: Gemini interactions TTS(gemini-3.8-flash-lite-tts), WAV Blob을 IndexedDB vocab3.voice/clips에 최대 약 24MB 저장(오래된 생성 순 삭제). JSON/Drive에는 음성·키 제외. 새 생성은 Gemini 키만 사용. stop 세대번호로 늦은 음성 차단; clear 뒤 요청은 캐시를 되살리지 않음.
+- S.settings.expressiveVoice 기본 false. 영어 문장은 AI, 단어는 local TTS; queue/onSpoke로 순서 유지. dlgSay는 생성/재생 종료를 기다리고 실패하면 local TTS. pause/화면 이동/중단 시 취소. keepOn은 노트 재생과 ytKeep 합집합.
+- Google 음성의 실제 억양/지연은 유효한 Gemini 키로 실기기 확인 필요. 자동검증은 API/재생 스텁 사용: tools/test_notes_voice.js 및 기존 tools/test_dlg.js.

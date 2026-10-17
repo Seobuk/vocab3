@@ -41,12 +41,12 @@ const LINES = [
   await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(300);
   await p.evaluate(() => { localStorage.setItem('vocab3.ai.v1', JSON.stringify({ key: 'TEST-KEY', or: 1 })); const s = window.__vocab.state(); s.settings.themeRandom = false; s.settings.tour = { home: 1, dlg: 1, dlgv: 1, talk: 1, chat: 1, settings: 1 }; window.__vocab.save(); }); await p.reload(); await p.waitForTimeout(400);
 
-  eq('홈 빠른 버튼 4개 (다이얼로그 포함)', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent)), ['회화 연습', '다이얼로그', '유튜브', '듣기 복습']);
+  eq('홈 빠른 버튼 4개 (다이얼로그 포함)', await p.$$eval('.quick .q .q-t', x => x.map(e => e.textContent)), ['회화 연습', '영어 노트', '유튜브', '듣기 복습']);
   eq('빠른 버튼 크기 같음', await p.$$eval('.quick .q', x => new Set(x.map(e => Math.round(e.getBoundingClientRect().width) + 'x' + Math.round(e.getBoundingClientRect().height))).size), 1);
   eq('글자 안 넘침', await p.$$eval('.quick .q-t', x => x.every(e => e.scrollWidth <= e.parentElement.clientWidth)), true);
   await p.screenshot({ path: OUT + '/dlg-0-home.png' });
   await p.click('.quick [data-action="dlg"]'); await p.waitForTimeout(200);
-  eq('빈 목록', await p.textContent('#view-dlg .empty'), '아직 만든 다이얼로그가 없어요');
+  eq('빈 목록', await p.textContent('#view-dlg .empty'), '아직 저장한 영어 노트가 없어요');
 
   // 내 정보 (음성 입력 → 창에)
   await p.click('#view-dlg .dl-me'); await p.waitForTimeout(250);
@@ -62,8 +62,9 @@ const LINES = [
   eq('내 정보 저장', await p.evaluate(() => window.__vocab.state().settings.profile), '한국기계연구원 연구원이에요. 일곱 살 딸이 하나 있어요.');
   eq('목록 카드에 내 정보', await p.textContent('#view-dlg .dl-me-s'), '한국기계연구원 연구원이에요. 일곱 살 딸이 하나 있어요.');
 
-  // 추가
+  // 기존 대화 만들기 모드도 지원한다
   await p.click('.topbar [data-action="dlg-add"]'); await p.waitForTimeout(250);
+  await p.click('[data-action="note-kind"][data-value="dialog"]');
   await p.click('[data-action="dlg-submit"]'); await p.waitForTimeout(150);
   eq('빈 상황은 안내', await p.textContent('#toast'), '어떤 상황인지 적거나 말해 주세요');
   await p.fill('#dlgSit', '새로 온 연구원에게 연구소 투어를 하겠냐고 물어보기');
@@ -115,7 +116,7 @@ const LINES = [
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);
   const n0 = await p.evaluate(() => window.__said.length); await p.waitForTimeout(800);
   eq('목록으로 돌아가면 멈춤', await p.evaluate(() => window.__said.length), n0);
-  eq('목록 항목', await p.textContent('#view-dlg .yi-s'), '6줄 · 새로 온 연구원 · ' + await p.evaluate(() => window.__vocab.state().dlg[0].date) + ' · ▶ 2번');
+  eq('목록 항목', await p.textContent('#view-dlg .yi-s'), '대화 · 6줄 · 새로 온 연구원 · ' + await p.evaluate(() => window.__vocab.state().dlg[0].date) + ' · ▶ 2번');
   await p.screenshot({ path: OUT + '/dlg-6-list.png' });
 
   // 상황 수정 (v2.36): 상황 칸 "수정" → 지금 상황·길이가 든 창 → 고치거나 말로 덧붙여 다시 만들기. 새 대화가 와야 기록이 바뀐다.
@@ -169,7 +170,7 @@ const LINES = [
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);
   await p.click('#view-dlg .dl-me'); await p.waitForTimeout(250); await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);   // 닫힌 창에 남은 글이 되살아나지 않는다
   await p.click('.topbar [data-action="dlg-add"]'); await p.waitForTimeout(250);
-  eq('추가 창: 쓰던 글 그대로 (수정과 안 섞임)', await sheet(), ['새 다이얼로그', '쓰던 글', 'short', '만들기']);
+  eq('추가 창: 쓰던 글 그대로 (수정과 안 섞임)', await sheet(), ['새 영어 노트', '쓰던 글', 'short', '만들기']);
   await p.fill('#dlgSit', ''); await p.click('#sheet [data-action="close-sheet"]'); await p.waitForTimeout(250);
 
   // 회화 연습도 내 정보를 참고
