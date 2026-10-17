@@ -108,7 +108,7 @@ const SENTS = [
   eq('세로로 돌아오면 다시 위·아래 배치', await p.evaluate(() => getComputedStyle(document.querySelector('#ytBox')).position), 'sticky');
 
   // --- 문장 누르면 그 시점 재생, 다음 문장 시작에서 멈춤 ---
-  await p.click('#ys1 .ys-t'); await p.waitForTimeout(150);
+  await p.click('#ys1 .ys-t'); await p.waitForTimeout(550);
   eq('살짝 앞에서 재생', JSON.stringify((await yt('seek')).slice(-1)[0]), JSON.stringify({ fn: 'seek', t: 2.9 }));
   eq('재생', (await yt('play')).length, 1);
   eq('재생한 문장 표시', await p.$$eval('#ytList .ys.act', x => x.map(e => e.id).join()), 'ys1');
@@ -138,7 +138,7 @@ const SENTS = [
 
   // --- v2.26: 한글 줄 한 번 톡 = 그 문장 재생(한글은 그대로 가림) · 두 번 톡 = 한글 보임 ---
   const skK = (await yt('seek')).length;
-  await p.click('#ys1 .ko-line'); await p.waitForTimeout(500);
+  await p.click('#ys1 .ko-line'); await p.waitForTimeout(550);
   eq('한글 한 번 톡 = 재생 · 한글은 그대로 가림', ((await yt('seek')).length - skK) + ' ' + await p.$$eval('#ytList .ko-line.blur', x => x.length), '1 3');
   await p.dblclick('#ys1 .ko-line'); await p.waitForTimeout(150);
   eq('두 번 톡 = 누른 문장만 한글 보임', await p.$$eval('#ytList .ko-line.blur', x => x.length), 2);
@@ -149,9 +149,9 @@ const SENTS = [
 
   // --- v2.30: 문장 중간 단어를 한 번 톡 = 그 단어부터 (글자 수 비율로 짐작, 첫 단어면 문장 처음부터) ---
   const skF = (await yt('seek')).length;
-  await p.click('#ys1 .yw[data-t="1"]'); await p.waitForTimeout(500);
+  await p.click('#ys1 .yw[data-t="1"]'); await p.waitForTimeout(550);
   const s1 = (await yt('seek')).slice(-1)[0].t;
-  await p.click('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(500);
+  await p.click('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(550);
   const s13 = (await yt('seek')).slice(-1)[0].t;
   eq('첫 단어 = 문장 처음(2.9) · 중간 단어 = 더 뒤 (문장 안)', ((await yt('seek')).length - skF) + ' ' + s1 + ' ' + (s13 > s1 + 1 && s13 < 7), '2 2.9 true');
   await p.waitForTimeout(500);
@@ -160,7 +160,7 @@ const SENTS = [
   await p.dblclick('#ys1 .yw[data-t="5"]'); await p.waitForTimeout(150);   // v2.18: 두 번 톡 = 뜻
   eq('표현 카드', await p.textContent('#ys1 .ycard .yc-h b') + ' = ' + await p.textContent('#ys1 .ycard .yc-m'), 'dig into = 파고들다');
   eq('표현은 Gemini 안 부름', await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test((c.body.messages ? c.body.messages[0].content : c.body.systemInstruction.parts[0].text))).length), 0);
-  eq('두 번 톡: 첫 톡이 문장을 한 번 다시 재생, 둘째 톡은 뜻만', (await yt('seek')).length - skW2, 1);
+  eq('두 번 톡은 뜻만 열고 재생하지 않음', (await yt('seek')).length - skW2, 0);
   await p.screenshot({ path: OUT + '/302-yt-word.png' });
   await p.click('#ys1 [data-action="yt-add-word"][data-stage="1"]'); await p.waitForTimeout(150);
   const added = await p.evaluate(() => { const w = window.__vocab.state().words.find(w => w.w === 'dig into'); return w && [w.stage, w.m, w.e, w.k, w.t, w.dailyDate ? 'd' : ''].join('|'); });
@@ -182,16 +182,16 @@ const SENTS = [
   eq('이미 있는 단어 표시', await p.textContent('#ys1 .ycard .small'), '이미 단어장에 있어요 · 대기');
 
   // --- 기본 단어장에 이미 있는 표현 ---
-  await p.click('#ys2 .ys-t'); await p.waitForTimeout(100); await p.dblclick('#ys2 .yw[data-t="3"]'); await p.waitForTimeout(150);
+  await p.click('#ys2 .ys-t'); await p.waitForTimeout(550); await p.dblclick('#ys2 .yw[data-t="3"]'); await p.waitForTimeout(150);
   eq('기본 단어에 있는 표현은 추가 버튼 대신 안내', await p.textContent('#ys2 .ycard .small') + ' / 버튼 ' + await p.$$eval('#ys2 [data-action="yt-add-word"]', x => x.length), '이미 단어장에 있어요 · ' + await p.evaluate(() => ({ 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' })[window.__vocab.state().words.find(w => w.w === 'figure out').stage]) + ' / 버튼 0');
-  await p.click('#ys1 .ys-t'); await p.waitForTimeout(100);
+  await p.click('#ys1 .ys-t'); await p.waitForTimeout(550);
   // --- v2.18: 재생한 문장의 단어를 한 번 톡 = 그 문장 다시 재생 (뜻 안 열림) ---
   await p.click('#ys1 [data-action="yt-card-close"]').catch(() => {}); await p.waitForTimeout(100);
   const sk1 = (await yt('seek')).length;
   await p.click('#ys1 .yw[data-t="13"]'); await p.waitForTimeout(700);
   eq('한 번 톡 = 다시 재생 · 뜻 카드 안 열림', ((await yt('seek')).length - sk1) + ' ' + await p.$$eval('.ycard', x => x.length), '1 0');
   // --- 재생 안 한 문장의 단어는 먼저 재생 ---
-  await p.click('#ys2 .yw[data-t="1"]'); await p.waitForTimeout(150);   // 첫 단어 = 문장 처음부터 (v2.30: 중간 단어는 그 단어부터)
+  await p.click('#ys2 .yw[data-t="1"]'); await p.waitForTimeout(550);   // 첫 단어 = 문장 처음부터 (v2.30: 중간 단어는 그 단어부터)
   eq('다른 문장 단어 → 그 문장 재생', (await yt('seek')).slice(-1)[0].t, 7.5);
   eq('카드는 안 열림', await p.$$eval('.ycard', x => x.length), 0);
 
@@ -199,7 +199,7 @@ const SENTS = [
   await p.click('[data-action="yt-pause-mode"]'); await p.waitForTimeout(100);
   eq('멈춤 꺼짐 저장', await p.evaluate(() => window.__vocab.state().settings.ytPause), false);
   const pauses = (await yt('pause')).length;
-  await p.click('#ys0 .ys-t'); await p.evaluate(() => { window.__ytT = 3.5; }); await p.waitForTimeout(300);
+  await p.click('#ys0 .ys-t'); await p.waitForTimeout(550); await p.evaluate(() => { window.__ytT = 3.5; }); await p.waitForTimeout(300);
   eq('끄면 문장 끝에서 안 멈춤', (await yt('pause')).length, pauses);
 
   // --- 앱이 내려가면 멈춤 ---
@@ -212,7 +212,7 @@ const SENTS = [
   await p.evaluate(() => { const l = document.querySelector('#ytList'); l.scrollTop = l.scrollHeight; }); await p.waitForTimeout(300);
   eq('스크롤하면 영상은 제자리, 문장 영역이 그 위를 덮음', await p.evaluate(t => { const b = document.querySelector('#ytBox'), r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return Math.round(r.top) === t && document.querySelector('#ytBody').contains(hit) && document.querySelector('#ytList').scrollTop > 0; }, top0), true);
   const plays = (await yt('play')).length;
-  await p.click('#ys2 .ys-t'); await p.waitForTimeout(300);
+  await p.click('#ys2 .ys-t'); await p.waitForTimeout(550);
   eq('덮인 채로 문장을 눌러도 재생 (작은 창 없음)', ((await yt('play')).length - plays) + ' ' + await p.evaluate(() => document.querySelectorAll('.pip, .yt-pip-x').length), '1 0');
   await p.dblclick('#ys2 .yw[data-t="9"]'); await p.waitForTimeout(400);
   eq('단어 카드는 오른쪽 아래 버튼에 안 가림 (scroll-padding)', await p.evaluate(() => { const c = document.querySelector('.ycard'), r = c.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return c.contains(hit); }), true);
@@ -224,7 +224,7 @@ const SENTS = [
 
   // --- 멈춤 켜고 재생 중에 나갔다 오면 옛 멈춤 지점이 남지 않는다 ---
   await p.click('[data-action="yt-pause-mode"]'); await p.waitForTimeout(100);
-  await p.click('#ys1 .ys-t'); await p.waitForTimeout(400);
+  await p.click('#ys1 .ys-t'); await p.waitForTimeout(550);
   // --- 뒤로 → 목록 (플레이어 정리) ---
   await p.evaluate(() => window.__appBack()); await p.waitForTimeout(200);
   eq('뒤로 = 유튜브 목록', await view(), 'view-yt');
@@ -269,7 +269,7 @@ const SENTS = [
   // --- 앱 안 재생이 막힌 영상(150) → 유튜브 앱에서 그 시점 ---
   await p.evaluate(() => window.__ytEvents.onError({ data: 150 })); await p.waitForTimeout(100);
   eq('막힘 안내', await p.textContent('.yt-err').then(t => /퍼가기를 막음/.test(t)), true);
-  await p.click('#ys2 .ys-t'); await p.waitForTimeout(100);
+  await p.click('#ys2 .ys-t'); await p.waitForTimeout(550);
   eq('유튜브에서 그 시점 열기', await p.evaluate(() => window.__opened.slice(-1)[0]), 'https://youtu.be/H5h_GUaR-bU?t=7');
 
   // --- 비공개·없는 영상 → 이유 + 다시 시도 ---
@@ -308,7 +308,7 @@ const SENTS = [
   eq('예전 방식 영상을 열면 맨 위에 다시 정리 안내', await p.$$eval('.yt-old [data-action="yt-redo"]', x => x.length), 1);
   eq('악센트 단어는 한 단어, 끝 따옴표 없음', await p.$$eval('#ys0 .yw', x => x.map(e => e.textContent).join('|')), 'The|constructor|said|let’s|go|to|the|café');
   eq('곧은·굽은 따옴표를 같게 보고 표현 밑줄', await p.$$eval('#ys0 .yw.gx', x => x.map(e => e.textContent).join(' ')), 'let’s go');
-  await p.click('#ys0 .ys-t'); await p.waitForTimeout(150);
+  await p.click('#ys0 .ys-t'); await p.waitForTimeout(550);
   await p.dblclick('#ys0 .yw[data-t="5"]'); await p.waitForTimeout(150);
   eq('저장된 뜻 캐시(said)', await p.textContent('#ys0 .ycard .yc-m'), '말하다');
   const before = await p.evaluate(() => window.__calls.filter(c => c.body && /tapped a word/.test((c.body.messages ? c.body.messages[0].content : c.body.systemInstruction.parts[0].text))).length);

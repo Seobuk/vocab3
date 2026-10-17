@@ -3,7 +3,7 @@
   'use strict';
 
   var KEY = 'vocab3.state.v1';
-  var APP_VERSION = '2.40';
+  var APP_VERSION = '2.41';
   var STAGE_SHORT = { 0: '대기', 1: '1단계', 2: '2단계', 3: '3단계', 4: '졸업' };
   var STAGE_NAME = { 0: '대기 단어', 1: '새 단어장', 2: '외운 단어장', 3: '완전 암기장', 4: '졸업' };
   var STAGE_COLOR = { 0: 'var(--s0)', 1: 'var(--s1)', 2: 'var(--s2)', 3: 'var(--s3)', 4: 'var(--s4)' };
@@ -776,6 +776,7 @@
   }
   function updateBack() { bridge.setBackHandled(true); }
   function render() {
+    cancelTap();
     voiceStop();
     useTick();   // 앞 화면까지의 사용 시간을 넣고 새 화면으로 다시 잰다
     var cur = current();
@@ -1023,6 +1024,7 @@
   }
   var modalResolve = null;
   function ask(msg, buttons) {
+    cancelTap();
     return new Promise(function (resolve) {
       modalResolve = resolve;
       var m = $('#modal');
@@ -1044,6 +1046,7 @@
     if (r) r(value);
   }
   function openSheet(html) {
+    cancelTap();
     var s = $('#sheet');
     s.innerHTML = '<div class="grip"></div>' + html; s.scrollTop = 0;   // 앞 창을 스크롤했어도 새 창은 맨 위부터 (v2.26)
     $('#overlay').classList.add('show');
@@ -1349,17 +1352,50 @@
   // v2.30 학습 카드는 모두 같은 규칙 (유튜브·단어장과 같게, 사용자 요청): 한 번 톡 = 영어 읽기 · 두 번 톡(400ms) = 한글 보이기/가리기.
   //   단어 → 읽기 · 뜻 칸 → 한 번 톡 = 뜻 보이기/가리기 (v2.31 사용자 요청) · 예문 칸 → 가려져 있으면 한 번 = 영어 보기+읽기, 보이면 한 번 = 다시 읽기, 두 번 = 해석 보이기/가리기
   //   (한→영 모드의 영어 단어·영어 예문 칸 → 한 번 = 보이기+읽기, 보이면 다시 읽기)
-  var revealTap = null;
+  var pendingTap = null, DOUBLE_TAP_MS = 400;
+  function cancelTap() {
+    if (pendingTap) clearTimeout(pendingTap.timer);
+    pendingTap = null;
+  }
+  function chooseTap(el, key, single, double) {
+    var old = pendingTap;
+    if (old && old.el === el && old.key === key) {
+      cancelTap(); double(); return;
+    }
+    cancelTap();
+    var route = current(), tap = pendingTap = { el: el, key: key };
+    tap.timer = setTimeout(function () {
+      if (pendingTap !== tap) return;
+      pendingTap = null;
+      if (current() !== route || !el.isConnected || document.hidden || sheetOpen || modalOpen || TOUR) return;
+      single();
+    }, DOUBLE_TAP_MS);
+  }
+  // Hold the first action while the second finger press is still down.
+  // A long press/scroll cancels it instead of playing midway through the gesture.
+  document.addEventListener('pointerdown', function (e) {
+    var tap = pendingTap; if (!tap) return;
+    if (tap.el.contains(e.target)) { clearTimeout(tap.timer); tap.secondDown = true; }
+    else cancelTap();
+  }, true);
+  document.addEventListener('pointerup', function () {
+    var tap = pendingTap;
+    if (tap && tap.secondDown) setTimeout(function () { if (pendingTap === tap) cancelTap(); }, DOUBLE_TAP_MS);
+  });
+  document.addEventListener('pointercancel', cancelTap, true);
   function tapReveal(r) {
     var kind = r.getAttribute('data-reveal'), step = Number(r.getAttribute('data-step') || 0), max = Number(r.getAttribute('data-max') || 1), w = currentWord();
-    var now = Date.now(), lt = revealTap, dbl = lt && lt.r === r && now - lt.at < 400;
-    revealTap = dbl ? null : { r: r, at: now };
-    var say = function (t) { if (t) speak(t, 'en'); };
-    if (kind === 'm') { r.setAttribute('data-step', step ? '0' : '1'); bridge.vibrate(6); revealTap = null; return; }   // 뜻(한글): 한 번 톡 = 열기/닫기
-    var en = kind === 'e' ? w && w.e : w && w.w;   // 예문 · 한→영 모드의 영어 단어
-    if (!step) { r.setAttribute('data-step', '1'); bridge.vibrate(6); say(en); revealTap = null; return; }   // 가려진 영어 → 보이며 읽기 (두 번 톡으로 치지 않게 기록 지움)
-    if (dbl) { if (max >= 2) { r.setAttribute('data-step', step >= 2 ? '1' : '2'); bridge.vibrate(6); } return; }
-    say(en);
+    if (kind === 'm') { cancelTap(); r.setAttribute('data-step', step ? '0' : '1'); bridge.vibrate(6); return; }
+    var en = kind === 'e' ? w && w.e : w && w.w;
+    var single = function () {
+      if (!Number(r.getAttribute('data-step') || 0)) { r.setAttribute('data-step', '1'); bridge.vibrate(6); }
+      if (en) speak(en, 'en');
+    };
+    if (max < 2) { cancelTap(); single(); return; }
+    chooseTap(r, 'reveal', single, function () {
+      var st = Number(r.getAttribute('data-step') || 0);
+      r.setAttribute('data-step', st >= 2 ? '1' : '2'); bridge.vibrate(6);
+    });
   }
   var suppressClick = false;
   var LONG_PRESS_MS = 480;
@@ -1429,7 +1465,7 @@
       if (!d.moved && d.target && d.target.closest) {
         var r = d.target.closest('.reveal'), cw = !r && d.target.closest('[data-say="w"]');
         if (r) { tapReveal(r); suppressClick = true; setTimeout(function () { suppressClick = false; }, 60); }
-        else if (cw) { var cwd = currentWord(); if (cwd) speak(cwd.w, 'en'); suppressClick = true; setTimeout(function () { suppressClick = false; }, 60); }
+        else if (cw) { cancelTap(); var cwd = currentWord(); if (cwd) speak(cwd.w, 'en'); suppressClick = true; setTimeout(function () { suppressClick = false; }, 60); }
       }
     }
     card.addEventListener('pointerup', up);
@@ -1440,7 +1476,7 @@
       if (e.target.closest('button')) return;
       var r = e.target.closest('.reveal');
       if (r) tapReveal(r);
-      else if (e.target.closest('[data-say="w"]')) { var cw = currentWord(); if (cw) speak(cw.w, 'en'); }
+      else if (e.target.closest('[data-say="w"]')) { cancelTap(); var cw = currentWord(); if (cw) speak(cw.w, 'en'); }
     });
   }
   var flying = false;
@@ -3189,15 +3225,13 @@
       (x.k ? '<button class="ko-line' + (YTV.ko[i] ? '' : ' blur') + '" data-action="yt-ko" data-i="' + i + '">' + esc(x.k) + '</button>' : '') +
       (c ? ytCardHTML(c) : '') + (YTV.split === i ? '<div class="yt-split-h">✂ 두 번째 문장이 시작될 단어를 누르세요 · <b data-action="yt-split-cancel" data-i="' + i + '">취소</b></div>' : YTV.wpick === i ? '<div class="yt-split-h">📖 뜻을 볼 단어를 누르세요 · <b data-action="yt-split-cancel" data-i="' + i + '">취소</b></div>' : '') + '</div></div>';
   }
-  function ytSentTap(i) {   // v2.26: 문장·한글 줄 한 번 톡 = 그 문장 재생 · 두 번 톡(400ms) = 가린 한글 보이기/가리기 (단어장 예문과 같게, 사용자 요청)
-    var now = Date.now(), lt = YTV.stap;
-    if (lt && lt.i === i && now - lt.at < 400) {
-      YTV.stap = null; YTV.ko[i] = !YTV.ko[i];
-      var k = $('#ys' + i + ' .ko-line'); if (k) k.classList.toggle('blur', !YTV.ko[i]);
-      return;
-    }
-    YTV.stap = { i: i, at: now };
-    ytPlaySent(i);
+  function ytSentTap(i) {
+    var row = $('#ys' + i), view = YTV; if (!row || !view) return;
+    chooseTap(row, 'yt-sentence', function () { if (YTV === view) ytPlaySent(i); }, function () {
+      if (YTV !== view) return;
+      view.ko[i] = !view.ko[i];
+      var k = row.querySelector('.ko-line'); if (k) k.classList.toggle('blur', !view.ko[i]);
+    });
   }
   // --- 문장 선택창 (v2.17, 꾹 누르기): 문장 공부에 넣기 · 복사 · 앞/뒤와 합치기 · 쪼개기 ---
   function ytRowMenu(i) {
@@ -4336,15 +4370,14 @@
     'sync-now': function () { syncNow(true); toast('드라이브에 저장하는 중…'); },
     'sync-unlink': function () { confirm2('드라이브 연동을 끊을까요?\n(드라이브의 파일은 그대로 남아요)', '끊기', true).then(function (ok) { if (!ok) return; bridge.syncUnlink(); SYNC.err = ''; syncRefresh(); toast('연동을 끊었어요'); }); },
     'list-sort': function (el) { var v = el.getAttribute('data-v'); if (v === 'rand') listState.rnd = {}; S.settings.listSort = v; save(); RENDER.list({}); },   // 랜덤을 다시 누르면 새로 섞음
-    'list-ex': function (el) {   // 예문 한 번 톡 = 영어 읽기 · 두 번 톡(400ms) = 한글 해석 보이기/가리기 (v2.25)
-      var id = el.getAttribute('data-id'), now = Date.now(), lt = listState.tap;
-      if (lt && lt.id === id && now - lt.at < 400) {
-        listState.tap = null; listState.ko[id] = !listState.ko[id];
+    'list-ex': function (el) {
+      var id = el.getAttribute('data-id');
+      chooseTap(el, 'list-example', function () {
+        var w = byId(id) || boxById(id); if (w && w.e) speak(w.e, 'en');
+      }, function () {
+        listState.ko[id] = !listState.ko[id];
         var k = el.querySelector('.it-k'); if (k) k.classList.toggle('hid', !listState.ko[id]);
-        return;
-      }
-      listState.tap = { id: id, at: now };
-      var w = byId(id) || boxById(id); if (w && w.e) speak(w.e, 'en');
+      });
     },
     'list-word': function (el) { var w = byId(el.getAttribute('data-id')); if (!w) return; speak(w.w, 'en'); if (w.e) speak(w.e, 'en', true); },   // v2.36: 단어 → 예문 이어 읽기 (상세 창은 꾹)
     'list-sent': function (el) { openSentBox(el.getAttribute('data-id')); },
@@ -4572,16 +4605,16 @@
     },
     'dlg-opt': function (el) { var k = el.getAttribute('data-key'); S.settings[k] = !S.settings[k]; save(); if (DLGV) { DLGV.ko = {}; DLGV.show = {}; } dlgRenderBody(); },
     'dlg-play': function () { if (DP && !DP.one) dlgStop(); else dlgPlay(0); },
-    'dlg-line': function (el) {   // 한 번 톡 = 그 줄 읽기 (재생 중이면 거기서부터 이어서) · 두 번 톡(400ms) = 한글 보이기/가리기 · 가린 내 대사는 톡 = 보이기
-      var i = +el.getAttribute('data-i'), now = Date.now(), tp = DLGV.tap;
-      DLGV.tap = { i: i, t: now };
-      if (tp && tp.i === i && now - tp.t < 400) {
-        DLGV.tap = null; DLGV.ko[i] = !DLGV.ko[i];
-        var k = el.querySelector('.dl-k'); if (k) k.classList.toggle('hid');
-        return;
-      }
-      var e = el.querySelector('.dl-e.hid'); if (e) { e.classList.remove('hid'); DLGV.show[i] = 1; }
-      if (DP && !DP.one) { dlgStop(true); dlgPlay(i); } else dlgPlay(i, true);
+    'dlg-line': function (el) {
+      var i = +el.getAttribute('data-i'), view = DLGV; if (!view) return;
+      chooseTap(el, 'note-line', function () {
+        if (DLGV !== view) return;
+        var e = el.querySelector('.dl-e.hid'); if (e) { e.classList.remove('hid'); view.show[i] = 1; }
+        if (DP && !DP.one) { dlgStop(true); dlgPlay(i); } else dlgPlay(i, true);
+      }, function () {
+        if (DLGV !== view) return;
+        view.ko[i] = !view.ko[i]; var k = el.querySelector('.dl-k'); if (k) k.classList.toggle('hid');
+      });
     },
     'yt-submit': function () { ytSubmit(); },
     'yt-open': function (el) { var r = ytRec(el.getAttribute('data-id')); if (r) go('ytv', { id: r.id }); },
@@ -4623,17 +4656,17 @@
       confirm2('문장을 처음부터 다시 정리할까요?\n(단어장에 추가한 단어는 그대로 있어요)' + (hand ? '\n손으로 고친 시간도 새로 정리돼요' : ''), '다시 정리').then(function (ok) { if (ok) ytProcess(r); });
     },
     'yt-sent': function (el) { ytModeOff(); ytSentTap(+el.getAttribute('data-i')); },   // 다른 곳을 누르면 쪼개기·단어 고르기 취소
-    'yt-word': function (el) {   // v2.18: 한 번 톡 = 그 문장 (다시) 재생 · 두 번 톡 = 단어 뜻 (다시 들으려다 뜻이 열리던 것) · 쪼개기 중이면 그 단어 앞에서 나눔
-      var i = +el.getAttribute('data-i'), k = +el.getAttribute('data-t'), now = Date.now(), lt = YTV.tap;
-      if (YTV.split === i) { ytSplitAt(i, k); return; }
-      if (YTV.wpick === i) { YTV.wpick = null; ytWord(i, k); return; }   // 선택창 "단어 뜻 보기" 뒤 한 번 톡 (TalkBack 등 두 번 톡이 어려울 때)
+    'yt-word': function (el) {
+      var i = +el.getAttribute('data-i'), k = +el.getAttribute('data-t'), view = YTV;
+      if (view.split === i) { cancelTap(); ytSplitAt(i, k); return; }
+      if (view.wpick === i) { cancelTap(); view.wpick = null; ytWord(i, k); return; }
       ytModeOff();
-      if (YTV.perr && YTV.act === i) { ytWord(i, k); return; }   // 앱 안 재생이 막힌 영상 — 다시 재생할 게 없으니 한 번 톡 = 뜻 (톡마다 유튜브 앱이 열리지 않게)
-      if (lt && lt.i === i && lt.k === k && now - lt.at < 400) { YTV.tap = null; ytWord(i, k); return; }
-      var tp = YTV.tap = { i: i, k: k, at: now };
-      var rr = ytRec(YTV.id);
-      ytPlaySent(i, true, rr ? ytWordTime(rr, i, k) : null);   // v2.30: 한 번 톡 = 누른 단어부터 (첫 단어면 문장 처음부터)
-      setTimeout(function () { if (YTV && YTV.tap === tp && YTV.card && YTV.card.i !== i) { var ci = YTV.card.i; YTV.card = null; ytRow(ci); } }, 420);   // 둘째 톡이 없으면 그때 다른 줄 카드를 닫는다
+      if (view.perr && view.act === i) { cancelTap(); ytWord(i, k); return; }
+      chooseTap(el, 'yt-word', function () {
+        if (YTV !== view) return;
+        var rr = ytRec(view.id); ytPlaySent(i, true, rr ? ytWordTime(rr, i, k) : null);
+        if (view.card && view.card.i !== i) { var ci = view.card.i; view.card = null; ytRow(ci); }
+      }, function () { if (YTV === view) ytWord(i, k); });
     },
     'yt-m-study': function (el) {
       var r = YTV && ytRec(YTV.id), x = r && r.sents[+el.getAttribute('data-i')]; if (!x || !x.k || x.kp) return;
@@ -4660,20 +4693,21 @@
     },
     'yt-ko': function (el) { ytModeOff(); ytSentTap(+el.getAttribute('data-i')); },   // v2.26: 한글 줄도 한 번 톡 = 재생 · 두 번 톡 = 한글 보이기/가리기
     'yt-card': function () { },
-    'yt-tap': function (el, e) {   // 받은 영상 탭: 재생 중이면 멈춤, 멈춰 있으면 이어 재생 — 문장 중간에서 멈췄다 이으면 그 문장 끝에서 멈춤(stopAt 그대로)
+    'yt-tap': function (el, e) {
       if (!YTP || !YTP.local || !YTV.ready) return;
-      // v2.21: 왼쪽·오른쪽 1/3 을 두 번 톡 = 앞·뒤 문장 (첫 톡은 바로 멈춤/재생 — 기다리지 않는다, 둘째 톡의 문장 재생이 덮는다)
-      var rc = el.getBoundingClientRect(), fx = e && e.detail && rc.width ? (e.clientX - rc.left) / rc.width : 0.5, side = fx < 1 / 3 ? -1 : fx > 2 / 3 ? 1 : 0, now = Date.now(), lt = YTV.vtap;
-      YTV.vtap = { at: now, side: side };
-      if (side && lt && lt.side === side && now - lt.at < 400) {
-        var r = ytRec(YTV.id), i = YTV.cur >= 0 ? YTV.cur : YTV.act, j = i < 0 ? (side > 0 ? 0 : -1) : i + side;
-        YTV.vtap = null;
+      var view = YTV, player = YTP, rc = el.getBoundingClientRect();
+      var fx = e && e.detail && rc.width ? (e.clientX - rc.left) / rc.width : 0.5, side = fx < 1 / 3 ? -1 : fx > 2 / 3 ? 1 : 0;
+      var single = function () {
+        if (YTV !== view || YTP !== player) return;
+        if (player.getPlayerState() === 1) { if (view.raf) { cancelAnimationFrame(view.raf); view.raf = 0; } player.pauseVideo(); }
+        else { bridge.stop(); player.playVideo(); }
+      };
+      if (!side) { cancelTap(); single(); return; }
+      chooseTap(el, 'video-side-' + side, single, function () {
+        if (YTV !== view || YTP !== player) return;
+        var r = ytRec(view.id), i = view.cur >= 0 ? view.cur : view.act, j = i < 0 ? (side > 0 ? 0 : -1) : i + side;
         if (r && r.sents && r.sents[j]) { ytPlaySent(j); var row = $('#ys' + j); if (row) row.scrollIntoView({ block: 'nearest' }); }
-        return;
-      }
-      var on = YTP.getPlayerState() === 1;
-      if (on) { if (YTV.raf) { cancelAnimationFrame(YTV.raf); YTV.raf = 0; } YTP.pauseVideo(); }
-      else { bridge.stop(); YTP.playVideo(); }
+      });
     },
     'yt-pin': function (el) {
       var on = S.settings.ytPin = !S.settings.ytPin; save();
@@ -4797,6 +4831,7 @@
     if (!el) return;
     if (el.disabled) return;
     var a = el.getAttribute('data-action');
+    if (['list-ex', 'dlg-line', 'yt-sent', 'yt-ko', 'yt-word', 'yt-tap'].indexOf(a) < 0) cancelTap();
     if (ACTIONS[a]) { e.preventDefault(); ACTIONS[a](el, e); }
   });
   $('#overlay').addEventListener('click', function () { if (modalOpen) closeModal(null); else if (sheetOpen) closeSheet(); });
@@ -4835,6 +4870,7 @@
   document.addEventListener('keydown', function (e) {
     if (TOUR || !current() || current().view !== 'study') return;
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'u', 'Backspace'].indexOf(e.key) >= 0) cancelTap();
     var card = $('#cardArea .card'); if (!card) return;
     if (e.key === 'ArrowUp') { e.preventDefault(); flyOut(card, 'up', function () { judge(true); }); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); flyOut(card, 'down', function () { judge(false); }); }
@@ -4931,9 +4967,9 @@
     if (sheetOpen && $('#sheet .voice-list')) openVoiceSheet();
   };
   window.onAppResume = function () { if (stale()) { location.reload(); return; } USE.paused = false; useTick(); updCheck(false); if (current() && current().view === 'home') RENDER.home(); };
-  window.onAppPause = function () { voiceStop(); dlgStop(); useTick(); USE.paused = true; USE.f = null; saveNow(); syncNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
-  document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); else window.onAppResume(); });
-  window.addEventListener('pagehide', saveNow);
+  window.onAppPause = function () { cancelTap(); voiceStop(); dlgStop(); useTick(); USE.paused = true; USE.f = null; saveNow(); syncNow(); if (YTV) YTV.pending = null; if (YTP) { try { YTP.pauseVideo(); } catch (e) { } } };
+  document.addEventListener('visibilitychange', function () { if (document.hidden) { cancelTap(); saveNow(); } else window.onAppResume(); });
+  window.addEventListener('pagehide', function () { cancelTap(); saveNow(); });
 
   // debugging / testing hooks
   window.__vocab = { state: function () { return S; }, save: saveNow, undo: undo, skillAt: function (d) { return skillAt(d || localDate(), Object.keys(S.hist).sort()); }, skillSeries: skillSeries, go: go, startSession: startSession, judge: judge, applyTheme: applyTheme, themes: function () { return THEMES.map(function (t) { return t.id; }); }, reload: function () { S = loadState(); goTab('home'); }, sentPick: sentPick, ytSnapCalc: ytSnapCalc, ytRange: ytRange, ytRetry: function (a, quick, w429) { YT_RETRY = a; if (quick != null) YT_QUICK = quick; if (w429 != null) YT_429 = w429; } };

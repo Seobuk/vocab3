@@ -141,7 +141,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   eq('문장 40ms 끊김(60ms 미만)은 경계로 안 봄', r1.sents[2].vs + '~' + r1.sents[2].ve, '5.2~7');
 
   // --- 5. 문장 누르면 그 구간 재생 · 끝에서 멈춤 (vs−0.08 ~ min(ve+0.12, 다음 vs)) ---
-  await p.click('#ys1 .ys-t'); await p.waitForTimeout(60);
+  await p.click('#ys1 .ys-t'); await p.waitForTimeout(550);
   near('재생 시작 = vs 2.7 − 0.08', await vt(), 2.6, 2.75);
   await paused();
   near('끝 = ve 5.0 + 0.12 (다음 말 5.2 전)에서 멈춤', await vt(), 5.07, 5.3);
@@ -149,7 +149,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   await p.click('[data-action="yt-replay"]'); await p.waitForTimeout(60);
   near('한 번 더 = 같은 구간', await vt(), 2.6, 2.75);
   await paused();
-  await p.click('#ys3 .ys-t'); await p.waitForTimeout(60);
+  await p.click('#ys3 .ys-t'); await p.waitForTimeout(550);
   near('떨어진 문장 시작 (9.5 − 0.08)', await vt(), 9.4, 9.55);
   await paused();
   near('떨어진 문장 끝 (11.0 + 0.12)', await vt(), 11.07, 11.3);
@@ -166,7 +166,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   await p.setViewportSize({ width: 844, height: 390 }); await p.waitForTimeout(250);
   eq('가로에서도 저장 줄 보임 (스크립트 맨 위)', await p.evaluate(() => { const r = document.querySelector('#ytDl').getBoundingClientRect(); return r.height > 0 && r.top < innerHeight && r.left >= document.querySelector('#ytBox').getBoundingClientRect().right - 1; }), true);
   await p.click('.yt-edb'); await p.waitForTimeout(100);
-  await p.click('#ys1 .ys-t'); await p.waitForTimeout(100);
+  await p.click('#ys1 .ys-t'); await p.waitForTimeout(550);
   eq('받은 영상: 띠에 파형', await p.getAttribute('#ytWave', 'data-env'), '1');
   eq('수정 패널 값 = 파형 경계 기준 (시작 vs 2.7 · 끝 5.0+0.12)', await p.$$eval('#ytSide .yed-k b', x => x.map(e => e.textContent).join(' ')), '0:02.7 0:05.1');
   await paused();
@@ -235,7 +235,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   eq('받은 영상 열기 = 앱 플레이어 · 유튜브 IFrame 플레이어 안 만듦', (await tag()) + ' ' + await p.evaluate(() => window.__ytNew), 'VIDEO 0');
   eq('열 때 파형이 있으면 경계 맞춤 (snap)', (await rec('OFFLINE0001')).snap, 1);
   await ready();
-  await p.click('#ys0 .ys-t'); await p.waitForTimeout(60);
+  await p.click('#ys0 .ys-t'); await p.waitForTimeout(550);
   near('앱을 다시 켜도 그 구간 재생 (0.5 − 0.08)', await vt(), 0.4, 0.55);
   await paused();
   near('끝 = min(2.3+0.12, 다음 vs 2.7)', await vt(), 2.37, 2.6);
@@ -281,7 +281,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   await open('OFFLINE0001'); await ready();
   await p.evaluate(() => window.__t20.forEach(f => f())); await p.waitForTimeout(100);   // 20초 타이머들이 이제 돈 셈 (ytApi 것은 이미 꺼졌지만 직접 불러도 무해해야)
   eq('받은 영상엔 유튜브 오류 안내 없음', (await tag()) + ' ' + await p.$$eval('#ytBody .yt-err', x => x.length), 'VIDEO 0');
-  await p.evaluate(() => { window.__opened = ''; }); await p.click('#ys0 .ys-t'); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.__opened = ''; }); await p.click('#ys0 .ys-t'); await p.waitForTimeout(550);
   eq('문장 누르면 받은 영상 재생 (유튜브 앱 안 엶)', (await p.evaluate(() => window.__opened || '-')) + ' ' + ((await vt()) > 0.3), '- true');
   await paused();
 
@@ -310,7 +310,7 @@ const SERVE = new Set(['OFFLINE0001', 'QUEUEVID002']);   // BROKENVID03 은 404 
   await p.click('#ytBox'); await p.waitForTimeout(150);
   const t2 = await vt(); await p.waitForTimeout(300);
   eq('다시 탭하면 멈춤 · 시간이 안 흐름', (await p.evaluate(() => document.querySelector('#ytPlayer').paused)) + ' ' + (t2 > t1 - 0.01) + ' ' + (Math.abs((await vt()) - t2) < 0.01), 'true true true');
-  await p.click('#ys1 .ys-t'); await p.waitForTimeout(300);
+  await p.click('#ys1 .ys-t'); await p.waitForTimeout(550);
   await p.click('#ytBox'); await p.waitForTimeout(100);
   const tm = await vt(); await p.click('#ytBox'); await paused();
   eq('문장 중간에 멈췄다 탭으로 이으면 그 문장 끝에서 멈춤', (await vt()) < 5.3 && (await vt()) > tm, true);

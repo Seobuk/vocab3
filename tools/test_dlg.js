@@ -102,7 +102,7 @@ const LINES = [
   await p.click('[data-key="dlgHide"]'); await p.waitForTimeout(100);
   eq('A 줄 영어 가림', await p.$$eval('.dl-line', x => x.map(e => e.querySelector('.dl-e').classList.contains('hid') ? 1 : 0).join('')), '101010');
   await p.screenshot({ path: OUT + '/dlg-4-hide.png' });
-  await p.click('#dl-0'); await p.waitForTimeout(100);
+  await p.click('#dl-0'); await p.waitForTimeout(500);
   eq('가린 줄 톡 = 보이기', await p.evaluate(() => document.querySelector('#dl-0 .dl-e').classList.contains('hid')), false);
   await p.click('[data-key="dlgHide"]'); await p.waitForTimeout(100);
 

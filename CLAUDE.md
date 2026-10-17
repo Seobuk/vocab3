@@ -3,7 +3,7 @@
 박진영식 3단계 단어장(새 단어장 → 외운 단어장 → 완전 암기장 → 졸업) 영어 단어 학습 안드로이드 앱 + AI 회화 연습(v2.38: 무료 Gemini 키 먼저 → 안 되면 OpenRouter, 유튜브 정리는 Gemini 만).
 공개 저장소 github.com/Seobuk/vocab3 (소스 MIT · 배포 APK 는 NewPipeExtractor 때문에 GPL-3.0 — THIRD_PARTY_NOTICES.md).
 상용 금지는 GPL 과 충돌해서 걸 수 없다 → README 에 "상업적 이용 자제" 부탁 문구만 (사용자 결정 2026-09-25, 법적 효력 없음). 배포는 GitHub Releases 의 APK — 폰(Galaxy Z Fold)은 Obtainium 으로 자동 업데이트.
-**이 PC(윈도우)의 개발 에이전트가 개발·빌드·테스트·릴리스를 맡는다.** 현재 개발 버전 v2.40 (versionCode 64).
+**이 PC(윈도우)의 개발 에이전트가 개발·빌드·테스트·릴리스를 맡는다.** 현재 개발 버전 v2.41 (versionCode 65).
 
 ## 구조 (Gradle/Android Studio 없음 — 스크립트 빌드)
 - `AndroidManifest.xml` — versionCode / versionName. 릴리스마다 versionCode +1, versionName = 앱 버전 (`/ship` 이 해 줌).
@@ -198,3 +198,9 @@ npm test             # 전체 UI 테스트. 개별: node tools/test_v2.js
 - assets/expressive.js: Gemini interactions TTS(gemini-3.8-flash-lite-tts), WAV Blob을 IndexedDB vocab3.voice/clips에 최대 약 24MB 저장(오래된 생성 순 삭제). JSON/Drive에는 음성·키 제외. 새 생성은 Gemini 키만 사용. stop 세대번호로 늦은 음성 차단; clear 뒤 요청은 캐시를 되살리지 않음.
 - S.settings.expressiveVoice 기본 false. 영어 문장은 AI, 단어는 local TTS; queue/onSpoke로 순서 유지. dlgSay는 생성/재생 종료를 기다리고 실패하면 local TTS. pause/화면 이동/중단 시 취소. keepOn은 노트 재생과 ytKeep 합집합.
 - Google 음성의 실제 억양/지연은 유효한 Gemini 키로 실기기 확인 필요. 자동검증은 API/재생 스텁 사용: tools/test_notes_voice.js 및 기존 tools/test_dlg.js.
+
+## v2.41 더블탭 재생 분리
+- `chooseTap(el,key,single,double)`가 한 번 톡을 400ms 보류. 같은 요소·동작의 두 번째 톡이 오면 timer 취소 후 double만 실행. `pendingTap`은 앱 전체 한 개, 다른 대상은 앞의 요청을 취소하고 마지막 동작만 유지.
+- 학습 카드(가려진 예문도 두 번 톡이면 영어+해석만), 단어장 예문, 영어 노트, 유튜브 문장/단어, 받은 영상 좌우 두 번 톡에 적용. 뜻 칸·일반 버튼 등 두 번 톡 기능 없는 곳은 기존 즉시 동작.
+- pointerdown에서 둘째 누름 동안 첫 동작 timer 정지; pointercancel/메뉴/모달/화면 이동/백그라운드/중단 및 원래 DOM 제거 때 대기 동작 취소. 재생을 시작한 뒤 취소하는 방식이 아니라 시작 자체를 막아 AI 음성 요청도 생기지 않음.
+- 회귀 테스트 `tools/test_doubletap.js`: 음성·AI 호출·YouTube seek/play 횟수 0 확인, 싱글은 지연 후 1회 실행, 둘째 누름 유지·화면 이동 취소 확인.
